@@ -1,0 +1,4 @@
+AGENTS.md
+dist
+src-tauri/gen/**
+src-tauri/target

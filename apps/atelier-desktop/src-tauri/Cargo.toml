@@ -1,0 +1,43 @@
+[package]
+name = "atelier-desktop"
+default-run = "atelier-desktop"
+version = "0.1.0"
+description = "Desktop app for managing Claude Code sessions and conversations"
+authors = ["vyductan"]
+license = "MIT"
+repository = "https://github.com/vyductan/vyductan.dev"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[build-dependencies]
+tauri-build = { version = "2.0", features = [] }
+
+[dependencies]
+tauri = { version = "2.2", features = [] }
+tauri-plugin-shell = "2.0"
+tauri-plugin-dialog = "2.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+trash = "5.2.5"
+walkdir = "2.5"
+uuid = { version = "1.11", features = ["serde", "v4"] }
+anyhow = "1.0"
+dirs = "5.0"
+notify = "6.1"
+ignore = "0.4.25"
+axum = { version = "0.7", features = ["macros"] }
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.5", features = ["cors"] }
+tokio-stream = { version = "0.1", features = ["io-util"] }
+async-stream = "0.3"
+lazy_static = "1.5"
+rusqlite = { version = "0.32", features = ["bundled"] }
+fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs", version = "0.0.0" }
+reqwest = { version = "0.12", features = ["json"] }
+
+[features]
+# This feature is used for production builds or when `devPath` points to the filesystem
+# DO NOT REMOVE!!
+custom-protocol = ["tauri/custom-protocol"]

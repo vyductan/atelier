@@ -1,0 +1,28 @@
+# Tauri build artifacts
+src-tauri/target/
+src-tauri/Cargo.lock
+
+# Vite build output
+dist/
+
+# Dependencies
+node_modules/
+
+# Logs
+*.log
+
+# Local env files
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Temp files
+*.tmp
+*.swp

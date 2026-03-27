@@ -1,0 +1,11 @@
+@import "@acme/ui/styles/globals.css";
+
+@source "../../../../@acme";
+
+@plugin "@tailwindcss/typography";
+
+/* Remove backtick pseudo-elements added by prose */
+.prose :where(code):not(:where([class~="not-prose"] *))::before,
+.prose :where(code):not(:where([class~="not-prose"] *))::after {
+  content: none;
+}

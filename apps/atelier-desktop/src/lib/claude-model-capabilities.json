@@ -1,0 +1,11 @@
+{
+  "models": [
+    {
+      "baseModel": "claude-opus-4-6",
+      "options": [
+        { "value": "default", "label": "200k", "isDefault": true },
+        { "value": "1m", "label": "1M" }
+      ]
+    }
+  ]
+}

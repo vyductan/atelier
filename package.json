@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "vyductan.dev",
+  "private": true,
+  "scripts": {
+    "aiprovider:build": "pnpm -F aiprovider-manager tauri build",
+    "aiprovider:dev": "pnpm -F aiprovider-manager tauri dev",
+    "aiprovider:proxy:run": "pnpm -F aiprovider-manager proxy:run",
+    "aiprovider:proxy:update": "pnpm -F aiprovider-manager proxy:update",
+    "app:dev": "turbo run dev --filter=app",
+    "atelier:dev": "turbo run atelier:dev",
+    "build": "turbo run build",
+    "build:web": "turbo build -F web",
+    "clean": "git clean -xdf node_modules",
+    "clean:workspaces": "turbo run clean",
+    "db:push": "pnpm -F web db:push",
+    "db:status": "pnpm -F web db:status",
+    "db:studio": "pnpm -F web db:studio",
+    "dev": "turbo watch dev --continue",
+    "dev:web": "turbo watch dev --continue -F web...",
+    "format": "turbo run format --continue -- --cache --cache-location .cache/.prettiercache",
+    "format:fix": "turbo run format --continue -- --write --cache --cache-location .cache/.prettiercache",
+    "postinstall": "pnpm lint:ws",
+    "lint": "turbo run lint --continue -- --cache --cache-location .cache/.eslintcache",
+    "lint:fix": "turbo run lint --continue -- --fix --cache --cache-location .cache/.eslintcache",
+    "lint:web": "turbo run lint --continue -F web... -- --cache --cache-location .cache/.eslintcache",
+    "lint:ws": "pnpm dlx sherif@latest",
+    "typecheck": "turbo run typecheck",
+    "update:pnpm": "node scripts/update-pnpm.js",
+    "web:dev": "turbo watch dev --continue -F web..."
+  },
+  "prettier": "@acme/prettier-config",
+  "devDependencies": {
+    "@acme/prettier-config": "workspace:*",
+    "@turbo/gen": "^2.8.11",
+    "prettier": "catalog:",
+    "turbo": "^2.8.11",
+    "typescript": "catalog:"
+  },
+  "packageManager": "pnpm@10.30.2",
+  "engines": {
+    "node": ">=v24.11.0",
+    "pnpm": "^10.30.2"
+  }
+}
