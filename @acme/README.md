@@ -1,39 +1,21 @@
-# Custom React Components: Shadcn + AntD Style
+# @acme Shared Packages
 
-A modern UI component set built with [Shadcn UI](https://ui.shadcn.com/) and [Tailwind CSS], exposing an API similar to [Ant Design](https://ant.design/) for ease of use and consistency.
+This directory contains the shared packages and workspace tooling used by Atelier.
 
-- 🌀 Styled with Tailwind CSS and Shadcn components
-- ⚙️ Compatible props with AntD components
-- 🧩 Reusable & customizable
-- 🧠 Some internal logic adapted from AntD
+## Included packages
 
-Ideal for teams transitioning from AntD or looking for AntD-like usage with a modern Tailwind-based design system.
+- [`ui/`](ui/) — shared React UI components and styling primitives
+- [`eslint-config/`](eslint-config/) — shared ESLint configuration
+- [`prettier-config/`](prettier-config/) — shared Prettier configuration
+- [`tsconfig/`](tsconfig/) — shared TypeScript configuration presets
+- [`github/`](github/) — shared GitHub automation and workflow helpers
 
-## Colors
+## When to look here
 
-- Based on Tailwind CSS color palette
-- Down 100 compare with Ant Design color palette
+Use this workspace when you need to:
 
-## Shadcn - v4
+- update reusable UI components
+- change shared linting, formatting, or TypeScript rules
+- adjust shared GitHub workflows or automation
 
-https://github.com/shadcn-ui/ui
-
-May 31, 2025, 5:42 PM GMT+7
-<https://github.com/shadcn-ui/ui/commit/9cbc6641d91901600b553a63ae5a9ce9ccb5105a>
-
-## Antd
-
-https://github.com/ant-design/ant-design
-
-Apr 17, 2025, 2:35 PM GMT+7
-<https://github.com/ant-design/ant-design/commit/f3bf6da30390f8e8ae791fbd29d7a8f6df07ba8f>
-
-## Upgrade
-
-### VSCode
-
-```regex
-(@acme/ui/)(?!components\b|shadcn\b|lib\b|icons\b|layout\b|src\b|\*|tailwind\b|theme\b|link\b)([^"]+)
-
-$1components/$2
-```
+For package-specific conventions, check the `AGENTS.md` file inside the relevant subdirectory when present.
