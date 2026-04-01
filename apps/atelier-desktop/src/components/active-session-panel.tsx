@@ -505,14 +505,22 @@ export function ActiveSessionPanel({
               sessionIdRef.current = event.session_id;
             }
 
-            if (event.type === "error") {
+            if (event.type === "error" || event.type === "runtime.error") {
               setIsLoading(false);
               pendingExportRef.current = null;
-              const message = buildStreamEventErrorMessage(event.error);
+              
+              let errorMessage: string | undefined;
+              if (typeof event.error === "string") {
+                errorMessage = event.error;
+              } else if (event.error && typeof event.error === "object") {
+                errorMessage = (event.error as { message?: string }).message ?? JSON.stringify(event.error);
+              }
+
+              const message = buildStreamEventErrorMessage(errorMessage);
               addToast(message, "error");
             }
 
-            if (event.type === "result" || event.type === "done") {
+            if (event.type === "result" || event.type === "done" || event.type === "turn.completed" || event.type === "turn_completed") {
               setIsLoading(false);
             }
 

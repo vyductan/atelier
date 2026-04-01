@@ -60,3 +60,7 @@ atelier/
 
 - Package management in this workspace uses `pnpm` only.
 - The public repo currently focuses on the Atelier Desktop app and the shared `@acme` workspace it depends on.
+
+# ROADMAPS
+
+- [ ] autocomplete (sugesstion) ở không input. Tôi thấy claude có tính năng là trong khung nhập prompt họ sẽ đề xuất tôi câu lệnh tiếp theo, nếu muốn tôi chỉ nhấn tab hoặc nhấn enter luôn. Còn nếu không muốn thì tôi chỉ cần gõ tiếp là được. Tôi muốn đem tính năng này lên khung chat của mình

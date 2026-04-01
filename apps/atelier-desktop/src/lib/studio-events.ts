@@ -72,10 +72,17 @@ export function normalizeStudioEvent(
     return { type: "assistant-delta", text };
   }
 
-  if (event.type === "error") {
+  if (event.type === "error" || event.type === "runtime.error") {
+    let errorMsg = "Unknown runtime error";
+    if (typeof event.error === "string") {
+      errorMsg = event.error;
+    } else if (event.error && typeof event.error === "object") {
+      errorMsg = (event.error as { message?: string }).message ?? JSON.stringify(event.error);
+    }
+
     return {
       type: "runtime-error",
-      error: event.error ?? "Unknown runtime error",
+      error: errorMsg,
     };
   }
 
@@ -91,7 +98,7 @@ export function normalizeStudioEvent(
     };
   }
 
-  if (event.type === "done") {
+  if (event.type === "done" || event.type === "turn.completed" || event.type === "turn_completed") {
     return { type: "session-finished" };
   }
 
