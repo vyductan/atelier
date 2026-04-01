@@ -4,6 +4,14 @@ import type { ClaudeContextWindowValue } from "./claude-model-capabilities";
 
 export type { ClaudeContextWindowValue } from "./claude-model-capabilities";
 
+export type ClaudeCodeEffort = "low" | "medium" | "high" | "max" | "ultrathink";
+
+export interface ClaudeModelOptions {
+  thinking?: boolean;
+  effort?: ClaudeCodeEffort;
+  fastMode?: boolean;
+}
+
 export interface SessionEntry {
   sessionId: string;
   fullPath: string;
@@ -15,6 +23,7 @@ export interface SessionEntry {
   modified: string;
   gitBranch?: string;
   claudeModel?: string | null;
+  claudeModelOptions?: ClaudeModelOptions | null;
   claudeContextWindow?: ClaudeContextWindowValue | null;
   projectPath: string;
   isSidechain: boolean;

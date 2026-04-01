@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ClaudeContextWindowValue } from "../lib/claude-model-capabilities";
 import type { StreamJsonEvent } from "../lib/studio";
-import type { SessionEntry } from "../lib/types";
+import type { ClaudeModelOptions, SessionEntry } from "../lib/types";
 import type { SessionDiffPanelState } from "./session-diff-panel";
 import type { SessionInspectionMode } from "./session-diff-state";
 import type { SessionTranscriptMessage } from "./session-transcript";
@@ -10,6 +10,9 @@ import { atelierClient } from "../lib/atelier-client";
 import {
   getClaudeModelCapability,
   getDefaultClaudeContextWindow,
+  supportsClaudeFastMode,
+  supportsClaudeThinkingToggle,
+  getClaudeSupportedEfforts,
 } from "../lib/claude-model-capabilities";
 import {
   formatClaudeModelString,
@@ -49,6 +52,7 @@ import { SessionErrorBanner } from "./session-error-banner";
 import { SessionHeader } from "./session-header";
 import { SessionTranscript } from "./session-transcript";
 import { SessionContextWindowSelector } from "./session-context-window-selector";
+import { ClaudeTraitsPicker } from "./claude-traits-picker";
 import {
   createInitialWorkspaceState,
   reduceWorkspaceEvent,
@@ -1019,6 +1023,7 @@ export function ActiveSessionPanel({
     async (
       nextResolvedModel: string,
       nextContextWindow: ClaudeContextWindowValue,
+      nextOptions: ClaudeModelOptions | null = null,
     ) => {
       if (!session || !renderedSessionEscapedPath) {
         return;
@@ -1029,9 +1034,31 @@ export function ActiveSessionPanel({
         sessionId: session.sessionId,
         claudeModel: nextResolvedModel,
         claudeContextWindow: nextContextWindow,
+        claudeModelOptions: nextOptions ?? session.claudeModelOptions ?? null,
       });
     },
     [renderedSessionEscapedPath, session],
+  );
+
+  const handleClaudeTraitsChange = useCallback(
+    (nextOptions: ClaudeModelOptions) => {
+      if (!session) return;
+      
+      const nextContextWindow = sessionContextWindowState.value || "default";
+      const nextResolvedModel = formatClaudeModelString(
+        sessionContextWindowState.baseModel ?? "",
+        nextContextWindow,
+      );
+
+      if (!nextResolvedModel) return;
+
+      persistResolvedModelMetadata(nextResolvedModel, nextContextWindow, nextOptions).catch(
+        (error) => {
+          addToast(buildStudioRequestError("update session model metadata", error), "error");
+        }
+      );
+    },
+    [session, sessionContextWindowState, persistResolvedModelMetadata, addToast]
   );
 
   const sendLiveModelSwitch = useCallback(
@@ -1048,9 +1075,9 @@ export function ActiveSessionPanel({
         sessionIdRef.current,
         `/model ${nextResolvedModel}`,
       );
-      await persistResolvedModelMetadata(nextResolvedModel, nextContextWindow);
+      await persistResolvedModelMetadata(nextResolvedModel, nextContextWindow, session?.claudeModelOptions || null);
     },
-    [persistResolvedModelMetadata],
+    [persistResolvedModelMetadata, session?.claudeModelOptions],
   );
 
   const handleSessionContextWindowChange = (
@@ -1147,12 +1174,23 @@ export function ActiveSessionPanel({
         canStopSession={isConnected}
         hasSessionActions={Boolean(session?.fullPath)}
         sessionContextWindowSelector={
-          <SessionContextWindowSelector
-            baseModel={sessionContextWindowState.baseModel}
-            value={sessionContextWindowState.value}
-            options={sessionContextWindowState.options}
-            onChange={handleSessionContextWindowChange}
-          />
+          <div className="flex items-center">
+            {sessionContextWindowState.baseModel && (
+              <ClaudeTraitsPicker
+                modelOptions={session?.claudeModelOptions}
+                onChange={handleClaudeTraitsChange}
+                supportsFastMode={supportsClaudeFastMode(sessionContextWindowState.baseModel)}
+                supportsThinkingToggle={supportsClaudeThinkingToggle(sessionContextWindowState.baseModel)}
+                supportedEfforts={getClaudeSupportedEfforts(sessionContextWindowState.baseModel)}
+              />
+            )}
+            <SessionContextWindowSelector
+              baseModel={sessionContextWindowState.baseModel}
+              value={sessionContextWindowState.value}
+              options={sessionContextWindowState.options}
+              onChange={handleSessionContextWindowChange}
+            />
+          </div>
         }
         onCopyToClipboard={() => void handleCopyToClipboard()}
         onStopSession={handleStopSession}

@@ -8,9 +8,14 @@ export interface ClaudeContextWindowOption {
   isDefault?: boolean;
 }
 
+import type { ClaudeCodeEffort } from "./types";
+
 export interface ClaudeModelCapability {
   baseModel: string;
   options: ClaudeContextWindowOption[];
+  supportsFastMode?: boolean;
+  supportsThinkingToggle?: boolean;
+  supportedEfforts?: ClaudeCodeEffort[];
 }
 
 interface ClaudeModelCapabilityData {
@@ -39,4 +44,18 @@ export function getDefaultClaudeContextWindow(
 
 export function supportsMultipleContextWindows(baseModel: string): boolean {
   return (getClaudeModelCapability(baseModel)?.options.length ?? 0) > 1;
+}
+
+export function supportsClaudeFastMode(baseModel: string): boolean {
+  return getClaudeModelCapability(baseModel)?.supportsFastMode ?? false;
+}
+
+export function supportsClaudeThinkingToggle(baseModel: string): boolean {
+  return getClaudeModelCapability(baseModel)?.supportsThinkingToggle ?? false;
+}
+
+export function getClaudeSupportedEfforts(
+  baseModel: string,
+): ClaudeCodeEffort[] {
+  return getClaudeModelCapability(baseModel)?.supportedEfforts ?? [];
 }

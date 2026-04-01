@@ -5,7 +5,7 @@ use std::sync::{Mutex, OnceLock};
 use walkdir::WalkDir;
 use serde_json::Value;
 
-use crate::features::sessions::{SessionEntry, SessionIndex};
+use crate::features::sessions::{SessionEntry, SessionIndex, ClaudeModelOptions};
 
 fn collect_walkdir_entries<I>(entries: I, context: &str) -> Result<Vec<walkdir::DirEntry>, String>
 where
@@ -53,6 +53,7 @@ fn build_session_entry_from_file(
                     project_path: project_path.to_string(),
                     claude_model: None,
                     claude_context_window: None,
+                    claude_model_options: None,
                     is_sidechain,
                     children: None,
                 });
@@ -94,6 +95,7 @@ fn build_session_entry_from_file(
         project_path: project_path.to_string(),
         claude_model: None,
         claude_context_window: None,
+        claude_model_options: None,
         is_sidechain,
         children: None,
     })
@@ -481,6 +483,7 @@ mod tests {
             project_path: "/tmp/project".to_string(),
             claude_model: Some("claude-sonnet-4-5".to_string()),
             claude_context_window: Some("1m".to_string()),
+            claude_model_options: None,
             is_sidechain: false,
             children: None,
         };
@@ -525,6 +528,7 @@ mod tests {
             project_path: "/tmp/project".to_string(),
             claude_model: Some(format!("model-for-{session_id}")),
             claude_context_window: Some("default".to_string()),
+            claude_model_options: None,
             is_sidechain: false,
             children: Some(vec![SessionEntry {
                 session_id: format!("{session_id}-child"),
@@ -539,6 +543,7 @@ mod tests {
                 project_path: "/tmp/project".to_string(),
                 claude_model: None,
                 claude_context_window: None,
+                claude_model_options: None,
                 is_sidechain: true,
                 children: None,
             }]),
@@ -576,6 +581,11 @@ mod tests {
             "session-1".to_string(),
             Some("claude-sonnet-4-5".to_string()),
             Some("1m".to_string()),
+            Some(ClaudeModelOptions {
+                thinking: Some(true),
+                effort: Some("max".to_string()),
+                fast_mode: Some(true),
+            })
         )
         .await;
 
@@ -598,9 +608,18 @@ mod tests {
         assert_eq!(updated.entries[0].session_id, "session-1");
         assert_eq!(updated.entries[0].claude_model.as_deref(), Some("claude-sonnet-4-5"));
         assert_eq!(updated.entries[0].claude_context_window.as_deref(), Some("1m"));
+        assert_eq!(
+            updated.entries[0].claude_model_options,
+            Some(ClaudeModelOptions {
+                thinking: Some(true),
+                effort: Some("max".to_string()),
+                fast_mode: Some(true),
+            })
+        );
         assert_eq!(updated.entries[1].session_id, "session-2");
         assert_eq!(updated.entries[1].claude_model.as_deref(), Some("model-for-session-2"));
         assert_eq!(updated.entries[1].claude_context_window.as_deref(), Some("default"));
+        assert!(updated.entries[1].claude_model_options.is_none());
         assert!(updated.entries[0].children.is_some());
         assert!(updated.entries[1].children.is_some());
         assert_eq!(updated.entries[1].summary.as_deref(), Some("summary for session-2"));
@@ -637,6 +656,7 @@ mod tests {
             "session-1".to_string(),
             None,
             None,
+            None,
         )
         .await;
 
@@ -657,6 +677,7 @@ mod tests {
 
         assert_eq!(updated.entries[0].claude_model, None);
         assert_eq!(updated.entries[0].claude_context_window, None);
+        assert!(updated.entries[0].claude_model_options.is_none());
     }
 
     #[tokio::test]
@@ -687,6 +708,7 @@ mod tests {
             "session-1".to_string(),
             Some("claude-sonnet-4-5".to_string()),
             Some("unexpected-value".to_string()),
+            None,
         )
         .await;
 
@@ -760,6 +782,7 @@ pub async fn update_session_model_metadata(
     session_id: String,
     claude_model: Option<String>,
     claude_context_window: Option<String>,
+    claude_model_options: Option<ClaudeModelOptions>,
 ) -> Result<(), String> {
     let claude_context_window = validate_claude_context_window(claude_context_window)?;
     let project_dir = get_project_dir(&escaped_path)?;
@@ -779,6 +802,7 @@ pub async fn update_session_model_metadata(
 
     entry.claude_model = claude_model;
     entry.claude_context_window = claude_context_window;
+    entry.claude_model_options = claude_model_options;
 
     let temp_path = project_dir.join("sessions-index.json.tmp");
     let updated_content = serde_json::to_string_pretty(&index)

@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type {
   ClaudeContextWindowValue,
+  ClaudeModelOptions,
   PrimaryRemoteStatus,
   ProjectInfo,
   RepoMetadata,
@@ -85,6 +86,7 @@ export interface UpdateSessionModelMetadataInput {
   escapedPath: string;
   sessionId: string;
   claudeModel: string | null;
+  claudeModelOptions: ClaudeModelOptions | null;
   claudeContextWindow: ClaudeContextWindowValue | null;
 }
 
@@ -96,6 +98,7 @@ export async function updateSessionModelMetadata(
     escapedPath: input.escapedPath,
     sessionId: input.sessionId,
     claudeModel: input.claudeModel,
+    claudeModelOptions: input.claudeModelOptions,
     claudeContextWindow: input.claudeContextWindow,
   });
 }
