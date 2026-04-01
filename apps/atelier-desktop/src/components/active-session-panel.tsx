@@ -253,6 +253,13 @@ export function ActiveSessionPanel({
     sessionId: string;
   } | null>(null);
   const resumeModelReconciledRef = useRef(false);
+  const lastAppliedApiModelIdRef = useRef<string | null>(session?.claudeModel ?? null);
+
+  useEffect(() => {
+    if (session?.claudeModel) {
+      lastAppliedApiModelIdRef.current = session.claudeModel;
+    }
+  }, [session?.claudeModel]);
   const [resumeReconnectGeneration, setResumeReconnectGeneration] = useState(0);
   const addToast = useToastStore((state) => state.addToast);
   const renderedSessionEscapedPath = useMemo(
@@ -1032,6 +1039,11 @@ export function ActiveSessionPanel({
       nextResolvedModel: string,
       nextContextWindow: ClaudeContextWindowValue,
     ) => {
+      if (lastAppliedApiModelIdRef.current === nextResolvedModel) {
+        return;
+      }
+      lastAppliedApiModelIdRef.current = nextResolvedModel;
+
       await atelierClient.runtime.send(
         sessionIdRef.current,
         `/model ${nextResolvedModel}`,
