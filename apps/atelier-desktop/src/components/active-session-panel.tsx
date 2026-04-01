@@ -51,7 +51,6 @@ import {
 import { SessionErrorBanner } from "./session-error-banner";
 import { SessionHeader } from "./session-header";
 import { SessionTranscript } from "./session-transcript";
-import { SessionContextWindowSelector } from "./session-context-window-selector";
 import { ClaudeTraitsPicker } from "./claude-traits-picker";
 import {
   createInitialWorkspaceState,
@@ -1182,14 +1181,11 @@ export function ActiveSessionPanel({
                 supportsFastMode={supportsClaudeFastMode(sessionContextWindowState.baseModel)}
                 supportsThinkingToggle={supportsClaudeThinkingToggle(sessionContextWindowState.baseModel)}
                 supportedEfforts={getClaudeSupportedEfforts(sessionContextWindowState.baseModel)}
+                contextWindowValue={sessionContextWindowState.value}
+                contextWindowOptions={sessionContextWindowState.options}
+                onContextWindowChange={handleSessionContextWindowChange}
               />
             )}
-            <SessionContextWindowSelector
-              baseModel={sessionContextWindowState.baseModel}
-              value={sessionContextWindowState.value}
-              options={sessionContextWindowState.options}
-              onChange={handleSessionContextWindowChange}
-            />
           </div>
         }
         onCopyToClipboard={() => void handleCopyToClipboard()}
