@@ -53,7 +53,7 @@ export function UnifiedSidebar({
   onReconnect,
 }: UnifiedSidebarProps) {
   return (
-    <aside className="flex w-80 shrink-0 flex-col border-r">
+    <aside className="flex min-h-0 flex-1 w-80 shrink-0 flex-col overflow-hidden border-r">
       <div className="flex h-12 items-center justify-between border-b px-3">
         <span className="text-sm font-semibold">Workspaces</span>
         <div className="flex">

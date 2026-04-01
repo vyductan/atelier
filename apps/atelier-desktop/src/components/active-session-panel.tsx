@@ -1158,7 +1158,7 @@ export function ActiveSessionPanel({
   ]);
 
   return (
-    <div className="bg-background flex h-full flex-col">
+    <div className="bg-background flex min-h-0 flex-1 flex-col">
       <SessionHeader
         title={
           session

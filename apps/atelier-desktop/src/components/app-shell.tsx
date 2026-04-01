@@ -352,7 +352,7 @@ export function AppShell({
 
       <div className="flex flex-1 overflow-hidden">
         <TabsContent value="chats" className="flex flex-1 overflow-hidden">
-          <div className="flex shrink-0 flex-col border-r">
+          <div className="flex min-h-0 shrink-0 flex-col border-r">
             <TaskCreateBar
               workspaceName={workspaceName}
               disabled={!taskWorkbench || !effectiveSelectedWorkspaceId}
@@ -386,7 +386,7 @@ export function AppShell({
               }}
             />
           </div>
-          <main className="flex-1 overflow-hidden">
+          <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
             {focusedTask ? (
               <TaskDetailPanel
                 task={focusedTask}
@@ -446,7 +446,7 @@ export function AppShell({
                 }
               />
             ) : shouldShowTaskEmptyState ? (
-              <section className="flex h-full flex-col justify-center px-6 py-8">
+              <section className="flex min-h-0 flex-1 flex-col justify-center px-6 py-8">
                 <h2 className="text-sm font-semibold">
                   Select a task for {workspaceName}.
                 </h2>
