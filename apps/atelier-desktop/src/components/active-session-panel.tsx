@@ -81,17 +81,47 @@ interface Message {
   role: "user" | "assistant" | "system";
   text: string;
   isStreaming?: boolean;
+  isCompactSummary?: boolean;
+}
+
+function serializeToolUsePart(part: {
+  name?: string;
+  input?: unknown;
+  text?: string;
+}): string {
+  const toolName = part.name ?? "tool_use";
+  const payload =
+    part.text ?? (part.input === undefined ? "" : JSON.stringify(part.input));
+
+  return `<tool_use name="${toolName}">${payload ?? ""}</tool_use>`;
 }
 
 function extractText(content: unknown): string {
   if (typeof content === "string") return content.trim();
   if (Array.isArray(content)) {
-    return (content as Array<{ type?: string; text?: string }>)
-      .filter(
-        (c) =>
-          c.type === "text" && c.text && !c.text.trimStart().startsWith("<"),
-      )
-      .map((c) => c.text ?? "")
+    return (
+      content as Array<{
+        type?: string;
+        text?: string;
+        name?: string;
+        input?: unknown;
+      }>
+    )
+      .map((part) => {
+        if (part.type === "text") {
+          if (part.text?.trimStart().startsWith("<")) {
+            return "";
+          }
+
+          return part.text ?? "";
+        }
+
+        if (part.type === "tool_use") {
+          return serializeToolUsePart(part);
+        }
+
+        return "";
+      })
       .join("")
       .trim();
   }
@@ -257,6 +287,7 @@ export function ActiveSessionPanel({
   } | null>(null);
   const resumeModelReconciledRef = useRef(false);
   const lastAppliedApiModelIdRef = useRef<string | null>(session?.claudeModel ?? null);
+  const [reconnectTrigger, setReconnectTrigger] = useState(0);
 
   useEffect(() => {
     if (session?.claudeModel) {
@@ -427,9 +458,20 @@ export function ActiveSessionPanel({
           );
           if (cancelled) return;
           const history: Message[] = raw
+            .filter(
+              (m): m is {
+                role: "user" | "assistant";
+                content: unknown;
+                isMeta?: boolean;
+                isCompactSummary?: boolean;
+              } =>
+                (m.role === "user" || m.role === "assistant") &&
+                !m.isMeta,
+            )
             .map((m) => ({
-              role: m.role as "user" | "assistant",
+              role: m.role,
               text: extractText(m.content),
+              isCompactSummary: m.isCompactSummary,
             }))
             .filter((m) => m.text.trim());
           setMessages(history);
@@ -701,6 +743,7 @@ export function ActiveSessionPanel({
     session?.projectPath,
     session?.fullPath,
     newSessionProject,
+    reconnectTrigger,
   ]);
 
   useEffect(() => {
@@ -852,6 +895,13 @@ export function ActiveSessionPanel({
     if (!text || !canSend) return;
 
     setInput("");
+
+    if (!isConnected) {
+      useSessionStore.getState().setNewSessionPrompt(text);
+      setReconnectTrigger((t) => t + 1);
+      return;
+    }
+
     setIsLoading(true);
     setWorkspaceState((current) =>
       reduceWorkspaceEvent(current, { type: "user-message", text }),

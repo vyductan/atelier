@@ -113,6 +113,10 @@ vi.mock("remark-gfm", () => ({ default: vi.fn() }));
 
 vi.mock("lucide-react", () => ({
   Bot: () => null,
+  CheckIcon: () => null,
+  ChevronDownIcon: () => null,
+  ChevronRight: () => null,
+  ChevronUpIcon: () => null,
   Copy: () => null,
   Download: () => null,
   FileText: () => null,
@@ -121,6 +125,7 @@ vi.mock("lucide-react", () => ({
   Send: () => null,
   Upload: () => null,
   User: () => null,
+  Wrench: () => null,
 }));
 
 vi.mock("@acme/ui/components/code-block", () => ({
@@ -1678,6 +1683,120 @@ describe("ActiveSessionPanel", () => {
     expect(container?.textContent).toContain(optimizeRulesPrompt);
     expect(container?.textContent).toContain("Connecting to session...");
     expect(container?.textContent).not.toContain("Ready");
+  });
+
+  it("renders collapsed tool calls from loaded history", async () => {
+    const { ActiveSessionPanel } = await import("./active-session-panel");
+
+    mocks.readSessionMessages.mockResolvedValueOnce([
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "Before" },
+          {
+            type: "tool_use",
+            name: "Skill",
+            input: { skill: "using-superpowers" },
+          },
+          { type: "text", text: "After" },
+        ],
+      },
+    ] as Awaited<ReturnType<typeof mocks.readSessionMessages>>);
+    mocks.startActiveSessionStream.mockResolvedValue(vi.fn());
+    mocks.stopActiveSession.mockResolvedValue();
+
+    flushSync(() => {
+      root?.render(<ActiveSessionPanel session={defaultSession} />);
+    });
+
+    await flushUntil(() => Boolean(container?.textContent?.includes("Skill tool call")), 20);
+
+    const details = container?.querySelector("details");
+    if (!(details instanceof HTMLDetailsElement)) {
+      throw new TypeError("Expected tool call details element");
+    }
+
+    expect(container?.textContent).toContain("Before");
+    expect(container?.textContent).toContain("After");
+    expect(container?.textContent).toContain("Skill tool call");
+    expect(details.open).toBe(false);
+  });
+
+  it("does not render meta skill payloads from history as user messages", async () => {
+    const { ActiveSessionPanel } = await import("./active-session-panel");
+
+    mocks.readSessionMessages.mockResolvedValueOnce([
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_use",
+            name: "Skill",
+            input: { skill: "verification-before-completion" },
+          },
+        ],
+      },
+      {
+        role: "user",
+        isMeta: true,
+        content: [
+          {
+            type: "text",
+            text: "Base directory for this skill: /Users/vyductan/.claude/plugins/cache/claude-plugins-official/superpowers/4.3.1/skills/verification-before-completion",
+          },
+        ],
+      },
+    ] as Awaited<ReturnType<typeof mocks.readSessionMessages>>);
+    mocks.startActiveSessionStream.mockResolvedValue(vi.fn());
+    mocks.stopActiveSession.mockResolvedValue();
+
+    flushSync(() => {
+      root?.render(<ActiveSessionPanel session={defaultSession} />);
+    });
+
+    await flushUntil(() => Boolean(container?.textContent?.includes("Skill tool call")), 20);
+
+    expect(container?.textContent).toContain("Skill tool call");
+    expect(container?.textContent).not.toContain("Base directory for this skill:");
+  });
+
+  it("collapses compacted history summaries from loaded history", async () => {
+    const { ActiveSessionPanel } = await import("./active-session-panel");
+
+    mocks.readSessionMessages.mockResolvedValueOnce([
+      {
+        role: "user",
+        isCompactSummary: true,
+        content:
+          "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nSummary:\n1. Primary Request and Intent...",
+      },
+    ] as Awaited<ReturnType<typeof mocks.readSessionMessages>>);
+    mocks.startActiveSessionStream.mockResolvedValue(vi.fn());
+    mocks.stopActiveSession.mockResolvedValue();
+
+    flushSync(() => {
+      root?.render(<ActiveSessionPanel session={defaultSession} />);
+    });
+
+    await flushUntil(
+      () =>
+        Boolean(
+          container?.textContent?.includes(
+            "Conversation was compacted to free up context",
+          ),
+        ),
+      20,
+    );
+
+    const details = container?.querySelector("details");
+    if (!(details instanceof HTMLDetailsElement)) {
+      throw new TypeError("Expected compacted summary details element");
+    }
+
+    expect(container?.textContent).toContain(
+      "Conversation was compacted to free up context",
+    );
+    expect(details.open).toBe(false);
   });
 
   it("keeps startup responses busy until the first turn completes", async () => {

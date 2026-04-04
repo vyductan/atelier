@@ -1,0 +1,55 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import type { PaginationLocale } from "../pagination/types";
+import type { TableLocale } from "../table/types";
+
+export { default as useLocale } from "./use-locale";
+
+interface EmptyLocale {
+  description: string;
+}
+
+export interface Locale {
+  locale: string;
+  Pagination?: PaginationLocale;
+  // DatePicker?: DatePickerLocale;
+  TimePicker?: Record<string, any>;
+  Calendar?: Record<string, any>;
+  Table?: TableLocale;
+  // Modal?: ModalLocale;
+  // Tour?: TourLocale;
+  // Popconfirm?: PopconfirmLocale;
+  // Transfer?: TransferLocale;
+  Select?: Record<string, any>;
+  // Upload?: UploadLocale;
+  Empty?: EmptyLocale;
+  global?: {
+    placeholder?: string;
+    close?: string;
+  };
+  Icon?: Record<string, any>;
+  Text?: {
+    edit?: any;
+    copy?: any;
+    copied?: any;
+    expand?: any;
+    collapse?: any;
+  };
+  Form?: {
+    optional?: string;
+    //   defaultValidateMessages: ValidateMessages;
+  };
+  Image?: {
+    preview: string;
+  };
+  QRCode?: {
+    expired?: string;
+    refresh?: string;
+    scanned?: string;
+  };
+  ColorPicker?: {
+    presetEmpty: string;
+    transparent: string;
+    singleColor: string;
+    gradientColor: string;
+  };
+}

@@ -120,18 +120,11 @@ export function ChatSidebar({ allTasks, selectedTaskId, onSelectTask }: ChatSide
       const errorMsg = sourceGroup?.error;
       const sessionsLen = sourceGroup?.sessions?.length ?? 0;
 
-      if (!errorMsg && !isMissing && sessionsLen > 0) {
-        return {
-          ...group,
-          isMissing,
-        };
-      }
-
       return {
         ...group,
         name: sourceGroup?.name ?? group.name,
-        isCollapsed: false,
-        emptyStateLabel: undefined,
+        // Keep the existing isCollapsed state instead of forcing false
+        emptyStateLabel: sessionsLen === 0 ? "No sessions yet" : undefined,
         errorLabel: errorMsg,
         isMissing,
       };

@@ -12,11 +12,19 @@ const writeGlobalClaudeConfigMock = vi.hoisted(
 const openGlobalClaudeConfigMock = vi.hoisted(
   () => vi.fn<(editor: string) => Promise<void>>(),
 );
+const syncClaudePermissionsToCodexMock = vi.hoisted(
+  () => vi.fn<(allow: string[], deny: string[]) => Promise<void>>(),
+);
+const openGlobalCodexConfigMock = vi.hoisted(
+  () => vi.fn<(editor: string) => Promise<void>>(),
+);
 
 vi.mock("../lib/tauri", () => ({
   readGlobalClaudeConfig: readGlobalClaudeConfigMock,
   writeGlobalClaudeConfig: writeGlobalClaudeConfigMock,
   openGlobalClaudeConfig: openGlobalClaudeConfigMock,
+  syncClaudePermissionsToCodex: syncClaudePermissionsToCodexMock,
+  openGlobalCodexConfig: openGlobalCodexConfigMock,
 }));
 
 vi.mock("@acme/ui/components/button", () => {
@@ -120,8 +128,12 @@ describe("ClaudeGlobalConfig", () => {
     readGlobalClaudeConfigMock.mockReset();
     writeGlobalClaudeConfigMock.mockReset();
     openGlobalClaudeConfigMock.mockReset();
+    syncClaudePermissionsToCodexMock.mockReset();
+    openGlobalCodexConfigMock.mockReset();
     writeGlobalClaudeConfigMock.mockResolvedValue();
     openGlobalClaudeConfigMock.mockResolvedValue();
+    syncClaudePermissionsToCodexMock.mockResolvedValue();
+    openGlobalCodexConfigMock.mockResolvedValue();
   });
 
   it("hides the context-window control when there is no explicit Claude model", async () => {
@@ -289,5 +301,33 @@ describe("ClaudeGlobalConfig", () => {
       },
       customFlag: true,
     });
+  });
+
+  it("syncs the current Claude permissions to Codex and opens the Codex config in the selected editor", async () => {
+    readGlobalClaudeConfigMock.mockResolvedValue(
+      JSON.stringify({
+        permissions: {
+          allow: ["Bash(git status)"],
+          deny: ["Bash(git push *)"],
+        },
+      }),
+    );
+
+    render(<ClaudeGlobalConfig />);
+
+    await screen.findByText("Allowed Permissions");
+
+    fireEvent.click(screen.getByRole("button", { name: /sync to codex/i }));
+
+    await waitFor(() => {
+      expect(syncClaudePermissionsToCodexMock).toHaveBeenCalledWith(
+        ["Bash(git status)"],
+        ["Bash(git push *)"],
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /open codex/i }));
+
+    expect(openGlobalCodexConfigMock).toHaveBeenCalledWith("code");
   });
 });

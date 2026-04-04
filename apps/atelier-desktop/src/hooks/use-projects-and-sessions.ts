@@ -60,7 +60,7 @@ async function loadProjectGroup(
   try {
     const index = await getProjectSessions(project.escapedPath, {
       includeSidechains: false,
-      includeUnindexed: false,
+      includeUnindexed: true,
     });
     return buildProjectGroupResult({
       name: project.name,

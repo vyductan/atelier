@@ -1,0 +1,39 @@
+import { ComponentSource } from "@acme/ui/components/mdx";
+
+import TabsBasicDemo from "./examples/basic";
+import ShadcnDemo from "./examples/shadcn";
+import ShadcnTypeDemo from "./examples/shadcn-type";
+import TypeDemo from "./examples/type";
+
+# Tabs
+
+A set of layered sections of content—known as tab panels—that are displayed one at a time. Built on top of the Tabs primitive components and follows Ant Design API patterns with Shadcn UI styling.
+
+## Examples
+
+### Basic Usage
+
+Display the document sample code for the basic usage of the Tabs component using the Ant Design API pattern with `items` prop.
+
+<ComponentSource src="tabs/examples/basic.tsx" __comp__={TabsBasicDemo} />
+
+### Type
+
+Tabs supports different type styles: `line` (default), `card`, and `solid`. The type prop controls the visual appearance of the tab bar.
+
+<ComponentSource src="tabs/examples/type.tsx" __comp__={TypeDemo} />
+
+### Shadcn Pattern
+
+Tabs can also be used with the Shadcn UI pattern using `TabsList`, `TabsTrigger`, and `TabsContent` components as children. This pattern provides more flexibility for custom layouts.
+
+<ComponentSource src="tabs/examples/shadcn.tsx" __comp__={ShadcnDemo} />
+
+### Shadcn Pattern with Type
+
+Shadcn pattern also supports different type styles. The `type` prop is passed to the root `Tabs` component and automatically propagated to child components via context.
+
+<ComponentSource
+  src="tabs/examples/shadcn-type.tsx"
+  __comp__={ShadcnTypeDemo}
+/>

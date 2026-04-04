@@ -14,6 +14,18 @@ export type NormalizedStudioEvent =
   | { type: "runtime-error"; error: string }
   | { type: "session-finished" };
 
+function serializeToolUseItem(item: {
+  name?: string;
+  input?: unknown;
+  text?: string;
+}): string {
+  const toolName = item.name ?? "tool_use";
+  const payload =
+    item.text ?? (item.input === undefined ? "" : JSON.stringify(item.input));
+
+  return `<tool_use name="${toolName}">${payload ?? ""}</tool_use>`;
+}
+
 function extractAssistantText(event: StreamJsonEvent): string {
   const content = event.message?.content;
 
@@ -24,13 +36,26 @@ function extractAssistantText(event: StreamJsonEvent): string {
   if (Array.isArray(content)) {
     return content
       .filter(
-        (item): item is { type: string; text?: string } =>
-          typeof item === "object" &&
-          item !== null &&
-          "type" in item &&
-          item.type === "text",
+        (
+          item,
+        ): item is {
+          type: string;
+          text?: string;
+          name?: string;
+          input?: unknown;
+        } => typeof item === "object" && item !== null && "type" in item,
       )
-      .map((item) => item.text ?? "")
+      .map((item) => {
+        if (item.type === "text") {
+          return item.text ?? "";
+        }
+
+        if (item.type === "tool_use") {
+          return serializeToolUseItem(item);
+        }
+
+        return "";
+      })
       .join("");
   }
 

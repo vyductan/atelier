@@ -16,13 +16,16 @@ use features::file_ops::{
     get_repo_remote_status, get_rsync_git_safety, get_sync_conflict_detail, get_sync_status,
     preview_subtree_sync, preview_sync_changes, preview_sync_file_diff, read_global_claude_config,
     open_global_claude_config,
+    open_global_codex_config, sync_claude_permissions_to_codex,
     read_task_snapshot, write_global_claude_config, write_task_snapshot,
 };
 use features::studio::start_studio_server;
 use features::watcher::start_fs_watcher;
 use features::workspace::{
-    get_installed_skills, get_workspace_diff, get_workspace_file_content, get_workspace_status,
-    install_skill, search_skills, uninstall_skill, enable_skill_for_agent, disable_skill_for_agent,
+    get_workspace_diff, get_workspace_file_content, get_workspace_status,
+};
+use features::skills::commands::{
+    get_installed_skills, install_skill, search_skills, uninstall_skill, enable_skill_for_agent, disable_skill_for_agent,
     get_detected_agents,
 };
 
@@ -68,6 +71,8 @@ fn main() {
             read_global_claude_config,
             write_global_claude_config,
             open_global_claude_config,
+            open_global_codex_config,
+            sync_claude_permissions_to_codex,
             read_task_snapshot,
             write_task_snapshot,
             get_workspace_status,
