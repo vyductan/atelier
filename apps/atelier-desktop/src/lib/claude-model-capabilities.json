@@ -5,7 +5,28 @@
       "options": [
         { "value": "default", "label": "200k", "isDefault": true },
         { "value": "1m", "label": "1M" }
-      ]
+      ],
+      "supportsFastMode": true,
+      "supportsThinkingToggle": false,
+      "supportedEfforts": ["low", "medium", "high", "max", "ultrathink"]
+    },
+    {
+      "baseModel": "claude-sonnet-4-6",
+      "options": [
+        { "value": "default", "label": "200k", "isDefault": true }
+      ],
+      "supportsFastMode": false,
+      "supportsThinkingToggle": false,
+      "supportedEfforts": ["low", "medium", "high", "ultrathink"]
+    },
+    {
+      "baseModel": "claude-haiku-4-5",
+      "options": [
+        { "value": "default", "label": "200k", "isDefault": true }
+      ],
+      "supportsFastMode": false,
+      "supportsThinkingToggle": true,
+      "supportedEfforts": []
     }
   ]
 }

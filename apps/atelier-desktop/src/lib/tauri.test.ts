@@ -45,6 +45,7 @@ describe("tauri wrappers", () => {
       escapedPath: "workspace__tmp_demo",
       sessionId: "session-123",
       claudeModel: "claude-sonnet-4-5",
+      claudeModelOptions: null,
       claudeContextWindow: "1m" satisfies ClaudeContextWindowValue,
     });
 
@@ -52,6 +53,7 @@ describe("tauri wrappers", () => {
       escapedPath: "workspace__tmp_demo",
       sessionId: "session-123",
       claudeModel: "claude-sonnet-4-5",
+      claudeModelOptions: null,
       claudeContextWindow: "1m",
     });
   });
@@ -63,6 +65,7 @@ describe("tauri wrappers", () => {
       escapedPath: "workspace__tmp_demo",
       sessionId: "session-123",
       claudeModel: null,
+      claudeModelOptions: null,
       claudeContextWindow: null,
     });
 
@@ -70,6 +73,7 @@ describe("tauri wrappers", () => {
       escapedPath: "workspace__tmp_demo",
       sessionId: "session-123",
       claudeModel: null,
+      claudeModelOptions: null,
       claudeContextWindow: null,
     });
   });

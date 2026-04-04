@@ -14,6 +14,26 @@ fn get_claude_projects_dir() -> Result<PathBuf, String> {
     Ok(home_dir.join(".claude").join("projects"))
 }
 
+fn extract_cwd_from_first_jsonl(dir_path: &std::path::Path) -> Option<String> {
+    use std::io::BufRead;
+    for entry in walkdir::WalkDir::new(dir_path).max_depth(1).into_iter().filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
+            if let Ok(file) = fs::File::open(path) {
+                let reader = std::io::BufReader::new(file);
+                for line in reader.lines().take(50).flatten() {
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
+                        if let Some(cwd) = json.get("cwd").and_then(|v| v.as_str()) {
+                            return Some(cwd.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 /// Extract project name from path
 fn extract_project_name(path: &str) -> String {
     PathBuf::from(path)
@@ -66,19 +86,36 @@ pub async fn list_projects() -> Result<Vec<ProjectInfo>, String> {
             continue;
         }
 
-        // Look for sessions-index.json
-        let index_path = path.join("sessions-index.json");
+        let escaped_path = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_string();
 
-        if !index_path.exists() {
-            continue;
+        let index_path = path.join("sessions-index.json");
+        let mut original_path = String::new();
+        let mut session_count = 0;
+        let mut indexed_session_ids = std::collections::HashSet::new();
+
+        if index_path.exists() {
+            if let Ok(index) = read_session_index(&index_path) {
+                original_path = index.original_path.clone();
+                session_count = index.entries.len();
+                for entry in index.entries {
+                    indexed_session_ids.insert(entry.session_id);
+                }
+            }
         }
 
-        let index = read_session_index(&index_path)?;
+        if original_path.is_empty() {
+            if let Some(cwd) = extract_cwd_from_first_jsonl(&path) {
+                original_path = cwd;
+            } else {
+                original_path = escaped_path.replace("-", "/");
+            }
+        }
 
-        // Count all .jsonl files, not just indexed ones
-        let mut session_count = index.entries.len();
-
-        // Also count .jsonl files not in index
+        let mut has_jsonl = false;
         for entry in collect_walkdir_entries(
             WalkDir::new(&path).max_depth(1).into_iter(),
             &format!("Failed to read Claude project sessions at {:?}", path),
@@ -87,20 +124,22 @@ pub async fn list_projects() -> Result<Vec<ProjectInfo>, String> {
             if entry_path.is_file()
                 && entry_path.extension().and_then(|s| s.to_str()) == Some("jsonl")
             {
+                has_jsonl = true;
                 if let Some(filename) = entry_path.file_stem().and_then(|s| s.to_str()) {
                     let session_id = filename.to_string();
-                    // Check if this session is already in index
-                    if !index.entries.iter().any(|e| e.session_id == session_id) {
+                    if !indexed_session_ids.contains(&session_id) {
                         session_count += 1;
                     }
                 }
             }
         }
 
-        let original_path = index.original_path.clone();
+        if !has_jsonl && !index_path.exists() {
+            continue;
+        }
 
-        // Get last modified time from the directory
-        let metadata = fs::metadata(&index_path)
+        let metadata_target = if index_path.exists() { &index_path } else { path };
+        let metadata = fs::metadata(metadata_target)
             .map_err(|e| format!("Failed to read metadata: {}", e))?;
 
         let modified_time = metadata.modified()
@@ -108,12 +147,6 @@ pub async fn list_projects() -> Result<Vec<ProjectInfo>, String> {
 
         let datetime: DateTime<Utc> = modified_time.into();
         let last_modified = datetime.to_rfc3339();
-
-        let escaped_path = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("")
-            .to_string();
 
         let is_missing = !std::path::Path::new(&original_path).exists();
 

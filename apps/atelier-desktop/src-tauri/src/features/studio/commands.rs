@@ -737,9 +737,14 @@ async fn handle_session_start(Json(payload): Json<SessionStartPayload>) -> impl 
             Ok(status) => {
                 let exit_fallback = status.to_string();
                 let stderr_message = stderr_output.trim().to_string();
+                let stderr_message_with_suffix = format!(
+                    "{}{}",
+                    stderr_message,
+                    build_stderr_collection_error_suffix(stderr_collection_error.as_deref())
+                );
                 if let Some(message) = canonical_studio_runtime_error(
                     emitted_lines.iter().map(String::as_str),
-                    &stderr_message,
+                    &stderr_message_with_suffix,
                     &exit_fallback,
                 ) {
                     yield Ok(Event::default().data(handle_session_start_exit_error_event_data(&message)));

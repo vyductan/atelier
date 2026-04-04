@@ -5,7 +5,7 @@ use std::sync::{Mutex, OnceLock};
 use walkdir::WalkDir;
 use serde_json::Value;
 
-use crate::features::sessions::{SessionEntry, SessionIndex};
+use crate::features::sessions::{SessionEntry, SessionIndex, ClaudeModelOptions};
 
 fn collect_walkdir_entries<I>(entries: I, context: &str) -> Result<Vec<walkdir::DirEntry>, String>
 where
@@ -15,6 +15,26 @@ where
         .into_iter()
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| format!("{context}: {error}"))
+}
+
+fn extract_cwd_from_first_jsonl(dir_path: &std::path::Path) -> Option<String> {
+    use std::io::BufRead;
+    for entry in walkdir::WalkDir::new(dir_path).max_depth(1).into_iter().filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
+            if let Ok(file) = fs::File::open(path) {
+                let reader = std::io::BufReader::new(file);
+                for line in reader.lines().take(50).flatten() {
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
+                        if let Some(cwd) = json.get("cwd").and_then(|v| v.as_str()) {
+                            return Some(cwd.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 fn build_unavailable_session_prompt(fallback_prompt: &str) -> String {
@@ -53,6 +73,7 @@ fn build_session_entry_from_file(
                     project_path: project_path.to_string(),
                     claude_model: None,
                     claude_context_window: None,
+                    claude_model_options: None,
                     is_sidechain,
                     children: None,
                 });
@@ -94,6 +115,7 @@ fn build_session_entry_from_file(
         project_path: project_path.to_string(),
         claude_model: None,
         claude_context_window: None,
+        claude_model_options: None,
         is_sidechain,
         children: None,
     })
@@ -212,7 +234,8 @@ pub async fn get_project_sessions(
         SessionIndex {
             version: 1,
             entries: Vec::new(),
-            original_path: String::new(),
+            original_path: extract_cwd_from_first_jsonl(&project_dir)
+                .unwrap_or_else(|| escaped_path.replace("-", "/")),
         }
     };
 
@@ -299,7 +322,7 @@ mod tests {
         build_session_entry_from_file, parse_jsonl_first_prompt, update_session_model_metadata,
         validate_claude_context_window,
     };
-    use crate::features::sessions::{SessionEntry, SessionIndex};
+    use crate::features::sessions::{ClaudeModelOptions, SessionEntry, SessionIndex};
 
     #[test]
     fn parse_jsonl_first_prompt_surfaces_missing_file_errors() {
@@ -481,6 +504,7 @@ mod tests {
             project_path: "/tmp/project".to_string(),
             claude_model: Some("claude-sonnet-4-5".to_string()),
             claude_context_window: Some("1m".to_string()),
+            claude_model_options: None,
             is_sidechain: false,
             children: None,
         };
@@ -525,6 +549,7 @@ mod tests {
             project_path: "/tmp/project".to_string(),
             claude_model: Some(format!("model-for-{session_id}")),
             claude_context_window: Some("default".to_string()),
+            claude_model_options: None,
             is_sidechain: false,
             children: Some(vec![SessionEntry {
                 session_id: format!("{session_id}-child"),
@@ -539,6 +564,7 @@ mod tests {
                 project_path: "/tmp/project".to_string(),
                 claude_model: None,
                 claude_context_window: None,
+                claude_model_options: None,
                 is_sidechain: true,
                 children: None,
             }]),
@@ -576,6 +602,11 @@ mod tests {
             "session-1".to_string(),
             Some("claude-sonnet-4-5".to_string()),
             Some("1m".to_string()),
+            Some(ClaudeModelOptions {
+                thinking: Some(true),
+                effort: Some("max".to_string()),
+                fast_mode: Some(true),
+            })
         )
         .await;
 
@@ -598,9 +629,18 @@ mod tests {
         assert_eq!(updated.entries[0].session_id, "session-1");
         assert_eq!(updated.entries[0].claude_model.as_deref(), Some("claude-sonnet-4-5"));
         assert_eq!(updated.entries[0].claude_context_window.as_deref(), Some("1m"));
+        assert_eq!(
+            updated.entries[0].claude_model_options,
+            Some(ClaudeModelOptions {
+                thinking: Some(true),
+                effort: Some("max".to_string()),
+                fast_mode: Some(true),
+            })
+        );
         assert_eq!(updated.entries[1].session_id, "session-2");
         assert_eq!(updated.entries[1].claude_model.as_deref(), Some("model-for-session-2"));
         assert_eq!(updated.entries[1].claude_context_window.as_deref(), Some("default"));
+        assert!(updated.entries[1].claude_model_options.is_none());
         assert!(updated.entries[0].children.is_some());
         assert!(updated.entries[1].children.is_some());
         assert_eq!(updated.entries[1].summary.as_deref(), Some("summary for session-2"));
@@ -637,6 +677,7 @@ mod tests {
             "session-1".to_string(),
             None,
             None,
+            None,
         )
         .await;
 
@@ -657,6 +698,7 @@ mod tests {
 
         assert_eq!(updated.entries[0].claude_model, None);
         assert_eq!(updated.entries[0].claude_context_window, None);
+        assert!(updated.entries[0].claude_model_options.is_none());
     }
 
     #[tokio::test]
@@ -687,6 +729,7 @@ mod tests {
             "session-1".to_string(),
             Some("claude-sonnet-4-5".to_string()),
             Some("unexpected-value".to_string()),
+            None,
         )
         .await;
 
@@ -760,6 +803,7 @@ pub async fn update_session_model_metadata(
     session_id: String,
     claude_model: Option<String>,
     claude_context_window: Option<String>,
+    claude_model_options: Option<ClaudeModelOptions>,
 ) -> Result<(), String> {
     let claude_context_window = validate_claude_context_window(claude_context_window)?;
     let project_dir = get_project_dir(&escaped_path)?;
@@ -779,6 +823,7 @@ pub async fn update_session_model_metadata(
 
     entry.claude_model = claude_model;
     entry.claude_context_window = claude_context_window;
+    entry.claude_model_options = claude_model_options;
 
     let temp_path = project_dir.join("sessions-index.json.tmp");
     let updated_content = serde_json::to_string_pretty(&index)
@@ -840,7 +885,29 @@ pub async fn read_session_messages(session_path: String) -> Result<Vec<serde_jso
                 // Stream-JSON format: {"type":"user"|"assistant","message":{...}}
                 if matches!(msg_type, Some("user") | Some("assistant")) {
                     if let Some(msg) = json.get("message") {
-                        messages.push(msg.clone());
+                        let mut message = msg.clone();
+
+                        if let Some(object) = message.as_object_mut() {
+                            if let Some(is_meta) = json.get("isMeta") {
+                                object.insert("isMeta".to_string(), is_meta.clone());
+                            }
+                            if let Some(is_compact_summary) = json.get("isCompactSummary") {
+                                object.insert(
+                                    "isCompactSummary".to_string(),
+                                    is_compact_summary.clone(),
+                                );
+                            }
+                            if let Some(is_visible_in_transcript_only) =
+                                json.get("isVisibleInTranscriptOnly")
+                            {
+                                object.insert(
+                                    "isVisibleInTranscriptOnly".to_string(),
+                                    is_visible_in_transcript_only.clone(),
+                                );
+                            }
+                        }
+
+                        messages.push(message);
                     }
                 }
                 // Legacy flat format: {"role":"user"|"assistant","content":...}
@@ -1396,5 +1463,4 @@ fn insert_codex_thread(
 
     Ok(())
 }
-
 

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ClaudeContextWindowValue } from "../lib/claude-model-capabilities";
 import type { StreamJsonEvent } from "../lib/studio";
-import type { SessionEntry } from "../lib/types";
+import type { ClaudeModelOptions, SessionEntry } from "../lib/types";
 import type { SessionDiffPanelState } from "./session-diff-panel";
 import type { SessionInspectionMode } from "./session-diff-state";
 import type { SessionTranscriptMessage } from "./session-transcript";
@@ -10,6 +10,9 @@ import { atelierClient } from "../lib/atelier-client";
 import {
   getClaudeModelCapability,
   getDefaultClaudeContextWindow,
+  supportsClaudeFastMode,
+  supportsClaudeThinkingToggle,
+  getClaudeSupportedEfforts,
 } from "../lib/claude-model-capabilities";
 import {
   formatClaudeModelString,
@@ -48,7 +51,7 @@ import {
 import { SessionErrorBanner } from "./session-error-banner";
 import { SessionHeader } from "./session-header";
 import { SessionTranscript } from "./session-transcript";
-import { SessionContextWindowSelector } from "./session-context-window-selector";
+import { ClaudeTraitsPicker } from "./claude-traits-picker";
 import {
   createInitialWorkspaceState,
   reduceWorkspaceEvent,
@@ -78,17 +81,47 @@ interface Message {
   role: "user" | "assistant" | "system";
   text: string;
   isStreaming?: boolean;
+  isCompactSummary?: boolean;
+}
+
+function serializeToolUsePart(part: {
+  name?: string;
+  input?: unknown;
+  text?: string;
+}): string {
+  const toolName = part.name ?? "tool_use";
+  const payload =
+    part.text ?? (part.input === undefined ? "" : JSON.stringify(part.input));
+
+  return `<tool_use name="${toolName}">${payload ?? ""}</tool_use>`;
 }
 
 function extractText(content: unknown): string {
   if (typeof content === "string") return content.trim();
   if (Array.isArray(content)) {
-    return (content as Array<{ type?: string; text?: string }>)
-      .filter(
-        (c) =>
-          c.type === "text" && c.text && !c.text.trimStart().startsWith("<"),
-      )
-      .map((c) => c.text ?? "")
+    return (
+      content as Array<{
+        type?: string;
+        text?: string;
+        name?: string;
+        input?: unknown;
+      }>
+    )
+      .map((part) => {
+        if (part.type === "text") {
+          if (part.text?.trimStart().startsWith("<")) {
+            return "";
+          }
+
+          return part.text ?? "";
+        }
+
+        if (part.type === "tool_use") {
+          return serializeToolUsePart(part);
+        }
+
+        return "";
+      })
       .join("")
       .trim();
   }
@@ -253,6 +286,14 @@ export function ActiveSessionPanel({
     sessionId: string;
   } | null>(null);
   const resumeModelReconciledRef = useRef(false);
+  const lastAppliedApiModelIdRef = useRef<string | null>(session?.claudeModel ?? null);
+  const [reconnectTrigger, setReconnectTrigger] = useState(0);
+
+  useEffect(() => {
+    if (session?.claudeModel) {
+      lastAppliedApiModelIdRef.current = session.claudeModel;
+    }
+  }, [session?.claudeModel]);
   const [resumeReconnectGeneration, setResumeReconnectGeneration] = useState(0);
   const addToast = useToastStore((state) => state.addToast);
   const renderedSessionEscapedPath = useMemo(
@@ -417,9 +458,20 @@ export function ActiveSessionPanel({
           );
           if (cancelled) return;
           const history: Message[] = raw
+            .filter(
+              (m): m is {
+                role: "user" | "assistant";
+                content: unknown;
+                isMeta?: boolean;
+                isCompactSummary?: boolean;
+              } =>
+                (m.role === "user" || m.role === "assistant") &&
+                !m.isMeta,
+            )
             .map((m) => ({
-              role: m.role as "user" | "assistant",
+              role: m.role,
               text: extractText(m.content),
+              isCompactSummary: m.isCompactSummary,
             }))
             .filter((m) => m.text.trim());
           setMessages(history);
@@ -505,14 +557,22 @@ export function ActiveSessionPanel({
               sessionIdRef.current = event.session_id;
             }
 
-            if (event.type === "error") {
+            if (event.type === "error" || event.type === "runtime.error") {
               setIsLoading(false);
               pendingExportRef.current = null;
-              const message = buildStreamEventErrorMessage(event.error);
+              
+              let errorMessage: string | undefined;
+              if (typeof event.error === "string") {
+                errorMessage = event.error;
+              } else if (event.error && typeof event.error === "object") {
+                errorMessage = (event.error as { message?: string }).message ?? JSON.stringify(event.error);
+              }
+
+              const message = buildStreamEventErrorMessage(errorMessage);
               addToast(message, "error");
             }
 
-            if (event.type === "result" || event.type === "done") {
+            if (event.type === "result" || event.type === "done" || event.type === "turn.completed" || event.type === "turn_completed") {
               setIsLoading(false);
             }
 
@@ -683,6 +743,7 @@ export function ActiveSessionPanel({
     session?.projectPath,
     session?.fullPath,
     newSessionProject,
+    reconnectTrigger,
   ]);
 
   useEffect(() => {
@@ -834,6 +895,13 @@ export function ActiveSessionPanel({
     if (!text || !canSend) return;
 
     setInput("");
+
+    if (!isConnected) {
+      useSessionStore.getState().setNewSessionPrompt(text);
+      setReconnectTrigger((t) => t + 1);
+      return;
+    }
+
     setIsLoading(true);
     setWorkspaceState((current) =>
       reduceWorkspaceEvent(current, { type: "user-message", text }),
@@ -1004,6 +1072,7 @@ export function ActiveSessionPanel({
     async (
       nextResolvedModel: string,
       nextContextWindow: ClaudeContextWindowValue,
+      nextOptions: ClaudeModelOptions | null = null,
     ) => {
       if (!session || !renderedSessionEscapedPath) {
         return;
@@ -1014,9 +1083,31 @@ export function ActiveSessionPanel({
         sessionId: session.sessionId,
         claudeModel: nextResolvedModel,
         claudeContextWindow: nextContextWindow,
+        claudeModelOptions: nextOptions ?? session.claudeModelOptions ?? null,
       });
     },
     [renderedSessionEscapedPath, session],
+  );
+
+  const handleClaudeTraitsChange = useCallback(
+    (nextOptions: ClaudeModelOptions) => {
+      if (!session) return;
+      
+      const nextContextWindow = sessionContextWindowState.value || "default";
+      const nextResolvedModel = formatClaudeModelString(
+        sessionContextWindowState.baseModel ?? "",
+        nextContextWindow,
+      );
+
+      if (!nextResolvedModel) return;
+
+      persistResolvedModelMetadata(nextResolvedModel, nextContextWindow, nextOptions).catch(
+        (error) => {
+          addToast(buildStudioRequestError("update session model metadata", error), "error");
+        }
+      );
+    },
+    [session, sessionContextWindowState, persistResolvedModelMetadata, addToast]
   );
 
   const sendLiveModelSwitch = useCallback(
@@ -1024,13 +1115,18 @@ export function ActiveSessionPanel({
       nextResolvedModel: string,
       nextContextWindow: ClaudeContextWindowValue,
     ) => {
+      if (lastAppliedApiModelIdRef.current === nextResolvedModel) {
+        return;
+      }
+      lastAppliedApiModelIdRef.current = nextResolvedModel;
+
       await atelierClient.runtime.send(
         sessionIdRef.current,
         `/model ${nextResolvedModel}`,
       );
-      await persistResolvedModelMetadata(nextResolvedModel, nextContextWindow);
+      await persistResolvedModelMetadata(nextResolvedModel, nextContextWindow, session?.claudeModelOptions || null);
     },
-    [persistResolvedModelMetadata],
+    [persistResolvedModelMetadata, session?.claudeModelOptions],
   );
 
   const handleSessionContextWindowChange = (
@@ -1112,7 +1208,7 @@ export function ActiveSessionPanel({
   ]);
 
   return (
-    <div className="bg-background flex h-full flex-col">
+    <div className="bg-background flex min-h-0 flex-1 flex-col">
       <SessionHeader
         title={
           session
@@ -1127,12 +1223,20 @@ export function ActiveSessionPanel({
         canStopSession={isConnected}
         hasSessionActions={Boolean(session?.fullPath)}
         sessionContextWindowSelector={
-          <SessionContextWindowSelector
-            baseModel={sessionContextWindowState.baseModel}
-            value={sessionContextWindowState.value}
-            options={sessionContextWindowState.options}
-            onChange={handleSessionContextWindowChange}
-          />
+          <div className="flex items-center">
+            {sessionContextWindowState.baseModel && (
+              <ClaudeTraitsPicker
+                modelOptions={session?.claudeModelOptions}
+                onChange={handleClaudeTraitsChange}
+                supportsFastMode={supportsClaudeFastMode(sessionContextWindowState.baseModel)}
+                supportsThinkingToggle={supportsClaudeThinkingToggle(sessionContextWindowState.baseModel)}
+                supportedEfforts={getClaudeSupportedEfforts(sessionContextWindowState.baseModel)}
+                contextWindowValue={sessionContextWindowState.value}
+                contextWindowOptions={sessionContextWindowState.options}
+                onContextWindowChange={handleSessionContextWindowChange}
+              />
+            )}
+          </div>
         }
         onCopyToClipboard={() => void handleCopyToClipboard()}
         onStopSession={handleStopSession}

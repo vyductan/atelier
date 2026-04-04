@@ -1,5 +1,16 @@
 use serde::{Deserialize, Deserializer, Serialize};
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ClaudeModelOptions {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+
+    #[serde(rename = "fastMode", skip_serializing_if = "Option::is_none")]
+    pub fast_mode: Option<bool>,
+}
 /// Represents the sessions-index.json file structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionIndex {
@@ -61,6 +72,13 @@ pub struct SessionEntry {
     )]
     pub claude_context_window: Option<String>,
 
+    #[serde(
+        rename = "claudeModelOptions",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub claude_model_options: Option<ClaudeModelOptions>,
+
     #[serde(rename = "isSidechain")]
     pub is_sidechain: bool,
 
@@ -86,6 +104,7 @@ mod tests {
             project_path: "/tmp/project".to_string(),
             claude_model: Some("claude-sonnet-4-5".to_string()),
             claude_context_window: Some("1m".to_string()),
+            claude_model_options: None,
             is_sidechain: false,
             children: None,
         }
@@ -131,6 +150,7 @@ mod tests {
         assert_eq!(value["sessionId"], "session-1");
         assert_eq!(value["claudeModel"], "claude-sonnet-4-5");
         assert_eq!(value["claudeContextWindow"], "1m");
+        assert!(value.get("claudeModelOptions").is_none());
     }
 
     #[test]

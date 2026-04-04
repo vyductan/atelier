@@ -21,6 +21,26 @@ describe("normalizeStudioEvent", () => {
     ).toEqual({ type: "assistant-delta", text: " Hello there\n" });
   });
 
+  it("preserves tool-use items in assistant payloads", () => {
+    expect(
+      normalizeStudioEvent({
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "text", text: "Before" },
+            { type: "tool_use", text: '{"skill":"using-superpowers"}' },
+            { type: "text", text: "After" },
+          ],
+        },
+      }),
+    ).toEqual({
+      type: "assistant-delta",
+      text:
+        'Before<tool_use name="tool_use">{"skill":"using-superpowers"}</tool_use>After',
+    });
+  });
+
   it("maps error events to runtime-error", () => {
     expect(
       normalizeStudioEvent({ type: "error", error: "Connection refused" }),

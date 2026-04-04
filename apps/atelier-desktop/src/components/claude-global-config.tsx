@@ -27,7 +27,13 @@ import {
   formatClaudeModelString,
   parseClaudeModelString,
 } from "../lib/claude-model-config";
-import { readGlobalClaudeConfig, writeGlobalClaudeConfig, openGlobalClaudeConfig } from "../lib/tauri";
+import {
+  openGlobalClaudeConfig,
+  openGlobalCodexConfig,
+  readGlobalClaudeConfig,
+  syncClaudePermissionsToCodex,
+  writeGlobalClaudeConfig,
+} from "../lib/tauri";
 
 interface ClaudeConfig {
   permissions?: {
@@ -41,6 +47,7 @@ export function ClaudeGlobalConfig({ onOptimizeRules }: { onOptimizeRules?: () =
   const [config, setConfig] = useState<ClaudeConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSyncingToCodex, setIsSyncingToCodex] = useState(false);
 
   const [newAllow, setNewAllow] = useState("");
   const [newDeny, setNewDeny] = useState("");
@@ -108,6 +115,32 @@ export function ClaudeGlobalConfig({ onOptimizeRules }: { onOptimizeRules?: () =
       setError(String(error_));
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function handleSyncToCodex() {
+    if (!config) return;
+    setIsSyncingToCodex(true);
+
+    try {
+      await syncClaudePermissionsToCodex(
+        [...(config.permissions?.allow ?? [])],
+        [...(config.permissions?.deny ?? [])],
+      );
+      setError(null);
+    } catch (error_) {
+      setError(String(error_));
+    } finally {
+      setIsSyncingToCodex(false);
+    }
+  }
+
+  async function handleOpenCodexConfig() {
+    try {
+      await openGlobalCodexConfig(activeEditor);
+      setError(null);
+    } catch (error_) {
+      setError(String(error_));
     }
   }
 
@@ -245,6 +278,19 @@ export function ClaudeGlobalConfig({ onOptimizeRules }: { onOptimizeRules?: () =
 
             <Button variant="secondary" onClick={onOptimizeRules}>
               ✨ Optimize Rules
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => void handleOpenCodexConfig()}
+            >
+              Open Codex
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => void handleSyncToCodex()}
+              disabled={isSyncingToCodex}
+            >
+              {isSyncingToCodex ? "Syncing..." : "Sync to Codex"}
             </Button>
             <Tooltip>
               <TooltipTrigger asChild>

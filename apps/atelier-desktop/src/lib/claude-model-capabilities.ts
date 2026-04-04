@@ -8,9 +8,14 @@ export interface ClaudeContextWindowOption {
   isDefault?: boolean;
 }
 
+import type { ClaudeCodeEffort } from "./types";
+
 export interface ClaudeModelCapability {
   baseModel: string;
   options: ClaudeContextWindowOption[];
+  supportsFastMode?: boolean;
+  supportsThinkingToggle?: boolean;
+  supportedEfforts?: ClaudeCodeEffort[];
 }
 
 interface ClaudeModelCapabilityData {
@@ -39,4 +44,44 @@ export function getDefaultClaudeContextWindow(
 
 export function supportsMultipleContextWindows(baseModel: string): boolean {
   return (getClaudeModelCapability(baseModel)?.options.length ?? 0) > 1;
+}
+
+export function supportsClaudeFastMode(baseModel: string): boolean {
+  return getClaudeModelCapability(baseModel)?.supportsFastMode ?? false;
+}
+
+export function supportsClaudeThinkingToggle(baseModel: string): boolean {
+  return getClaudeModelCapability(baseModel)?.supportsThinkingToggle ?? false;
+}
+
+export function getClaudeSupportedEfforts(
+  baseModel: string,
+): ClaudeCodeEffort[] {
+  return getClaudeModelCapability(baseModel)?.supportedEfforts ?? [];
+}
+
+export function resolveClaudeEffort(
+  baseModel: string,
+  rawEffort: string | null | undefined,
+): ClaudeCodeEffort | undefined {
+  const supportedEfforts = getClaudeSupportedEfforts(baseModel);
+  if (!supportedEfforts || supportedEfforts.length === 0) {
+    return undefined;
+  }
+
+  if (rawEffort && supportedEfforts.includes(rawEffort as ClaudeCodeEffort)) {
+    return rawEffort as ClaudeCodeEffort;
+  }
+
+  // Fallback map: if requested 'max' isn't available, downgrade to highest available
+  if (rawEffort === "max" && supportedEfforts.includes("ultrathink")) {
+    return "ultrathink";
+  }
+  
+  // Default to highest or standard if no match
+  if (supportedEfforts.includes("high")) {
+    return "high";
+  }
+
+  return supportedEfforts[0] as ClaudeCodeEffort | undefined;
 }

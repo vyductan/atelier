@@ -301,6 +301,7 @@ pub struct SubtreeSyncSettingsPayload {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct SyncProfilePayload {
     pub id: String,
     pub project_path: String,
@@ -1910,6 +1911,167 @@ pub async fn write_global_claude_config(contents: String) -> Result<(), String> 
         .map_err(|e| format!("failed to write global claude config: {}", e))
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CodexManagedSettings {
+    approval_policy: String,
+    sandbox_mode: String,
+}
+
+fn codex_config_path() -> Result<PathBuf, String> {
+    let home = dirs::home_dir().ok_or_else(|| "Could not determine home directory".to_string())?;
+    Ok(home.join(".codex").join("config.toml"))
+}
+
+fn is_mutating_claude_permission(rule: &str) -> bool {
+    ["Bash(", "Edit(", "Write(", "MultiEdit(", "NotebookEdit("]
+        .iter()
+        .any(|prefix| rule.starts_with(prefix))
+}
+
+fn infer_codex_policy_from_claude_permissions(
+    allow: &[String],
+    deny: &[String],
+) -> CodexManagedSettings {
+    let approval_policy = if deny.is_empty() {
+        "on-request"
+    } else {
+        "untrusted"
+    };
+
+    let sandbox_mode = if allow
+        .iter()
+        .chain(deny.iter())
+        .any(|rule| is_mutating_claude_permission(rule))
+    {
+        "workspace-write"
+    } else {
+        "read-only"
+    };
+
+    CodexManagedSettings {
+        approval_policy: approval_policy.to_string(),
+        sandbox_mode: sandbox_mode.to_string(),
+    }
+}
+
+fn render_codex_setting_line(key: &str, value: &str) -> String {
+    let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+    format!(r#"{key} = "{escaped}""#)
+}
+
+fn write_codex_managed_settings(
+    contents: &str,
+    approval_policy: &str,
+    sandbox_mode: &str,
+) -> String {
+    let mut output = Vec::new();
+    let mut inserted_missing_keys = false;
+    let mut saw_approval_policy = false;
+    let mut saw_sandbox_mode = false;
+    let mut in_top_level = true;
+
+    for line in contents.lines() {
+        let trimmed = line.trim();
+
+        if trimmed.starts_with('[') && !inserted_missing_keys {
+            if !saw_approval_policy {
+                output.push(render_codex_setting_line("approval_policy", approval_policy));
+            }
+            if !saw_sandbox_mode {
+                output.push(render_codex_setting_line("sandbox_mode", sandbox_mode));
+            }
+            inserted_missing_keys = true;
+            in_top_level = false;
+        }
+
+        if in_top_level && trimmed.starts_with("approval_policy") {
+            saw_approval_policy = true;
+            output.push(render_codex_setting_line("approval_policy", approval_policy));
+            continue;
+        }
+
+        if in_top_level && trimmed.starts_with("sandbox_mode") {
+            saw_sandbox_mode = true;
+            output.push(render_codex_setting_line("sandbox_mode", sandbox_mode));
+            continue;
+        }
+
+        output.push(line.to_string());
+    }
+
+    if !inserted_missing_keys {
+        if !saw_approval_policy {
+            output.push(render_codex_setting_line("approval_policy", approval_policy));
+        }
+        if !saw_sandbox_mode {
+            output.push(render_codex_setting_line("sandbox_mode", sandbox_mode));
+        }
+    }
+
+    let mut result = output.join("\n");
+    if !result.is_empty() && !result.ends_with('\n') {
+        result.push('\n');
+    }
+    result
+}
+
+fn open_path_in_editor(editor: &str, path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let app_name = match editor {
+            "code" => "Visual Studio Code",
+            "cursor" => "Cursor",
+            "antigravity" => "Antigravity",
+            _ => editor,
+        };
+        std::process::Command::new("/usr/bin/open")
+            .arg("-a")
+            .arg(app_name)
+            .arg(path)
+            .spawn()
+            .map_err(|e| format!("Failed to open editor '{}': {}", editor, e))?;
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        std::process::Command::new(editor)
+            .arg(path)
+            .spawn()
+            .map_err(|e| format!("Failed to open editor '{}': {}", editor, e))?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn sync_claude_permissions_to_codex(
+    allow: Vec<String>,
+    deny: Vec<String>,
+) -> Result<(), String> {
+    let config_path = codex_config_path()?;
+    if let Some(parent) = config_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("failed to create .codex directory: {}", e))?;
+    }
+
+    let existing = if config_path.exists() {
+        std::fs::read_to_string(&config_path)
+            .map_err(|e| format!("failed to read global codex config: {}", e))?
+    } else {
+        String::new()
+    };
+
+    let mapped = infer_codex_policy_from_claude_permissions(&allow, &deny);
+    let next = write_codex_managed_settings(
+        &existing,
+        &mapped.approval_policy,
+        &mapped.sandbox_mode,
+    );
+
+    std::fs::write(&config_path, next)
+        .map_err(|e| format!("failed to write global codex config: {}", e))
+}
+
 #[tauri::command]
 pub fn ensure_directory(path: String) -> Result<(), String> {
     std::fs::create_dir_all(&path).map_err(|e| format!("failed to create directory: {}", e))?;
@@ -1925,6 +2087,7 @@ pub fn ensure_directory(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+#[allow(dead_code)]
 pub async fn test_claude_spawn(project_path: String) -> Result<String, String> {
     use std::process::Stdio;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -1952,7 +2115,7 @@ pub async fn test_claude_spawn(project_path: String) -> Result<String, String> {
     let mut stdout = child.stdout.take().unwrap();
     let mut stderr = child.stderr.take().unwrap();
 
-    let write_task = tokio::spawn(async move {
+    let _write_task = tokio::spawn(async move {
         let msg = serde_json::json!({
             "type": "user",
             "message": { "role": "user", "content": "Please review my ~/.claude/settings.json 'allow' and 'deny' lists" }
@@ -1997,31 +2160,22 @@ pub async fn open_global_claude_config(editor: String) -> Result<(), String> {
         return Err("Configuration file not found. Ensure it is created before opening.".to_string());
     }
 
-    #[cfg(target_os = "macos")]
-    {
-        let app_name = match editor.as_str() {
-            "code" => "Visual Studio Code",
-            "cursor" => "Cursor",
-            "antigravity" => "Antigravity",
-            _ => &editor,
-        };
-        std::process::Command::new("/usr/bin/open")
-            .arg("-a")
-            .arg(app_name)
-            .arg(&config_path)
-            .spawn()
-            .map_err(|e| format!("Failed to open editor '{}': {}", editor, e))?;
+    open_path_in_editor(&editor, &config_path)
+}
+
+#[tauri::command]
+pub async fn open_global_codex_config(editor: String) -> Result<(), String> {
+    let config_path = codex_config_path()?;
+    if let Some(parent) = config_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("failed to create .codex directory: {}", e))?;
+    }
+    if !config_path.exists() {
+        std::fs::write(&config_path, "")
+            .map_err(|e| format!("failed to create global codex config: {}", e))?;
     }
 
-    #[cfg(not(target_os = "macos"))]
-    {
-        std::process::Command::new(&editor)
-            .arg(&config_path)
-            .spawn()
-            .map_err(|e| format!("Failed to open editor '{}': {}", editor, e))?;
-    }
-
-    Ok(())
+    open_path_in_editor(&editor, &config_path)
 }
 
 #[cfg(test)]
@@ -2044,6 +2198,7 @@ mod tests {
         get_repo_metadata,
         get_repo_remote_status,
         get_sync_status,
+        infer_codex_policy_from_claude_permissions,
         is_git_repo,
         latest_modified_from_walkdir,
         resolve_conflict_action,
@@ -2058,6 +2213,7 @@ mod tests {
         subtree_add_args,
         execute_subtree_add,
         validate_relative_preview_path,
+        write_codex_managed_settings,
         DiffTarget,
         RsyncConflictExecutionRequest,
         SyncChangeType,
@@ -2070,6 +2226,30 @@ mod tests {
         SyncPreviewConflict,
         SubtreeSyncSettingsPayload,
     };
+
+    #[test]
+    fn claude_permissions_with_denies_map_to_untrusted_workspace_write() {
+        let mapped = infer_codex_policy_from_claude_permissions(
+            &["Bash(git status)".to_string()],
+            &["Bash(git push *)".to_string()],
+        );
+
+        assert_eq!(mapped.approval_policy, "untrusted");
+        assert_eq!(mapped.sandbox_mode, "workspace-write");
+    }
+
+    #[test]
+    fn codex_sync_updates_managed_keys_without_dropping_model() {
+        let next = write_codex_managed_settings(
+            "model = \"gpt-5.4\"\n",
+            "on-request",
+            "read-only",
+        );
+
+        assert!(next.contains("model = \"gpt-5.4\""));
+        assert!(next.contains("approval_policy = \"on-request\""));
+        assert!(next.contains("sandbox_mode = \"read-only\""));
+    }
 
     #[test]
     fn parse_git_status_porcelain_ignores_non_acme_paths_and_short_lines() {

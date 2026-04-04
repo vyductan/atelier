@@ -51,11 +51,11 @@ export async function assertStudioResponseOk(
 }
 
 export function shouldAllowSessionInput(
-  isConnected: boolean,
+  _isConnected: boolean,
   isLoading: boolean,
   sessionId: string,
 ): boolean {
-  return isConnected && !isLoading && sessionId.trim().length > 0;
+  return _isConnected && !isLoading && sessionId.trim().length > 0;
 }
 
 export function buildStudioRequestError(

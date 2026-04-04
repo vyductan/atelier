@@ -29,7 +29,7 @@ async fn main() {
     let mut stdout = child.stdout.take().unwrap();
     let mut stderr = child.stderr.take().unwrap();
 
-    let write_task = tokio::spawn(async move {
+    let _write_task = tokio::spawn(async move {
         let line = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"test\"}}\n".to_string();
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
         if let Err(e) = stdin.write_all(line.as_bytes()).await {

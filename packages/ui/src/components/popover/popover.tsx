@@ -1,0 +1,140 @@
+import React from "react";
+import { useMergedState } from "@rc-component/util";
+import { useDebounce } from "ahooks";
+import { Popover as PopoverPrimitive } from "radix-ui";
+
+import { cn } from "@acme/ui/lib/utils";
+
+import type { AlignType } from "../../types";
+import type { AbstractTooltipProps } from "../tooltip";
+import type { PopoverContentProps, PopoverRootProps } from "./_component";
+import {
+  PopoverContent,
+  PopoverDescription,
+  PopoverHeader,
+  PopoverRoot,
+  PopoverTitle,
+  PopoverTrigger,
+} from "./_component";
+
+export type PopoverProps = AbstractTooltipProps &
+  PopoverRootProps &
+  Omit<PopoverContentProps, "content" | "sideOffset" | "align"> & {
+    trigger?: "click" | "hover" | "focus";
+    content?: React.ReactNode;
+
+    align?: AlignType;
+    title?: React.ReactNode;
+    description?: React.ReactNode;
+
+    arrow?: boolean;
+  };
+export const Popover = (props: PopoverProps) => {
+  const [open, setOpen] = useMergedState(false, {
+    value: props.open,
+    onChange: (value) => props.onOpenChange?.(value),
+  });
+  const debouncedOpen = useDebounce(open, {
+    wait: 100,
+  });
+
+  const isShadcnPopover = React.Children.toArray(props.children).some(
+    (child) =>
+      React.isValidElement(child) &&
+      (child.type === PopoverContent || child.type === PopoverTrigger),
+  );
+
+  if (isShadcnPopover) {
+    return <PopoverRoot {...props} />;
+  }
+
+  const {
+    children,
+    trigger = "hover",
+    content,
+    title,
+    description,
+    open: _open,
+    onOpenChange: _onOpenChange,
+
+    align: domAlign,
+    placement,
+    className,
+    arrow = true,
+    ...restProps
+  } = props;
+
+  const side = placement?.includes("top")
+    ? "top"
+    : placement?.includes("right")
+      ? "right"
+      : !placement || placement.includes("bottom")
+        ? "bottom"
+        : "left";
+  const align = placement?.includes("Top")
+    ? "start"
+    : !placement ||
+        (!placement.includes("Left") && !placement.includes("Right"))
+      ? "center"
+      : placement.includes("Left")
+        ? "start"
+        : "end";
+
+  const alignOffset = domAlign?.offset?.[0];
+  const sideOffset = domAlign?.offset?.[1];
+
+  return (
+    <PopoverRoot
+      open={trigger === "hover" ? debouncedOpen : open}
+      onOpenChange={setOpen}
+    >
+      <PopoverTrigger
+        asChild
+        {...(trigger === "hover"
+          ? {
+              onMouseOver: () => {
+                if (!open) setOpen(true);
+              },
+              onMouseLeave: () => {
+                if (open) setOpen(false);
+              },
+            }
+          : {})}
+      >
+        {children}
+      </PopoverTrigger>
+
+      <PopoverContent
+        side={side}
+        sideOffset={sideOffset}
+        align={align}
+        alignOffset={alignOffset}
+        className={cn(arrow ? "border-none" : "", "w-auto", className)}
+        {...(trigger === "hover"
+          ? {
+              onMouseOver: () => {
+                if (!open) setOpen(true);
+              },
+              onMouseLeave: () => {
+                if (open) setOpen(false);
+              },
+            }
+          : {})}
+        {...restProps}
+      >
+        {arrow && <PopoverPrimitive.Arrow className="fill-white" />}
+        {(title || description) && (
+          <PopoverHeader>
+            {title && <PopoverTitle>{title}</PopoverTitle>}
+            {description && (
+              <PopoverDescription>{description}</PopoverDescription>
+            )}
+          </PopoverHeader>
+        )}
+        {content}
+      </PopoverContent>
+    </PopoverRoot>
+  );
+};
+
+export { PopoverHeader, PopoverTitle, PopoverDescription } from "./_component";

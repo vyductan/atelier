@@ -12,7 +12,14 @@ export interface StreamJsonEvent {
   status?: string;
   message?: {
     role: string;
-    content: Array<{ type: string; text?: string }> | string;
+    content:
+      | Array<{
+          type: string;
+          text?: string;
+          name?: string;
+          input?: unknown;
+        }>
+      | string;
   };
   error?: string;
   cost_usd?: number;

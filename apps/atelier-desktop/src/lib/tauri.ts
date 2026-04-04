@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type {
   ClaudeContextWindowValue,
+  ClaudeModelOptions,
   PrimaryRemoteStatus,
   ProjectInfo,
   RepoMetadata,
@@ -85,6 +86,7 @@ export interface UpdateSessionModelMetadataInput {
   escapedPath: string;
   sessionId: string;
   claudeModel: string | null;
+  claudeModelOptions: ClaudeModelOptions | null;
   claudeContextWindow: ClaudeContextWindowValue | null;
 }
 
@@ -96,6 +98,7 @@ export async function updateSessionModelMetadata(
     escapedPath: input.escapedPath,
     sessionId: input.sessionId,
     claudeModel: input.claudeModel,
+    claudeModelOptions: input.claudeModelOptions,
     claudeContextWindow: input.claudeContextWindow,
   });
 }
@@ -124,7 +127,13 @@ export async function ensureDirectory(path: string): Promise<void> {
 export async function readSessionMessages(
   sessionPath: string,
 ): Promise<
-  Array<{ role: string; content: string | Array<{ text?: string }> }>
+  Array<{
+    role: string;
+    content: unknown;
+    isMeta?: boolean;
+    isCompactSummary?: boolean;
+    isVisibleInTranscriptOnly?: boolean;
+  }>
 > {
   ensureTauri();
   return await invoke("read_session_messages", { sessionPath });
@@ -214,6 +223,19 @@ export async function writeGlobalClaudeConfig(
 export async function openGlobalClaudeConfig(editor: string): Promise<void> {
   ensureTauri();
   return await invoke<void>("open_global_claude_config", { editor });
+}
+
+export async function syncClaudePermissionsToCodex(
+  allow: string[],
+  deny: string[],
+): Promise<void> {
+  ensureTauri();
+  return await invoke<void>("sync_claude_permissions_to_codex", { allow, deny });
+}
+
+export async function openGlobalCodexConfig(editor: string): Promise<void> {
+  ensureTauri();
+  return await invoke<void>("open_global_codex_config", { editor });
 }
 
 export async function readTaskSnapshot(filePath: string): Promise<string> {

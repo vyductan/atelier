@@ -60,3 +60,22 @@ atelier/
 
 - Package management in this workspace uses `pnpm` only.
 - The public repo currently focuses on the Atelier Desktop app and the shared `@acme` workspace it depends on.
+
+# ROADMAPS
+
+- [ ] autocomplete (sugesstion) ở ô input. Tôi thấy claude có tính năng là trong khung nhập prompt họ sẽ đề xuất tôi prompt tiếp theo, nếu muốn tôi chỉ nhấn tab hoặc nhấn enter luôn. Còn nếu không muốn thì tôi chỉ cần gõ tiếp là được. Tôi muốn đem tính năng này lên khung chat của mình
+- [ ] render message, ví dụ tool call skill using-superpowers thì làm collapse, tôi nhấn vào sẽ expand ra
+
+- [x] Claude -> read sessions by projects (~/.claude/projects) (parse "-" to "/")
+
+- [] Hiển thị thinking/Read/Grep/Bash/Write
+- [] Hiển thị session Tasks
+
+- [] mở rộng để bắt thêm các tag tool khác ngoài <tool_use>
+- [ ] tinh chỉnh header hiển thị summary đẹp hơn theo tên tool cụ thể
+
+## PLANNING
+
+### Scheduled Tasks
+
+- [] Có thể thêm helper/action “mark as migrated” trong UI, nhưng không phụ thuộc vào việc Claude phải xác nhận

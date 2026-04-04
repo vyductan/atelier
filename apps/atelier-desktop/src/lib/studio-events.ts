@@ -14,6 +14,18 @@ export type NormalizedStudioEvent =
   | { type: "runtime-error"; error: string }
   | { type: "session-finished" };
 
+function serializeToolUseItem(item: {
+  name?: string;
+  input?: unknown;
+  text?: string;
+}): string {
+  const toolName = item.name ?? "tool_use";
+  const payload =
+    item.text ?? (item.input === undefined ? "" : JSON.stringify(item.input));
+
+  return `<tool_use name="${toolName}">${payload ?? ""}</tool_use>`;
+}
+
 function extractAssistantText(event: StreamJsonEvent): string {
   const content = event.message?.content;
 
@@ -24,13 +36,26 @@ function extractAssistantText(event: StreamJsonEvent): string {
   if (Array.isArray(content)) {
     return content
       .filter(
-        (item): item is { type: string; text?: string } =>
-          typeof item === "object" &&
-          item !== null &&
-          "type" in item &&
-          item.type === "text",
+        (
+          item,
+        ): item is {
+          type: string;
+          text?: string;
+          name?: string;
+          input?: unknown;
+        } => typeof item === "object" && item !== null && "type" in item,
       )
-      .map((item) => item.text ?? "")
+      .map((item) => {
+        if (item.type === "text") {
+          return item.text ?? "";
+        }
+
+        if (item.type === "tool_use") {
+          return serializeToolUseItem(item);
+        }
+
+        return "";
+      })
       .join("");
   }
 
@@ -72,10 +97,17 @@ export function normalizeStudioEvent(
     return { type: "assistant-delta", text };
   }
 
-  if (event.type === "error") {
+  if (event.type === "error" || event.type === "runtime.error") {
+    let errorMsg = "Unknown runtime error";
+    if (typeof event.error === "string") {
+      errorMsg = event.error;
+    } else if (event.error && typeof event.error === "object") {
+      errorMsg = (event.error as { message?: string }).message ?? JSON.stringify(event.error);
+    }
+
     return {
       type: "runtime-error",
-      error: event.error ?? "Unknown runtime error",
+      error: errorMsg,
     };
   }
 
@@ -91,7 +123,7 @@ export function normalizeStudioEvent(
     };
   }
 
-  if (event.type === "done") {
+  if (event.type === "done" || event.type === "turn.completed" || event.type === "turn_completed") {
     return { type: "session-finished" };
   }
 
