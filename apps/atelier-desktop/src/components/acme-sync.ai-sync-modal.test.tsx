@@ -111,6 +111,14 @@ vi.mock("@acme/ui/components/modal", () => ({
 vi.mock("../lib/tauri", () => ({
   deleteSyncFile: vi.fn(),
   executeSyncAction: mocks.executeSyncAction,
+  getPrimaryRemoteStatus: vi.fn(async () => ({
+    upstreamBranch: "origin/main",
+    workingTreeDirty: false,
+    aheadCount: 0,
+    behindCount: 0,
+    status: "synced",
+    message: null,
+  })),
   getRepoMetadata: mocks.getRepoMetadata,
   previewSubtreeSync: mocks.previewSubtreeSync,
   previewSyncChanges: mocks.previewSyncChanges,

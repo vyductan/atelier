@@ -1,3 +1,4 @@
+import type { JSX } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -21,6 +22,7 @@ import type {
   SyncProfile,
   SyncStatusResult,
 } from "../lib/types";
+import type { ScheduledTaskFormInput } from "./scheduled-task-form";
 import type { AiSyncMode } from "./acme-sync-ai-sync-state";
 import type { LastModifiedEntry } from "./acme-sync-error-state";
 import type {
@@ -44,11 +46,17 @@ import { useAcmeStore } from "../store/acme-store";
 import { useToastStore } from "../store/toast-store";
 import { shouldReuseAiSyncCachedPreview } from "./acme-sync-ai-preview-state";
 import {
+  buildPatchAiSyncPrompt,
   buildRsyncAiSyncPrompt,
   buildSubtreeAiSyncPrompt,
   getAiSyncModalDescription,
   getAiSyncStepLabels,
 } from "./acme-sync-ai-sync-state";
+import {
+  buildScheduledSyncTaskDraft,
+  parseSyncStrategyMarkdown,
+} from "../lib/scheduled-task-sync-strategy";
+import { getWorkspaceFileContent } from "../lib/workspace";
 import {
   getConfirmDeleteWarningMessage,
   getConfirmLoadingMessage,
@@ -124,6 +132,10 @@ interface AiSyncModalState {
 
 const getPreviewKey = (projectPath: string, action: SyncAction) =>
   `${projectPath}:${action}`;
+
+interface AcmeSyncProps {
+  onCreateScheduledSyncTask?: (draft: ScheduledTaskFormInput) => void;
+}
 
 const noopSaveProfileSettings = (nextProfile: {
   mode: SyncProfile["mode"];
@@ -233,7 +245,7 @@ const getPrimaryRemoteDetail = (status?: PrimaryRemoteStatus) => {
   return details.join(" • ");
 };
 
-export function AcmeSync() {
+export function AcmeSync({ onCreateScheduledSyncTask }: AcmeSyncProps = {}): JSX.Element {
   const {
     primaryPath,
     profiles,
@@ -1353,6 +1365,39 @@ export function AcmeSync() {
     };
   };
 
+  const loadSyncStrategyMarkdown = useCallback(async () => {
+    if (!mainPath) {
+      return { strategyMarkdown: null, errorMessage: null };
+    }
+
+    try {
+      const strategyFiles = ["SYNC_STRATEGY.md", "SYNC_STRAITEGY.md"] as const;
+
+      for (const fileName of strategyFiles) {
+        const strategyFile = await getWorkspaceFileContent(mainPath, fileName);
+
+        if (!strategyFile.exists || strategyFile.isBinary || strategyFile.tooLarge) {
+          continue;
+        }
+
+        const strategyDraft = parseSyncStrategyMarkdown({
+          workspacePath: mainPath,
+          strategyMarkdown: strategyFile.content,
+        });
+
+        return { strategyMarkdown: strategyDraft.prompt, errorMessage: null };
+      }
+
+      return { strategyMarkdown: null, errorMessage: null };
+    } catch (error) {
+      console.error(error);
+      return {
+        strategyMarkdown: null,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }, [mainPath]);
+
   const openAiSyncModal = async (projectPath: string) => {
     if (!mainPath) return;
 
@@ -1447,16 +1492,24 @@ export function AcmeSync() {
     }
 
     try {
-      const result = buildRsyncAiSyncPrompt({
-        mainPath,
-        projectPath,
-        pushPreview,
-        pullPreview,
-      });
+      const result =
+        profile.mode === "patch"
+          ? buildPatchAiSyncPrompt({
+              mainPath,
+              projectPath,
+              pushPreview,
+              pullPreview,
+            })
+          : buildRsyncAiSyncPrompt({
+              mainPath,
+              projectPath,
+              pushPreview,
+              pullPreview,
+            });
 
       setAiSyncModal({
         projectPath,
-        mode: "rsync",
+        mode: profile.mode === "patch" ? "patch" : "rsync",
         command: result.command,
         prompt: result.prompt,
       });
@@ -1606,16 +1659,20 @@ export function AcmeSync() {
                           {projectPath}
                         </div>
                         <div className="text-muted-foreground mt-1 mb-2 flex items-center gap-2 text-xs">
-                          {profile.mode === "rsync" ? (
+                          {profile.mode !== "subtree" ? (
                             <span>
                               Updated:{" "}
                               {lastModified[projectPath]?.display || "..."}
                             </span>
                           ) : null}
                           <span className="bg-muted rounded-sm px-1.5 py-0.5 text-[10px] font-semibold tracking-wider uppercase">
-                            {profile.mode === "subtree" ? "SUBTREE" : "RSYNC"}
+                            {profile.mode === "subtree"
+                              ? "SUBTREE"
+                              : profile.mode === "patch"
+                                ? "PATCH"
+                                : "RSYNC"}
                           </span>
-                          {profile.mode === "rsync" &&
+                          {profile.mode !== "subtree" &&
                           lastModified[projectPath]?.errorMessage ? (
                             <span
                               className="rounded-sm bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold tracking-wider text-amber-700 uppercase dark:text-amber-300"
@@ -1874,6 +1931,36 @@ export function AcmeSync() {
                               ) : null}
                               <button
                                 onClick={() => {
+                                  if (!mainPath) {
+                                    return;
+                                  }
+
+                                  void (async () => {
+                                    const { strategyMarkdown, errorMessage } =
+                                      await loadSyncStrategyMarkdown();
+
+                                    if (errorMessage) {
+                                      addToast(errorMessage, "error");
+                                      return;
+                                    }
+
+                                    onCreateScheduledSyncTask?.(
+                                      buildScheduledSyncTaskDraft({
+                                        mainPath,
+                                        profile,
+                                        strategyMarkdown,
+                                      }),
+                                    );
+                                  })();
+                                }}
+                                disabled={!mainPath}
+                                className="border-input bg-background hover:bg-accent hover:text-accent-foreground text-muted-foreground inline-flex h-8 items-center justify-center rounded-md border px-2 text-xs font-medium whitespace-nowrap transition-colors focus-visible:ring-1 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
+                                title="Create scheduled sync task"
+                              >
+                                Schedule Sync
+                              </button>
+                              <button
+                                onClick={() => {
                                   void openAiSyncModal(projectPath);
                                 }}
                                 disabled={
@@ -1902,7 +1989,7 @@ export function AcmeSync() {
                               >
                                 {getPreviewButtonLabel(profile, "pull")}
                               </button>
-                              {profile.mode === "rsync" ? (
+                              {profile.mode !== "subtree" ? (
                                 <button
                                   onClick={() =>
                                     loadPreviewForAction(profile, "push")
@@ -2103,7 +2190,7 @@ export function AcmeSync() {
                 {getAiSyncStepLabels(aiSyncModal.mode).prompt}
               </p>
               <div className="max-h-[52vh] overflow-auto rounded-md border">
-                <CodeBlock language="markdown">
+                <CodeBlock language="markdown" wrap>
                   {aiSyncModal.prompt}
                 </CodeBlock>
               </div>

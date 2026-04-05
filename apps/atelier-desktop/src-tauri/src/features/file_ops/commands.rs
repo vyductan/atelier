@@ -1,8 +1,9 @@
 use std::{
-    collections::hash_map::DefaultHasher,
+    collections::{HashSet, hash_map::DefaultHasher},
     hash::{Hash, Hasher},
-    io::ErrorKind,
+    io::{ErrorKind, Write},
     path::{Path, PathBuf},
+    process::Stdio,
 };
 use tauri::Manager;
 use chrono::{DateTime, Local};
@@ -573,6 +574,204 @@ fn subtree_apply_args(prefix: &str, remote: &str, branch: &str, squash: bool) ->
     }
 
     args
+}
+
+fn patch_show_args(commit: &str, relative_to: Option<&str>, pathspec: Option<&str>) -> Vec<String> {
+    let mut args = vec!["show".to_string(), "--format=email".to_string()];
+
+    if let Some(relative_to) = relative_to {
+        args.push(format!("--relative={relative_to}"));
+    }
+
+    args.push(commit.to_string());
+
+    if let Some(pathspec) = pathspec {
+        args.push("--".to_string());
+        args.push(pathspec.to_string());
+    }
+
+    args
+}
+
+fn patch_id_for_commit(
+    repo_root: &str,
+    commit: &str,
+    relative_to: Option<&str>,
+    pathspec: Option<&str>,
+) -> Result<Option<String>, String> {
+    let args = patch_show_args(commit, relative_to, pathspec);
+    let arg_refs = args.iter().map(|arg| arg.as_str()).collect::<Vec<_>>();
+    let show_output = run_git_command(repo_root, &arg_refs, "git show")?;
+
+    if !show_output.status.success() {
+        return Err(format!(
+            "git show failed while computing patch id for {commit}: {}",
+            String::from_utf8_lossy(&show_output.stderr)
+        ));
+    }
+
+    let mut patch_id = std::process::Command::new("git")
+        .args(["patch-id", "--stable"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| {
+            if error.kind() == ErrorKind::NotFound {
+                "git command is unavailable on this system".to_string()
+            } else {
+                format!("failed to run git patch-id: {error}")
+            }
+        })?;
+
+    if let Some(stdin) = patch_id.stdin.as_mut() {
+        stdin
+            .write_all(&show_output.stdout)
+            .map_err(|error| format!("failed to write patch input to git patch-id: {error}"))?;
+    }
+
+    let output = patch_id
+        .wait_with_output()
+        .map_err(|error| format!("failed to read git patch-id output: {error}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "git patch-id failed for {commit}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let patch_id = stdout
+        .split_whitespace()
+        .next()
+        .map(str::to_string)
+        .filter(|value| !value.is_empty());
+
+    Ok(patch_id)
+}
+
+fn collect_patch_ids(
+    repo_root: &str,
+    relative_to: Option<&str>,
+    pathspec: Option<&str>,
+) -> Result<HashSet<String>, String> {
+    let output = run_git_command(repo_root, &["rev-list", "--reverse", "HEAD"], "git rev-list")?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "git rev-list failed while collecting patch ids: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    let mut patch_ids = HashSet::new();
+    for commit in String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+    {
+        if let Some(patch_id) = patch_id_for_commit(repo_root, commit, relative_to, pathspec)? {
+            patch_ids.insert(patch_id);
+        }
+    }
+
+    Ok(patch_ids)
+}
+
+fn collect_unapplied_patch_commits(
+    source_repo: &str,
+    source_relative_to: Option<&str>,
+    source_pathspec: Option<&str>,
+    destination_patch_ids: &HashSet<String>,
+) -> Result<Vec<String>, String> {
+    let output = run_git_command(source_repo, &["rev-list", "--reverse", "HEAD"], "git rev-list")?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "git rev-list failed while collecting source commits: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    let mut commits = Vec::new();
+    for commit in String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+    {
+        if let Some(patch_id) = patch_id_for_commit(
+            source_repo,
+            commit,
+            source_relative_to,
+            source_pathspec,
+        )? {
+            if !destination_patch_ids.contains(&patch_id) {
+                commits.push(commit.to_string());
+            }
+        }
+    }
+
+    Ok(commits)
+}
+
+fn apply_patch_commit(
+    source_repo: &str,
+    commit: &str,
+    source_relative_to: Option<&str>,
+    source_pathspec: Option<&str>,
+    destination_repo: &str,
+    destination_directory: Option<&str>,
+) -> Result<(), String> {
+    let show_args = patch_show_args(commit, source_relative_to, source_pathspec);
+    let show_arg_refs = show_args.iter().map(|arg| arg.as_str()).collect::<Vec<_>>();
+    let show_output = run_git_command(source_repo, &show_arg_refs, "git show")?;
+
+    if !show_output.status.success() {
+        return Err(format!(
+            "git show failed while preparing patch for {commit}: {}",
+            String::from_utf8_lossy(&show_output.stderr)
+        ));
+    }
+
+    let mut am_command = std::process::Command::new("git");
+    am_command.arg("-C").arg(destination_repo).arg("am").arg("--3way");
+
+    if let Some(directory) = destination_directory {
+        am_command.arg(format!("--directory={directory}"));
+    }
+
+    let mut am_child = am_command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| {
+            if error.kind() == ErrorKind::NotFound {
+                "git command is unavailable on this system".to_string()
+            } else {
+                format!("failed to run git am: {error}")
+            }
+        })?;
+
+    if let Some(stdin) = am_child.stdin.as_mut() {
+        stdin
+            .write_all(&show_output.stdout)
+            .map_err(|error| format!("failed to write patch input to git am: {error}"))?;
+    }
+
+    let output = am_child
+        .wait_with_output()
+        .map_err(|error| format!("failed to read git am output: {error}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "git am failed for {commit}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    Ok(())
 }
 
 fn subtree_add_args(prefix: &str, remote: &str, branch: &str, squash: bool) -> Vec<String> {
@@ -1804,6 +2003,80 @@ pub fn execute_subtree_sync(
 }
 
 #[tauri::command]
+pub fn execute_patch_sync(
+    profile: SyncProfilePayload,
+    direction: String,
+) -> Result<(), String> {
+    if profile.mode != "patch" {
+        return Err("sync profile mode must be patch".to_string());
+    }
+
+    let primary_root = profile
+        .primary_path
+        .as_deref()
+        .filter(|path| !path.trim().is_empty())
+        .ok_or_else(|| "patch sync requires a primary path".to_string())?;
+    let project_root = profile.project_path.as_str();
+
+    if !is_git_repo(primary_root) {
+        return Err("patch sync primary path must be inside a git work tree".to_string());
+    }
+
+    if !is_git_repo(project_root) {
+        return Err("patch sync project path must be inside a git work tree".to_string());
+    }
+
+    let (source_repo, source_relative_to, source_pathspec, destination_repo, destination_directory) =
+        match direction.as_str() {
+            "from-primary" => (primary_root, None, None, project_root, Some("@acme")),
+            "to-primary" => (project_root, Some("@acme"), Some("@acme"), primary_root, None),
+            _ => return Err(format!("unsupported patch sync direction: {direction}")),
+        };
+
+    let source_dirty_paths = get_repo_dirty_paths(source_repo)?;
+    if !source_dirty_paths.is_empty() {
+        return Err(format!(
+            "refusing patch sync from dirty git repo: {}",
+            source_dirty_paths.join(", ")
+        ));
+    }
+
+    let destination_dirty_paths = get_repo_dirty_paths(destination_repo)?;
+    if !destination_dirty_paths.is_empty() {
+        return Err(format!(
+            "refusing patch sync with dirty git repo: {}",
+            destination_dirty_paths.join(", ")
+        ));
+    }
+
+    let destination_patch_ids = match direction.as_str() {
+        "from-primary" => collect_patch_ids(destination_repo, Some("@acme"), Some("@acme"))?,
+        "to-primary" => collect_patch_ids(destination_repo, None, None)?,
+        _ => unreachable!(),
+    };
+
+    let commits_to_apply = collect_unapplied_patch_commits(
+        source_repo,
+        source_relative_to,
+        source_pathspec,
+        &destination_patch_ids,
+    )?;
+
+    for commit in commits_to_apply {
+        apply_patch_commit(
+            source_repo,
+            &commit,
+            source_relative_to,
+            source_pathspec,
+            destination_repo,
+            destination_directory,
+        )?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
 pub fn execute_subtree_add(profile: SyncProfilePayload) -> Result<(), String> {
     let settings = validate_subtree_profile(&profile).map_err(|status| {
         status
@@ -1843,20 +2116,40 @@ pub fn delete_sync_file(root: String, relative_path: String) -> Result<(), Strin
         .map_err(|e| format!("failed to delete sync file {relative_path}: {e}"))
 }
 
+fn resolve_task_snapshot_path_from_app_data_dir(
+    app_data_dir: &Path,
+    file_path: &str,
+) -> Result<PathBuf, String> {
+    let requested_path = Path::new(file_path);
+    if requested_path.is_absolute() {
+        return Err("task snapshot path must be relative".to_string());
+    }
+
+    if requested_path
+        .components()
+        .any(|component| matches!(component, std::path::Component::ParentDir))
+    {
+        return Err("task snapshot path cannot contain parent traversal".to_string());
+    }
+
+    let resolved_path = app_data_dir.join(requested_path);
+    if !resolved_path.starts_with(app_data_dir) {
+        return Err("task snapshot path must stay within app data dir".to_string());
+    }
+
+    Ok(resolved_path)
+}
+
 fn resolve_task_snapshot_path<R: tauri::Runtime>(
     app_handle: &tauri::AppHandle<R>,
     file_path: &str,
 ) -> Result<PathBuf, String> {
-    if Path::new(file_path).is_absolute() {
-        return Err("task snapshot path must be relative".to_string());
-    }
-
     let app_data_dir = app_handle
         .path()
         .app_data_dir()
         .map_err(|error| format!("failed to resolve app data dir: {error}"))?;
 
-    Ok(app_data_dir.join(file_path))
+    resolve_task_snapshot_path_from_app_data_dir(&app_data_dir, file_path)
 }
 
 #[tauri::command]
@@ -1886,6 +2179,94 @@ pub fn write_task_snapshot<R: tauri::Runtime>(
 
     std::fs::write(&snapshot_path, contents)
         .map_err(|error| format!("failed to write task snapshot: {error}"))
+}
+
+#[tauri::command]
+pub fn read_scheduled_task_snapshot<R: tauri::Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    file_path: String,
+) -> Result<String, String> {
+    let snapshot_path = resolve_task_snapshot_path(&app_handle, &file_path)?;
+    std::fs::read_to_string(&snapshot_path).map_err(|error| match error.kind() {
+        ErrorKind::NotFound => "ENOENT: scheduled task snapshot not found".to_string(),
+        _ => format!("failed to read scheduled task snapshot: {error}"),
+    })
+}
+
+#[tauri::command]
+pub fn write_scheduled_task_snapshot<R: tauri::Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    file_path: String,
+    contents: String,
+) -> Result<(), String> {
+    let snapshot_path = resolve_task_snapshot_path(&app_handle, &file_path)?;
+
+    if let Some(parent) = snapshot_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| {
+            format!("failed to create scheduled task snapshot directory: {error}")
+        })?;
+    }
+
+    std::fs::write(&snapshot_path, contents)
+        .map_err(|error| format!("failed to write scheduled task snapshot: {error}"))
+}
+
+fn claude_scheduled_tasks_dir() -> Result<PathBuf, String> {
+    let home = dirs::home_dir().ok_or_else(|| "Could not determine home directory".to_string())?;
+    Ok(home.join(".claude").join("scheduled-tasks"))
+}
+
+fn validate_claude_scheduled_task_dir_name(task_dir_name: &str) -> Result<&str, String> {
+    if task_dir_name.is_empty()
+        || task_dir_name == "."
+        || task_dir_name == ".."
+        || task_dir_name.contains('/')
+        || task_dir_name.contains('\\')
+        || Path::new(task_dir_name)
+            .components()
+            .count()
+            != 1
+    {
+        return Err("invalid Claude scheduled task directory name".to_string());
+    }
+
+    Ok(task_dir_name)
+}
+
+#[tauri::command]
+pub fn list_claude_scheduled_task_files() -> Result<Vec<String>, String> {
+    let tasks_dir = claude_scheduled_tasks_dir()?;
+    if !tasks_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut task_dirs = std::fs::read_dir(&tasks_dir)
+        .map_err(|error| format!("failed to read Claude scheduled tasks directory: {error}"))?
+        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| {
+            let path = entry.path();
+            if !path.is_dir() || !path.join("SKILL.md").is_file() {
+                return None;
+            }
+
+            entry.file_name().into_string().ok()
+        })
+        .collect::<Vec<_>>();
+
+    task_dirs.sort();
+    Ok(task_dirs)
+}
+
+#[tauri::command]
+pub fn read_claude_scheduled_task_file(task_dir_name: String) -> Result<String, String> {
+    let task_dir_name = validate_claude_scheduled_task_dir_name(&task_dir_name)?;
+    let task_dir = claude_scheduled_tasks_dir()?.join(task_dir_name);
+    let file_path = task_dir.join("SKILL.md");
+
+    std::fs::read_to_string(&file_path).map_err(|error| match error.kind() {
+        ErrorKind::NotFound => "ENOENT: Claude scheduled task file not found".to_string(),
+        _ => format!("failed to read Claude scheduled task file: {error}"),
+    })
 }
 
 #[tauri::command]
@@ -2192,6 +2573,7 @@ mod tests {
         build_sync_conflict_detail,
         classify_conflict_kind,
         classify_preview_conflict,
+        execute_patch_sync,
         execute_rsync_conflict_resolutions,
         get_dirty_acme_paths,
         get_latest_modified,
@@ -2208,10 +2590,12 @@ mod tests {
         preview_acme_rsync_args,
         preview_sync_changes,
         resolve_diff_targets,
+        resolve_task_snapshot_path_from_app_data_dir,
         run_unified_diff,
         subtree_apply_args,
         subtree_add_args,
         execute_subtree_add,
+        validate_claude_scheduled_task_dir_name,
         validate_relative_preview_path,
         write_codex_managed_settings,
         DiffTarget,
@@ -2226,6 +2610,24 @@ mod tests {
         SyncPreviewConflict,
         SubtreeSyncSettingsPayload,
     };
+
+    #[test]
+    fn validate_claude_scheduled_task_dir_name_accepts_single_directory_name() {
+        let validated = validate_claude_scheduled_task_dir_name("daily-review")
+            .expect("single task directory name should be accepted");
+
+        assert_eq!(validated, "daily-review");
+    }
+
+    #[test]
+    fn validate_claude_scheduled_task_dir_name_rejects_traversal_and_separators() {
+        for invalid in ["", ".", "..", "nested/task", "nested\\task", "../escape"] {
+            assert!(
+                validate_claude_scheduled_task_dir_name(invalid).is_err(),
+                "{invalid:?} should be rejected"
+            );
+        }
+    }
 
     #[test]
     fn claude_permissions_with_denies_map_to_untrusted_workspace_write() {
@@ -3114,6 +3516,70 @@ mod tests {
     }
 
     #[test]
+    fn resolve_task_snapshot_path_rejects_parent_traversal() {
+        let app_data_dir = std::env::temp_dir().join(format!(
+            "atelier-task-snapshot-parent-traversal-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time should be after unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&app_data_dir).expect("app data dir should be created");
+
+        let error = resolve_task_snapshot_path_from_app_data_dir(&app_data_dir, "../outside.json")
+            .expect_err("parent traversal should be rejected");
+
+        let _ = std::fs::remove_dir_all(&app_data_dir);
+
+        assert!(error.contains("cannot contain parent traversal"));
+    }
+
+    #[test]
+    fn resolve_task_snapshot_path_rejects_paths_that_escape_app_data_dir() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "atelier-task-snapshot-escape-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time should be after unix epoch")
+                .as_nanos()
+        ));
+        let app_data_dir = temp_root.join("app-data");
+        std::fs::create_dir_all(&app_data_dir).expect("app data dir should be created");
+
+        let error = resolve_task_snapshot_path_from_app_data_dir(&app_data_dir, "snapshots/../../outside.json")
+            .expect_err("escaping path should be rejected");
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+
+        assert!(error.contains("cannot contain parent traversal"));
+    }
+
+    #[test]
+    fn resolve_task_snapshot_path_accepts_nested_relative_paths_inside_app_data_dir() {
+        let app_data_dir = std::env::temp_dir().join(format!(
+            "atelier-task-snapshot-relative-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time should be after unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&app_data_dir).expect("app data dir should be created");
+
+        let resolved = resolve_task_snapshot_path_from_app_data_dir(
+            &app_data_dir,
+            "snapshots/task-1/state.json",
+        )
+        .expect("nested relative path should be accepted");
+
+        let _ = std::fs::remove_dir_all(&app_data_dir);
+
+        assert_eq!(resolved, app_data_dir.join("snapshots/task-1/state.json"));
+    }
+
+    #[test]
     fn acme_gitignore_matcher_ignores_cache_dirs_via_parent_match() {
         let acme_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../@acme");
         let matcher =
@@ -3824,6 +4290,191 @@ mod tests {
                 squash,
             }),
         }
+    }
+
+    fn create_patch_sync_fixture(name: &str) -> (PathBuf, PathBuf, PathBuf) {
+        let temp_root = std::env::temp_dir().join(format!(
+            "{}-{}-{}",
+            name,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time should be after unix epoch")
+                .as_nanos()
+        ));
+        let primary_root = temp_root.join("primary");
+        let project_root = temp_root.join("project");
+
+        std::fs::create_dir_all(&primary_root).expect("primary root should be created");
+        std::fs::create_dir_all(project_root.join("@acme")).expect("project @acme dir should be created");
+
+        git_status_success(&primary_root, &["init", "-b", "main"]);
+        git_status_success(&project_root, &["init", "-b", "main"]);
+
+        std::fs::write(primary_root.join("package.json"), b"{}\n")
+            .expect("primary package file should be written");
+        std::fs::write(primary_root.join("button.tsx"), b"export const Button = 1;\n")
+            .expect("primary button file should be written");
+        git_status_success(&primary_root, &["add", "."]);
+        git_status_success(
+            &primary_root,
+            &[
+                "-c",
+                "user.name=Atelier Test",
+                "-c",
+                "user.email=atelier@example.com",
+                "commit",
+                "-m",
+                "initial primary commit",
+            ],
+        );
+
+        std::fs::write(project_root.join("README.md"), b"# project\n")
+            .expect("project readme should be written");
+        std::fs::write(project_root.join("@acme/button.tsx"), b"export const Button = 1;\n")
+            .expect("project button file should be written");
+        git_status_success(&project_root, &["add", "."]);
+        git_status_success(
+            &project_root,
+            &[
+                "-c",
+                "user.name=Atelier Test",
+                "-c",
+                "user.email=atelier@example.com",
+                "commit",
+                "-m",
+                "initial project commit",
+            ],
+        );
+
+        (temp_root, primary_root, project_root)
+    }
+
+    fn patch_fixture_profile(project_root: &Path, primary_root: &Path) -> SyncProfilePayload {
+        SyncProfilePayload {
+            id: "patch-profile-1".to_string(),
+            project_path: project_root.to_string_lossy().into_owned(),
+            mode: "patch".to_string(),
+            primary_path: Some(primary_root.to_string_lossy().into_owned()),
+            subtree: None,
+        }
+    }
+
+    #[test]
+    fn execute_patch_sync_applies_primary_commits_into_project_acme() {
+        let (temp_root, primary_root, project_root) =
+            create_patch_sync_fixture("atelier-patch-sync-pull");
+        std::fs::write(primary_root.join("button.tsx"), b"export const Button = 2;\n")
+            .expect("updated primary file should be written");
+        git_status_success(&primary_root, &["add", "button.tsx"]);
+        git_status_success(
+            &primary_root,
+            &[
+                "-c",
+                "user.name=Atelier Test",
+                "-c",
+                "user.email=atelier@example.com",
+                "commit",
+                "-m",
+                "primary update",
+            ],
+        );
+
+        let result = execute_patch_sync(
+            patch_fixture_profile(&project_root, &primary_root),
+            "from-primary".to_string(),
+        );
+        let synced_contents = std::fs::read_to_string(project_root.join("@acme/button.tsx"))
+            .expect("project button file should be readable after patch sync");
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+
+        result.expect("patch pull should succeed");
+        assert!(synced_contents.contains("Button = 2"));
+    }
+
+    #[test]
+    fn execute_patch_sync_applies_project_acme_commits_back_into_primary() {
+        let (temp_root, primary_root, project_root) =
+            create_patch_sync_fixture("atelier-patch-sync-push");
+        std::fs::write(project_root.join("@acme/button.tsx"), b"export const Button = 3;\n")
+            .expect("updated project file should be written");
+        git_status_success(&project_root, &["add", "@acme/button.tsx"]);
+        git_status_success(
+            &project_root,
+            &[
+                "-c",
+                "user.name=Atelier Test",
+                "-c",
+                "user.email=atelier@example.com",
+                "commit",
+                "-m",
+                "project update",
+            ],
+        );
+
+        let result = execute_patch_sync(
+            patch_fixture_profile(&project_root, &primary_root),
+            "to-primary".to_string(),
+        );
+        let synced_contents = std::fs::read_to_string(primary_root.join("button.tsx"))
+            .expect("primary button file should be readable after patch sync");
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+
+        result.expect("patch push should succeed");
+        assert!(synced_contents.contains("Button = 3"));
+    }
+
+    #[test]
+    fn execute_patch_sync_rejects_dirty_destination_repo() {
+        let (temp_root, primary_root, project_root) =
+            create_patch_sync_fixture("atelier-patch-sync-dirty-dest");
+        std::fs::write(primary_root.join("button.tsx"), b"export const Button = 2;\n")
+            .expect("updated primary file should be written");
+        git_status_success(&primary_root, &["add", "button.tsx"]);
+        git_status_success(
+            &primary_root,
+            &[
+                "-c",
+                "user.name=Atelier Test",
+                "-c",
+                "user.email=atelier@example.com",
+                "commit",
+                "-m",
+                "primary update",
+            ],
+        );
+        std::fs::write(project_root.join("draft.txt"), b"dirty\n")
+            .expect("dirty project file should be written");
+
+        let error = execute_patch_sync(
+            patch_fixture_profile(&project_root, &primary_root),
+            "from-primary".to_string(),
+        )
+        .expect_err("dirty destination should be rejected");
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+
+        assert!(error.contains("refusing patch sync with dirty git repo"));
+    }
+
+    #[test]
+    fn execute_patch_sync_rejects_dirty_source_repo() {
+        let (temp_root, primary_root, project_root) =
+            create_patch_sync_fixture("atelier-patch-sync-dirty-source");
+        std::fs::write(project_root.join("@acme/button.tsx"), b"export const Button = 4;\n")
+            .expect("dirty source file should be written");
+
+        let error = execute_patch_sync(
+            patch_fixture_profile(&project_root, &primary_root),
+            "to-primary".to_string(),
+        )
+        .expect_err("dirty source should be rejected");
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+
+        assert!(error.contains("refusing patch sync from dirty git repo"));
     }
 
     #[test]

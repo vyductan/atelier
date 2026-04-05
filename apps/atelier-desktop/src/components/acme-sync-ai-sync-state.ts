@@ -5,7 +5,7 @@ import type {
 } from "../lib/types.ts";
 import { getSubtreeHistoryFallbackMessage } from "./acme-sync-wording.ts";
 
-export type AiSyncMode = "rsync" | "subtree";
+export type AiSyncMode = "rsync" | "subtree" | "patch";
 
 const formatPreviewSummary = (summary?: SyncPreviewResult["summary"]) =>
   summary
@@ -25,16 +25,18 @@ export const resolveAiSyncPreview = (
   return { pushPreview, pullPreview };
 };
 
-export const buildRsyncAiSyncPrompt = ({
+const buildBidirectionalAiSyncPrompt = ({
   mainPath,
   projectPath,
   pushPreview,
   pullPreview,
+  engineLabel,
 }: {
   mainPath: string;
   projectPath: string;
   pushPreview?: SyncPreviewResult;
   pullPreview?: SyncPreviewResult;
+  engineLabel: string;
 }) => {
   const resolved = resolveAiSyncPreview(pushPreview, pullPreview);
 
@@ -44,7 +46,7 @@ Context:
 - Primary workspace: ${mainPath}
 - Target project: ${projectPath}
 - Scope: @acme/
-- Sync engine in app: one-way rsync (not git merge)
+- Sync engine in app: ${engineLabel}
 
 Current preview:
 - Push (project -> primary): ${formatPreviewSummary(resolved.pushPreview.summary)}
@@ -55,6 +57,44 @@ Current preview:
     prompt,
   };
 };
+
+export const buildRsyncAiSyncPrompt = ({
+  mainPath,
+  projectPath,
+  pushPreview,
+  pullPreview,
+}: {
+  mainPath: string;
+  projectPath: string;
+  pushPreview?: SyncPreviewResult;
+  pullPreview?: SyncPreviewResult;
+}) =>
+  buildBidirectionalAiSyncPrompt({
+    mainPath,
+    projectPath,
+    pushPreview,
+    pullPreview,
+    engineLabel: "one-way rsync (not git merge)",
+  });
+
+export const buildPatchAiSyncPrompt = ({
+  mainPath,
+  projectPath,
+  pushPreview,
+  pullPreview,
+}: {
+  mainPath: string;
+  projectPath: string;
+  pushPreview?: SyncPreviewResult;
+  pullPreview?: SyncPreviewResult;
+}) =>
+  buildBidirectionalAiSyncPrompt({
+    mainPath,
+    projectPath,
+    pushPreview,
+    pullPreview,
+    engineLabel: "git patch series + git am --3way",
+  });
 
 export const getAiSyncModalDescription = (mode: AiSyncMode) =>
   mode === "subtree"
