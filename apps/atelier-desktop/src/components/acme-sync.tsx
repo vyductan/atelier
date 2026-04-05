@@ -22,15 +22,19 @@ import type {
   SyncProfile,
   SyncStatusResult,
 } from "../lib/types";
-import type { ScheduledTaskFormInput } from "./scheduled-task-form";
 import type { AiSyncMode } from "./acme-sync-ai-sync-state";
 import type { LastModifiedEntry } from "./acme-sync-error-state";
 import type {
   PreviewModalState,
   SubtreePreviewModalState,
 } from "./acme-sync-preview-modal-state";
+import type { ScheduledTaskFormInput } from "./scheduled-task-form";
 import { AcmeSyncRsyncPreviewModal } from "../features/acme-sync/acme-sync-rsync-preview-modal";
 import { AcmeSyncSubtreePreviewModal } from "../features/acme-sync/acme-sync-subtree-preview-modal";
+import {
+  buildScheduledSyncTaskDraft,
+  parseSyncStrategyMarkdown,
+} from "../lib/scheduled-task-sync-strategy";
 import {
   deleteSyncFile,
   executeSubtreeAdd,
@@ -42,6 +46,7 @@ import {
   previewSyncChanges,
   previewSyncFileDiff,
 } from "../lib/tauri";
+import { getWorkspaceFileContent } from "../lib/workspace";
 import { useAcmeStore } from "../store/acme-store";
 import { useToastStore } from "../store/toast-store";
 import { shouldReuseAiSyncCachedPreview } from "./acme-sync-ai-preview-state";
@@ -52,11 +57,6 @@ import {
   getAiSyncModalDescription,
   getAiSyncStepLabels,
 } from "./acme-sync-ai-sync-state";
-import {
-  buildScheduledSyncTaskDraft,
-  parseSyncStrategyMarkdown,
-} from "../lib/scheduled-task-sync-strategy";
-import { getWorkspaceFileContent } from "../lib/workspace";
 import {
   getConfirmDeleteWarningMessage,
   getConfirmLoadingMessage,
@@ -245,7 +245,9 @@ const getPrimaryRemoteDetail = (status?: PrimaryRemoteStatus) => {
   return details.join(" • ");
 };
 
-export function AcmeSync({ onCreateScheduledSyncTask }: AcmeSyncProps = {}): JSX.Element {
+export function AcmeSync({
+  onCreateScheduledSyncTask,
+}: AcmeSyncProps = {}): JSX.Element {
   const {
     primaryPath,
     profiles,
@@ -1376,7 +1378,11 @@ export function AcmeSync({ onCreateScheduledSyncTask }: AcmeSyncProps = {}): JSX
       for (const fileName of strategyFiles) {
         const strategyFile = await getWorkspaceFileContent(mainPath, fileName);
 
-        if (!strategyFile.exists || strategyFile.isBinary || strategyFile.tooLarge) {
+        if (
+          !strategyFile.exists ||
+          strategyFile.isBinary ||
+          strategyFile.tooLarge
+        ) {
           continue;
         }
 
@@ -1659,12 +1665,12 @@ export function AcmeSync({ onCreateScheduledSyncTask }: AcmeSyncProps = {}): JSX
                           {projectPath}
                         </div>
                         <div className="text-muted-foreground mt-1 mb-2 flex items-center gap-2 text-xs">
-                          {profile.mode !== "subtree" ? (
+                          {profile.mode === "subtree" ? null : (
                             <span>
                               Updated:{" "}
                               {lastModified[projectPath]?.display || "..."}
                             </span>
-                          ) : null}
+                          )}
                           <span className="bg-muted rounded-sm px-1.5 py-0.5 text-[10px] font-semibold tracking-wider uppercase">
                             {profile.mode === "subtree"
                               ? "SUBTREE"
@@ -1989,7 +1995,7 @@ export function AcmeSync({ onCreateScheduledSyncTask }: AcmeSyncProps = {}): JSX
                               >
                                 {getPreviewButtonLabel(profile, "pull")}
                               </button>
-                              {profile.mode !== "subtree" ? (
+                              {profile.mode === "subtree" ? null : (
                                 <button
                                   onClick={() =>
                                     loadPreviewForAction(profile, "push")
@@ -2005,7 +2011,7 @@ export function AcmeSync({ onCreateScheduledSyncTask }: AcmeSyncProps = {}): JSX
                                 >
                                   {getPreviewButtonLabel(profile, "push")}
                                 </button>
-                              ) : null}
+                              )}
                             </>
                           );
                         })()}

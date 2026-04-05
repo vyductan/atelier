@@ -82,9 +82,14 @@ vi.mock("@acme/ui/components/button", () => ({
   ),
 }));
 
-vi.mock("@acme/ui/components/input", () => ({
-  Input: (props: ComponentPropsWithoutRef<"input">) => <input {...props} />,
-}));
+vi.mock("@acme/ui/components/input", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@acme/ui/components/input")>();
+
+  return {
+    ...actual,
+    Input: (props: ComponentPropsWithoutRef<"input">) => <input {...props} />,
+  };
+});
 
 vi.mock("@acme/ui/components/badge", () => ({
   Badge: ({

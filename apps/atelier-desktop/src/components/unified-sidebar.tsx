@@ -16,9 +16,11 @@ interface UnifiedSidebarProps {
   onSearchQueryChange: (value: string) => void;
   renamingSessionId: string | null;
   selectedTaskId: string | null;
+  selectedWorkspaceId: string | null;
   onAddGeneralWorkspace: () => void;
   onAddWorkspace: () => void;
   onToggleWorkspace: (workspacePath: string) => void;
+  onSelectWorkspace: (workspacePath: string) => void;
   onCreateSession: (workspacePath: string) => void;
   onSelectTask: (taskId: string) => void;
   onSelectSession: (sessionId: string) => void;
@@ -39,9 +41,11 @@ export function UnifiedSidebar({
   onSearchQueryChange,
   renamingSessionId,
   selectedTaskId,
+  selectedWorkspaceId,
   onAddGeneralWorkspace,
   onAddWorkspace,
   onToggleWorkspace,
+  onSelectWorkspace,
   onCreateSession,
   onSelectTask,
   onSelectSession,
@@ -131,7 +135,9 @@ export function UnifiedSidebar({
                 sessionsById={sessionsById}
                 renamingSessionId={renamingSessionId}
                 selectedTaskId={selectedTaskId}
+                selectedWorkspaceId={selectedWorkspaceId}
                 onToggleExpanded={onToggleWorkspace}
+                onSelectWorkspace={onSelectWorkspace}
                 onCreateSession={onCreateSession}
                 onSelectTask={onSelectTask}
                 onSelectSession={onSelectSession}
