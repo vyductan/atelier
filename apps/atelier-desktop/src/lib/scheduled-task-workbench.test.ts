@@ -474,6 +474,135 @@ describe("scheduledTaskWorkbench", () => {
     ]);
   });
 
+  it("updates editable scheduled task fields while preserving runtime scheduler state", async () => {
+    const persistence: ScheduledTaskPersistence = {
+      load: vi.fn(async () => ({ tasks: [], runs: [] })),
+      save: vi.fn(async () => {
+        return;
+      }),
+    };
+    const runner = {
+      startScheduledRun: vi.fn(async () => ({
+        linkedSessionId: "session-123",
+        linkedTaskId: "task-456",
+        status: "running" as const,
+      })),
+    };
+
+    const workbench = await createScheduledTaskWorkbench({
+      persistence,
+      runner,
+      now: () => "2026-04-05T09:00:00.000Z",
+      createId: () => "sched-1",
+      createRunId: () => "run-1",
+    });
+
+    const task = await workbench.createScheduledTask(createTaskInput());
+    await workbench.runNow(task.id);
+
+    const updatedTask = await workbench.updateScheduledTask(task.id, {
+      name: "Edited name",
+      description: "Edited description",
+      workspacePath: "/tmp/updated-workspace",
+      prompt: "Edited prompt",
+      worktreeEnabled: false,
+      frequency: "daily",
+      cron: "0 10 * * *",
+    });
+
+    expect(updatedTask).toEqual(
+      expect.objectContaining({
+        id: "sched-1",
+        name: "Edited name",
+        description: "Edited description",
+        workspacePath: "/tmp/updated-workspace",
+        prompt: "Edited prompt",
+        worktree: { enabled: false },
+        schedule: expect.objectContaining({
+          type: "daily",
+          cron: "0 10 * * *",
+          timezone: "Asia/Ho_Chi_Minh",
+          enabled: true,
+          jitterMinutes: 10,
+        }),
+        engineState: "running",
+        lastStartedAt: "2026-04-05T09:00:00.000Z",
+      }),
+    );
+    expect(persistence.save).toHaveBeenLastCalledWith({
+      tasks: [
+        expect.objectContaining({
+          id: "sched-1",
+          name: "Edited name",
+          prompt: "Edited prompt",
+          engineState: "running",
+        }),
+      ],
+      runs: [expect.objectContaining({ runId: "run-1", status: "running" })],
+    });
+  });
+
+  it("rolls back scheduled task edits when persistence fails", async () => {
+    const persistenceError = new Error("Edit save failed");
+    const persistence: ScheduledTaskPersistence = {
+      load: vi.fn(async () => ({ tasks: [], runs: [] })),
+      save: vi
+        .fn<
+          (input: {
+            tasks: Parameters<ScheduledTaskPersistence["save"]>[0]["tasks"];
+            runs: Parameters<ScheduledTaskPersistence["save"]>[0]["runs"];
+          }) => Promise<void>
+        >()
+        .mockImplementationOnce(async () => {
+          return;
+        })
+        .mockImplementationOnce(async () => {
+          throw persistenceError;
+        }),
+    };
+    const runner = {
+      startScheduledRun: vi.fn(async () => ({
+        linkedSessionId: "session-123",
+        linkedTaskId: "task-456",
+        status: "running" as const,
+      })),
+    };
+
+    const workbench = await createScheduledTaskWorkbench({
+      persistence,
+      runner,
+      now: () => "2026-04-05T09:00:00.000Z",
+      createId: () => "sched-1",
+      createRunId: () => "run-1",
+    });
+
+    const task = await workbench.createScheduledTask(createTaskInput());
+
+    await expect(
+      workbench.updateScheduledTask(task.id, {
+        name: "Edited name",
+        description: "Edited description",
+        workspacePath: "/tmp/updated-workspace",
+        prompt: "Edited prompt",
+        worktreeEnabled: false,
+        frequency: "daily",
+        cron: "0 10 * * *",
+      }),
+    ).rejects.toThrow("Edit save failed");
+
+    expect(workbench.getScheduledTask(task.id)).toEqual(
+      expect.objectContaining({
+        id: "sched-1",
+        name: "daily-review",
+        description: "Review today's commits",
+        workspacePath: "/tmp/workspace",
+        prompt: "Review today's commits",
+        worktree: { enabled: true },
+        schedule: expect.objectContaining({ cron: "0 9 * * *" }),
+      }),
+    );
+  });
+
   it("reconciles a linked active run when the underlying task reaches a terminal state", async () => {
     const persistence: ScheduledTaskPersistence = {
       load: vi.fn(async () => ({ tasks: [], runs: [] })),
