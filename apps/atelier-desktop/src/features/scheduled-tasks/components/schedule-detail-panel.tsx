@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import type {
   ScheduledTaskDefinition,
   ScheduledTaskRunRecord,
-} from "../lib/scheduled-tasks";
+} from "../domain/scheduled-tasks";
 import type { ScheduledTaskFormInput } from "./scheduled-task-form";
 import { ScheduledTaskForm } from "./scheduled-task-form";
 
@@ -12,9 +12,56 @@ interface ScheduleDetailPanelProps {
   runs: ScheduledTaskRunRecord[];
   errorMessage?: string | null;
   createDraft?: ScheduledTaskFormInput | null;
+  isEditing?: boolean;
   onCreateTask: (input: ScheduledTaskFormInput) => Promise<void>;
+  onEditTask?: (input: ScheduledTaskFormInput) => Promise<void>;
+  onRegenerateTemplate?: (
+    input: ScheduledTaskFormInput,
+  ) => Promise<ScheduledTaskFormInput>;
   onCancelCreate?: () => void;
+  onStartEdit?: () => void;
+  onCancelEdit?: () => void;
   onRunNow?: (taskId: string) => void;
+}
+
+interface ScheduledTaskEditorProps {
+  errorMessage?: string | null;
+  mode: "create" | "edit";
+  initialValue: ScheduledTaskDefinition | null;
+  draftValue?: ScheduledTaskFormInput | null;
+  onSubmit: (input: ScheduledTaskFormInput) => Promise<void>;
+  onRegenerateTemplate?: (
+    input: ScheduledTaskFormInput,
+  ) => Promise<ScheduledTaskFormInput>;
+  onCancel: () => void;
+}
+
+function ScheduledTaskEditor({
+  errorMessage,
+  mode,
+  initialValue,
+  draftValue,
+  onSubmit,
+  onRegenerateTemplate,
+  onCancel,
+}: ScheduledTaskEditorProps): JSX.Element {
+  return (
+    <section className="flex min-h-0 flex-1 flex-col px-6 py-8">
+      {errorMessage ? (
+        <p className="text-destructive mb-4 text-sm" role="alert">
+          {errorMessage}
+        </p>
+      ) : null}
+      <ScheduledTaskForm
+        mode={mode}
+        initialValue={initialValue}
+        draftValue={draftValue ?? null}
+        onSubmit={onSubmit}
+        onRegenerateTemplate={onRegenerateTemplate}
+        onCancel={onCancel}
+      />
+    </section>
+  );
 }
 
 export function ScheduleDetailPanel({
@@ -22,26 +69,39 @@ export function ScheduleDetailPanel({
   runs,
   errorMessage,
   createDraft,
+  isEditing = false,
   onCreateTask,
+  onEditTask,
+  onRegenerateTemplate,
   onCancelCreate,
+  onStartEdit,
+  onCancelEdit,
   onRunNow,
 }: ScheduleDetailPanelProps): JSX.Element {
   if (!task) {
     return (
-      <section className="flex min-h-0 flex-1 flex-col px-6 py-8">
-        {errorMessage ? (
-          <p className="text-destructive mb-4 text-sm" role="alert">
-            {errorMessage}
-          </p>
-        ) : null}
-        <ScheduledTaskForm
-          mode="create"
-          initialValue={null}
-          draftValue={createDraft ?? null}
-          onSubmit={onCreateTask}
-          onCancel={onCancelCreate ?? (() => {})}
-        />
-      </section>
+      <ScheduledTaskEditor
+        errorMessage={errorMessage}
+        mode="create"
+        initialValue={null}
+        draftValue={createDraft ?? null}
+        onSubmit={onCreateTask}
+        onRegenerateTemplate={onRegenerateTemplate}
+        onCancel={onCancelCreate ?? (() => {})}
+      />
+    );
+  }
+
+  if (isEditing) {
+    return (
+      <ScheduledTaskEditor
+        errorMessage={errorMessage}
+        mode="edit"
+        initialValue={task}
+        onSubmit={onEditTask ?? onCreateTask}
+        onRegenerateTemplate={onRegenerateTemplate}
+        onCancel={onCancelEdit ?? (() => {})}
+      />
     );
   }
 
@@ -57,11 +117,18 @@ export function ScheduleDetailPanel({
             {task.schedule.type} • {task.schedule.cron ?? "No cron configured"}
           </p>
         </div>
-        {onRunNow ? (
-          <button type="button" className="text-sm font-medium" onClick={() => onRunNow(task.id)}>
-            Run now
-          </button>
-        ) : null}
+        <div className="flex items-center gap-3">
+          {onStartEdit ? (
+            <button type="button" className="text-sm font-medium" onClick={onStartEdit}>
+              Edit
+            </button>
+          ) : null}
+          {onRunNow ? (
+            <button type="button" className="text-sm font-medium" onClick={() => onRunNow(task.id)}>
+              Run now
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <div className="space-y-4 py-4 text-sm">

@@ -21,7 +21,7 @@ describe("scheduledTaskImport", () => {
     });
   });
 
-  it("falls back to the task directory name when frontmatter omits a name", () => {
+  it("falls back to the task directory name when no frontmatter name is present", () => {
     const parsed = parseClaudeScheduledTaskSkillFile({
       taskDirName: "weekly-cleanup",
       workspacePath: "/tmp/workspace",
@@ -66,5 +66,19 @@ describe("scheduledTaskImport", () => {
     expect(parsed.prompt).toBe(
       "\n    Keep this indentation.\n  Keep this leading space.\n",
     );
+  });
+
+  it("strips YAML quotes from frontmatter scalar values", () => {
+    const parsed = parseClaudeScheduledTaskSkillFile({
+      taskDirName: "quoted-task",
+      workspacePath: "/tmp/workspace",
+      skillMarkdown:
+        "---\nname: \"daily-review\"\ndescription: 'Review today'\n---\nRun daily",
+    });
+
+    expect(parsed).toMatchObject({
+      name: "daily-review",
+      description: "Review today",
+    });
   });
 });

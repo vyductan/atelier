@@ -2181,93 +2181,6 @@ pub fn write_task_snapshot<R: tauri::Runtime>(
         .map_err(|error| format!("failed to write task snapshot: {error}"))
 }
 
-#[tauri::command]
-pub fn read_scheduled_task_snapshot<R: tauri::Runtime>(
-    app_handle: tauri::AppHandle<R>,
-    file_path: String,
-) -> Result<String, String> {
-    let snapshot_path = resolve_task_snapshot_path(&app_handle, &file_path)?;
-    std::fs::read_to_string(&snapshot_path).map_err(|error| match error.kind() {
-        ErrorKind::NotFound => "ENOENT: scheduled task snapshot not found".to_string(),
-        _ => format!("failed to read scheduled task snapshot: {error}"),
-    })
-}
-
-#[tauri::command]
-pub fn write_scheduled_task_snapshot<R: tauri::Runtime>(
-    app_handle: tauri::AppHandle<R>,
-    file_path: String,
-    contents: String,
-) -> Result<(), String> {
-    let snapshot_path = resolve_task_snapshot_path(&app_handle, &file_path)?;
-
-    if let Some(parent) = snapshot_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|error| {
-            format!("failed to create scheduled task snapshot directory: {error}")
-        })?;
-    }
-
-    std::fs::write(&snapshot_path, contents)
-        .map_err(|error| format!("failed to write scheduled task snapshot: {error}"))
-}
-
-fn claude_scheduled_tasks_dir() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or_else(|| "Could not determine home directory".to_string())?;
-    Ok(home.join(".claude").join("scheduled-tasks"))
-}
-
-fn validate_claude_scheduled_task_dir_name(task_dir_name: &str) -> Result<&str, String> {
-    if task_dir_name.is_empty()
-        || task_dir_name == "."
-        || task_dir_name == ".."
-        || task_dir_name.contains('/')
-        || task_dir_name.contains('\\')
-        || Path::new(task_dir_name)
-            .components()
-            .count()
-            != 1
-    {
-        return Err("invalid Claude scheduled task directory name".to_string());
-    }
-
-    Ok(task_dir_name)
-}
-
-#[tauri::command]
-pub fn list_claude_scheduled_task_files() -> Result<Vec<String>, String> {
-    let tasks_dir = claude_scheduled_tasks_dir()?;
-    if !tasks_dir.exists() {
-        return Ok(Vec::new());
-    }
-
-    let mut task_dirs = std::fs::read_dir(&tasks_dir)
-        .map_err(|error| format!("failed to read Claude scheduled tasks directory: {error}"))?
-        .filter_map(|entry| entry.ok())
-        .filter_map(|entry| {
-            let path = entry.path();
-            if !path.is_dir() || !path.join("SKILL.md").is_file() {
-                return None;
-            }
-
-            entry.file_name().into_string().ok()
-        })
-        .collect::<Vec<_>>();
-
-    task_dirs.sort();
-    Ok(task_dirs)
-}
-
-#[tauri::command]
-pub fn read_claude_scheduled_task_file(task_dir_name: String) -> Result<String, String> {
-    let task_dir_name = validate_claude_scheduled_task_dir_name(&task_dir_name)?;
-    let task_dir = claude_scheduled_tasks_dir()?.join(task_dir_name);
-    let file_path = task_dir.join("SKILL.md");
-
-    std::fs::read_to_string(&file_path).map_err(|error| match error.kind() {
-        ErrorKind::NotFound => "ENOENT: Claude scheduled task file not found".to_string(),
-        _ => format!("failed to read Claude scheduled task file: {error}"),
-    })
-}
 
 #[tauri::command]
 pub async fn read_global_claude_config() -> Result<String, String> {
@@ -2595,7 +2508,6 @@ mod tests {
         subtree_apply_args,
         subtree_add_args,
         execute_subtree_add,
-        validate_claude_scheduled_task_dir_name,
         validate_relative_preview_path,
         write_codex_managed_settings,
         DiffTarget,
@@ -2610,24 +2522,6 @@ mod tests {
         SyncPreviewConflict,
         SubtreeSyncSettingsPayload,
     };
-
-    #[test]
-    fn validate_claude_scheduled_task_dir_name_accepts_single_directory_name() {
-        let validated = validate_claude_scheduled_task_dir_name("daily-review")
-            .expect("single task directory name should be accepted");
-
-        assert_eq!(validated, "daily-review");
-    }
-
-    #[test]
-    fn validate_claude_scheduled_task_dir_name_rejects_traversal_and_separators() {
-        for invalid in ["", ".", "..", "nested/task", "nested\\task", "../escape"] {
-            assert!(
-                validate_claude_scheduled_task_dir_name(invalid).is_err(),
-                "{invalid:?} should be rejected"
-            );
-        }
-    }
 
     #[test]
     fn claude_permissions_with_denies_map_to_untrusted_workspace_write() {

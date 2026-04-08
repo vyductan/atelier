@@ -1,7 +1,7 @@
 import type { JSX } from "react";
 
-import type { ScheduledTaskDefinition } from "../lib/scheduled-tasks";
-import { ScheduleListItem } from "./schedule-list-item";
+import type { ScheduledTaskDefinition } from "../domain/scheduled-tasks";
+import { ScheduleListItem } from "~/components/schedule-list-item";
 
 interface ScheduleSidebarProps {
   tasks: ScheduledTaskDefinition[];

@@ -2,23 +2,35 @@ import {
   buildCandidateSlots,
   findMostRecentMissedSlot,
   hasActiveRunForTask,
-} from "./scheduled-task-engine";
-import { createScheduledTaskStore } from "./scheduled-task-store";
+} from "../domain/scheduled-task-engine";
+import { createScheduledTaskStore } from "../model/scheduled-task-store";
 import type { ScheduledTaskRunner } from "./scheduled-task-runner";
 import type {
   ScheduledTaskDefinition,
   ScheduledTaskRunRecord,
-} from "./scheduled-tasks";
+} from "../domain/scheduled-tasks";
 
 interface CreateScheduledTaskInput {
   name: string;
   description: string;
   workspacePath: string;
   prompt: string;
+  template?: ScheduledTaskDefinition["template"];
   model: string;
   permissionMode: ScheduledTaskDefinition["permissionMode"];
   worktree: ScheduledTaskDefinition["worktree"];
   schedule: ScheduledTaskDefinition["schedule"];
+}
+
+export interface UpdateScheduledTaskInput {
+  name: string;
+  description: string;
+  workspacePath: string;
+  prompt: string;
+  template?: ScheduledTaskDefinition["template"];
+  frequency: ScheduledTaskDefinition["schedule"]["type"];
+  cron: string | null;
+  worktreeEnabled: boolean;
 }
 
 export interface ScheduledTaskPersistence {
@@ -61,6 +73,10 @@ export interface ScheduledTaskWorkbench {
   createScheduledTask: (
     input: CreateScheduledTaskInput,
   ) => Promise<ScheduledTaskDefinition>;
+  updateScheduledTask: (
+    taskId: string,
+    input: UpdateScheduledTaskInput,
+  ) => Promise<ScheduledTaskDefinition>;
   getScheduledTask: (taskId: string) => ScheduledTaskDefinition | null;
   listScheduledTasks: () => ScheduledTaskDefinition[];
   listScheduledRuns: () => ScheduledTaskRunRecord[];
@@ -71,6 +87,28 @@ export interface ScheduledTaskWorkbench {
   }) => Promise<ScheduledTaskRunRecord | null>;
   runNow: (taskId: string) => Promise<ScheduledTaskRunRecord>;
   tick: (input: { now: string }) => Promise<ScheduledTaskRunRecord[]>;
+}
+
+function mapRunStatusToTaskEngineState(
+  status: ScheduledTaskRunRecord["status"],
+): ScheduledTaskDefinition["engineState"] {
+  if (status === "running") {
+    return "running";
+  }
+
+  if (status === "stalled_for_permission") {
+    return "stalled";
+  }
+
+  return "idle";
+}
+
+function throwOriginalErrorWithCause(error: unknown, cause: unknown): never {
+  if (error instanceof Error) {
+    throw new Error(error.message, { cause });
+  }
+
+  throw new Error(String(error), { cause });
 }
 
 export async function createScheduledTaskWorkbench(
@@ -130,31 +168,6 @@ export async function createScheduledTaskWorkbench(
     }
 
     return updatedTask;
-  }
-
-  function mapRunStatusToTaskEngineState(
-    status: ScheduledTaskRunRecord["status"],
-  ): ScheduledTaskDefinition["engineState"] {
-    if (status === "running") {
-      return "running";
-    }
-
-    if (status === "stalled_for_permission") {
-      return "stalled";
-    }
-
-    return "idle";
-  }
-
-  function throwOriginalErrorWithCause(error: unknown, cause: unknown): never {
-    if (error instanceof Error) {
-      const errorWithCause = error as Error & { cause?: unknown };
-      if (errorWithCause.cause === undefined) {
-        errorWithCause.cause = cause;
-      }
-    }
-
-    throw error;
   }
 
   function finalizeTaskForRun(input: {
@@ -294,6 +307,38 @@ export async function createScheduledTaskWorkbench(
         return task;
       } catch (error) {
         rebuildStoreFromSnapshot(snapshotBeforeCreate);
+        throw error;
+      }
+    },
+
+    async updateScheduledTask(taskId, input) {
+      const existingTask = store.getScheduledTask(taskId);
+
+      if (!existingTask) {
+        throw new Error(`Scheduled task ${taskId} not found`);
+      }
+
+      const nextSchedule: ScheduledTaskDefinition["schedule"] = {
+        ...existingTask.schedule,
+        type: input.frequency,
+        cron: input.cron,
+      };
+      const snapshotBeforeUpdate = captureSnapshot();
+      const updatedTask = updateScheduledTaskOrThrow(taskId, {
+        name: input.name,
+        description: input.description,
+        workspacePath: input.workspacePath,
+        prompt: input.prompt,
+        template: input.template ?? null,
+        worktree: { enabled: input.worktreeEnabled },
+        schedule: nextSchedule,
+      });
+
+      try {
+        await saveSnapshot();
+        return updatedTask;
+      } catch (error) {
+        rebuildStoreFromSnapshot(snapshotBeforeUpdate);
         throw error;
       }
     },

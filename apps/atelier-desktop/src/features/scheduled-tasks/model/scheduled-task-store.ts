@@ -2,13 +2,14 @@ import type {
   ScheduledTaskDefinition,
   ScheduledTaskRunReason,
   ScheduledTaskRunRecord,
-} from "./scheduled-tasks";
+} from "../domain/scheduled-tasks";
 
 interface CreateScheduledTaskInput {
   name: string;
   description: string;
   workspacePath: string;
   prompt: string;
+  template?: ScheduledTaskDefinition["template"];
   model: string;
   permissionMode: ScheduledTaskDefinition["permissionMode"];
   worktree: ScheduledTaskDefinition["worktree"];
@@ -23,11 +24,30 @@ interface CreateScheduledTaskStoreOptions {
   initialRuns?: ScheduledTaskRunRecord[];
 }
 
+function cloneScheduledTaskTemplate(
+  template: ScheduledTaskDefinition["template"],
+): ScheduledTaskDefinition["template"] {
+  if (!template) {
+    return null;
+  }
+
+  return {
+    ...template,
+    profile: {
+      ...template.profile,
+      ...(template.profile.subtree
+        ? { subtree: { ...template.profile.subtree } }
+        : {}),
+    },
+  };
+}
+
 function cloneScheduledTask(
   task: ScheduledTaskDefinition,
 ): ScheduledTaskDefinition {
   return {
     ...task,
+    template: cloneScheduledTaskTemplate(task.template),
     worktree: { ...task.worktree },
     schedule: { ...task.schedule },
     rememberedApprovals: [...task.rememberedApprovals],
@@ -41,6 +61,9 @@ function sanitizeScheduledTaskPatch(
 
   return {
     ...safePatch,
+    ...(patch.template !== undefined
+      ? { template: cloneScheduledTaskTemplate(patch.template) }
+      : {}),
     ...(patch.worktree ? { worktree: { ...patch.worktree } } : {}),
     ...(patch.schedule ? { schedule: { ...patch.schedule } } : {}),
     ...(patch.rememberedApprovals
@@ -97,6 +120,7 @@ export function createScheduledTaskStore(
         description: input.description,
         workspacePath: input.workspacePath,
         prompt: input.prompt,
+        template: input.template ?? null,
         model: input.model,
         permissionMode: input.permissionMode,
         worktree: input.worktree,

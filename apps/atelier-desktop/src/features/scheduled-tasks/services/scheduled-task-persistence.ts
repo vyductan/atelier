@@ -7,7 +7,7 @@ import {
   SCHEDULED_TASK_SCHEDULE_TYPES,
   type ScheduledTaskDefinition,
   type ScheduledTaskRunRecord,
-} from "./scheduled-tasks";
+} from "../domain/scheduled-tasks";
 
 interface ScheduledTaskSnapshot {
   version: 1;
@@ -126,6 +126,41 @@ function validateScheduledTaskDefinition(
   assertStringField(task, "description", label);
   assertStringField(task, "workspacePath", label);
   assertStringField(task, "prompt", label);
+  if (task.template !== undefined && task.template !== null) {
+    if (!isRecord(task.template)) {
+      throw new TypeError(`Invalid scheduled task snapshot: ${label} has invalid template`);
+    }
+
+    assertLiteralField(task.template, "source", `${label} template`, ["acme-sync"] as const);
+    assertStringField(task.template, "mainPath", `${label} template`);
+    if (
+      task.template.strategyMarkdown !== null &&
+      typeof task.template.strategyMarkdown !== "string"
+    ) {
+      throw new TypeError(
+        `Invalid scheduled task snapshot: ${label} template has invalid strategyMarkdown`,
+      );
+    }
+    if (!isRecord(task.template.profile)) {
+      throw new TypeError(`Invalid scheduled task snapshot: ${label} template has invalid profile`);
+    }
+    assertStringField(task.template.profile, "id", `${label} template profile`);
+    assertStringField(task.template.profile, "projectPath", `${label} template profile`);
+    assertLiteralField(
+      task.template.profile,
+      "mode",
+      `${label} template profile`,
+      ["rsync", "subtree", "patch"] as const,
+    );
+    if (
+      task.template.profile.primaryPath !== null &&
+      typeof task.template.profile.primaryPath !== "string"
+    ) {
+      throw new TypeError(
+        `Invalid scheduled task snapshot: ${label} template profile has invalid primaryPath`,
+      );
+    }
+  }
   assertStringField(task, "model", label);
   assertLiteralField(
     task,

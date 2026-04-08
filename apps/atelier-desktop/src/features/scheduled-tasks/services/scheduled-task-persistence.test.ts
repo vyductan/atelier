@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type {
   ScheduledTaskDefinition,
   ScheduledTaskRunRecord,
-} from "./scheduled-tasks";
+} from "../domain/scheduled-tasks";
 import {
   createScheduledTaskPersistence,
   parseScheduledTaskSnapshot,
@@ -19,6 +19,7 @@ function createScheduledTask(
     description: "Review today's commits",
     workspacePath: "/tmp/workspace",
     prompt: "Review today's commits",
+    template: null,
     model: "claude-sonnet-4-6",
     permissionMode: "ask",
     worktree: { enabled: true },

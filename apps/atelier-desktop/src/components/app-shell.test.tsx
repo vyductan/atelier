@@ -6,6 +6,11 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type * as TaskWorkbenchModule from "../lib/task-workbench";
+import * as ScheduledTasksFeature from "~/features/scheduled-tasks";
+import type {
+  ScheduledTaskDefinition,
+  ScheduledTaskRunRecord,
+} from "~/features/scheduled-tasks/domain/scheduled-tasks";
 import type { TaskRecord } from "../lib/tasks";
 import { createSupervisor } from "../lib/supervisor";
 import { createTaskStore } from "../lib/task-store";
@@ -125,14 +130,9 @@ vi.mock("@acme/ui/components/button", () => ({
   ),
 }));
 
-vi.mock("@acme/ui/components/input", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@acme/ui/components/input")>();
-
-  return {
-    ...actual,
-    Input: (props: ComponentPropsWithoutRef<"input">) => <input {...props} />,
-  };
-});
+vi.mock("@acme/ui/components/input", () => ({
+  Input: (props: ComponentPropsWithoutRef<"input">) => <input {...props} />,
+}));
 
 vi.mock("@acme/ui/components/select", () => ({
   Select: ({
@@ -188,8 +188,53 @@ vi.mock("@acme/ui/components/switch", () => ({
   ),
 }));
 
+vi.mock("@acme/ui/components/textarea", () => ({
+  Textarea: (props: ComponentPropsWithoutRef<"textarea">) => <textarea {...props} />,
+}));
+
+vi.mock("../features/skills-manager/skills-manager-panel", () => ({
+  SkillsManagerPanel: () => <div data-testid="skills-manager-panel">Skills panel</div>,
+}));
+
+vi.mock("@acme/ui/components/tooltip", () => ({
+  Tooltip: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+  TooltipTrigger: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+  TooltipContent: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+}));
+
+vi.mock("@acme/ui/components/modal", () => ({
+  Modal: ({
+    open,
+    title,
+    description,
+    children,
+    footer,
+  }: {
+    open?: boolean;
+    title?: React.ReactNode;
+    description?: React.ReactNode;
+    children?: React.ReactNode;
+    footer?: React.ReactNode;
+  }) =>
+    open ? (
+      <div role="dialog" aria-label={typeof title === "string" ? title : "Modal"}>
+        {title ? <div>{title}</div> : null}
+        {description ? <div>{description}</div> : null}
+        <div>{children}</div>
+        {footer ? <div>{footer}</div> : null}
+      </div>
+    ) : null,
+}));
+
 function setNativeInputValue(element: HTMLInputElement, value: string) {
   const prototype = Object.getPrototypeOf(element) as HTMLInputElement;
+  const descriptor = Object.getOwnPropertyDescriptor(prototype, "value");
+
+  descriptor?.set?.call(element, value);
+}
+
+function setNativeTextAreaValue(element: HTMLTextAreaElement, value: string) {
+  const prototype = Object.getPrototypeOf(element) as HTMLTextAreaElement;
   const descriptor = Object.getOwnPropertyDescriptor(prototype, "value");
 
   descriptor?.set?.call(element, value);
@@ -674,6 +719,10 @@ const pathApiMocks = vi.hoisted(() => ({
   join: vi.fn(async (...parts: string[]) => parts.join("/")),
 }));
 
+const workspaceMocks = vi.hoisted(() => ({
+  getWorkspaceFileContent: vi.fn(),
+}));
+
 const toastMocks = vi.hoisted(() => ({
   addToast: vi.fn(),
 }));
@@ -758,8 +807,10 @@ vi.mock("../lib/task-workbench", () => ({
   createTaskWorkbench: taskWorkbenchMocks.createTaskWorkbench,
 }));
 
-vi.mock("../lib/scheduled-task-workbench", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../lib/scheduled-task-workbench")>();
+vi.mock("~/features/scheduled-tasks/services/scheduled-task-workbench", async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import("~/features/scheduled-tasks/services/scheduled-task-workbench")
+  >();
 
   return {
     ...actual,
@@ -767,12 +818,19 @@ vi.mock("../lib/scheduled-task-workbench", async (importOriginal) => {
   };
 });
 
+vi.mock("~/features/scheduled-tasks/services/scheduled-task-tauri", () => ({
+  readScheduledTaskSnapshot: tauriMocks.readScheduledTaskSnapshot,
+  writeScheduledTaskSnapshot: tauriMocks.writeScheduledTaskSnapshot,
+}));
+
 vi.mock("../lib/tauri", () => ({
   readTaskSnapshot: tauriMocks.readTaskSnapshot,
   writeTaskSnapshot: tauriMocks.writeTaskSnapshot,
-  readScheduledTaskSnapshot: tauriMocks.readScheduledTaskSnapshot,
-  writeScheduledTaskSnapshot: tauriMocks.writeScheduledTaskSnapshot,
   ensureDirectory: tauriMocks.ensureDirectory,
+}));
+
+vi.mock("../lib/workspace", () => ({
+  getWorkspaceFileContent: workspaceMocks.getWorkspaceFileContent,
 }));
 
 vi.mock("@tauri-apps/api/path", () => ({
@@ -787,6 +845,11 @@ vi.mock("../store/toast-store", () => ({
 }));
 
 describe("AppShell", () => {
+  it("exposes scheduled-task feature components through the feature root", () => {
+    expect(ScheduledTasksFeature.ScheduleSidebar).toBeTypeOf("function");
+    expect(ScheduledTasksFeature.ScheduleDetailPanel).toBeTypeOf("function");
+  });
+
   let container: HTMLDivElement | null;
   let root: Root | null;
 
@@ -800,7 +863,7 @@ describe("AppShell", () => {
     );
     scheduledTaskWorkbenchMocks.createScheduledTaskWorkbench.mockReset();
     scheduledTaskWorkbenchMocks.createScheduledTaskWorkbench.mockImplementation(async () => {
-      const tasks = [
+      const tasks: ScheduledTaskDefinition[] = [
         {
           id: "sched-1",
           name: "Daily workspace check-in",
@@ -830,7 +893,7 @@ describe("AppShell", () => {
           updatedAt: "2026-04-05T00:00:00.000Z",
         },
       ];
-      const runs = [
+      const runs: ScheduledTaskRunRecord[] = [
         {
           runId: "run-1",
           scheduledTaskId: "sched-1",
@@ -850,13 +913,15 @@ describe("AppShell", () => {
 
       return {
         createScheduledTask: vi.fn(async (input) => {
-          const createdTask = {
-            ...tasks[0],
+          const currentTask = tasks[0]!;
+          const createdTask: ScheduledTaskDefinition = {
+            ...currentTask,
             id: `sched-${tasks.length + 1}`,
             name: input.name,
             description: input.description,
             workspacePath: input.workspacePath,
             prompt: input.prompt,
+            template: input.template ?? null,
             model: input.model,
             permissionMode: input.permissionMode,
             worktree: input.worktree,
@@ -875,7 +940,7 @@ describe("AppShell", () => {
         ),
         reconcileLinkedRun: vi.fn(async () => null),
         runNow: vi.fn(async (taskId: string) => {
-          const run = {
+          const run: ScheduledTaskRunRecord = {
             runId: `run-${runs.length + 1}`,
             scheduledTaskId: taskId,
             scheduledFor: null,
@@ -947,6 +1012,14 @@ describe("AppShell", () => {
     pathApiMocks.join.mockImplementation(async (...parts: string[]) =>
       parts.join("/"),
     );
+    workspaceMocks.getWorkspaceFileContent.mockReset();
+    workspaceMocks.getWorkspaceFileContent.mockImplementation(async () => ({
+      filePath: "SYNC_STRATEGY.md",
+      content: "",
+      exists: false,
+      isBinary: false,
+      tooLarge: false,
+    }));
     toastMocks.addToast.mockReset();
   });
 
@@ -1258,7 +1331,7 @@ describe("AppShell", () => {
     }));
 
     scheduledTaskWorkbenchMocks.createScheduledTaskWorkbench.mockImplementationOnce(async () => {
-      const tasks = [
+      const tasks: ScheduledTaskDefinition[] = [
         {
           id: "sched-1",
           name: "Daily workspace check-in",
@@ -1288,7 +1361,7 @@ describe("AppShell", () => {
           updatedAt: "2026-04-05T00:00:00.000Z",
         },
       ];
-      const runs = [
+      const runs: ScheduledTaskRunRecord[] = [
         {
           runId: "run-1",
           scheduledTaskId: "sched-1",
@@ -1424,7 +1497,7 @@ describe("AppShell", () => {
 
   it("shows a toast when scheduled task creation fails", async () => {
     scheduledTaskWorkbenchMocks.createScheduledTaskWorkbench.mockImplementationOnce(async () => {
-      const tasks = [
+      const tasks: ScheduledTaskDefinition[] = [
         {
           id: "sched-1",
           name: "Daily workspace check-in",
@@ -1454,7 +1527,7 @@ describe("AppShell", () => {
           updatedAt: "2026-04-05T00:00:00.000Z",
         },
       ];
-      const runs = [
+      const runs: ScheduledTaskRunRecord[] = [
         {
           runId: "run-1",
           scheduledTaskId: "sched-1",
@@ -1584,13 +1657,24 @@ describe("AppShell", () => {
   });
 
   it("lets users edit an existing scheduled task inline", async () => {
-    const tasks = [
+    const tasks: ScheduledTaskDefinition[] = [
       {
         id: "sched-1",
         name: "Daily workspace check-in",
         description: "Summarize the workspace every morning.",
         workspacePath: "/tmp/project",
         prompt: "Summarize what changed and flag anything blocked.",
+        template: {
+          source: "acme-sync",
+          mainPath: "/repo/main/@acme",
+          strategyMarkdown: "Create crob job (claude/openclaw)\n\n- run daily\n- old template",
+          profile: {
+            id: "rsync-1",
+            projectPath: "/tmp/project",
+            primaryPath: "/repo/main/@acme",
+            mode: "rsync",
+          },
+        },
         model: "claude-sonnet-4-6",
         permissionMode: "ask",
         worktree: { enabled: true },
@@ -1614,7 +1698,7 @@ describe("AppShell", () => {
         updatedAt: "2026-04-05T00:00:00.000Z",
       },
     ];
-    const runs = [
+    const runs: ScheduledTaskRunRecord[] = [
       {
         runId: "run-1",
         scheduledTaskId: "sched-1",
@@ -1632,20 +1716,22 @@ describe("AppShell", () => {
       },
     ];
     const updateScheduledTask = vi.fn(async (_taskId: string, input) => {
+      const currentTask = tasks[0]!;
       tasks[0] = {
-        ...tasks[0],
+        ...currentTask,
         name: input.name,
         description: input.description,
         workspacePath: input.workspacePath,
         prompt: input.prompt,
+        template: input.template,
         worktree: { enabled: input.worktreeEnabled },
         schedule: {
-          ...tasks[0].schedule,
+          ...currentTask.schedule,
           type: input.frequency,
           cron: input.cron,
         },
       };
-      return tasks[0];
+      return tasks[0]!;
     });
 
     scheduledTaskWorkbenchMocks.createScheduledTaskWorkbench.mockImplementationOnce(async () => ({
@@ -1737,7 +1823,7 @@ describe("AppShell", () => {
         nameInput.dispatchEvent(new Event("change", { bubbles: true }));
       }
       if (promptInput) {
-        promptInput.value = "Edited prompt";
+        setNativeTextAreaValue(promptInput, "Edited prompt");
         promptInput.dispatchEvent(new Event("input", { bubbles: true }));
         promptInput.dispatchEvent(new Event("change", { bubbles: true }));
       }
@@ -1761,12 +1847,231 @@ describe("AppShell", () => {
     expect(container?.textContent).toContain("Edited prompt");
   });
 
+  it("regenerates template-backed scheduled task prompts during inline edit", async () => {
+    const tasks: ScheduledTaskDefinition[] = [
+      {
+        id: "sched-1",
+        name: "Daily workspace check-in",
+        description: "Summarize the workspace every morning.",
+        workspacePath: "/tmp/project",
+        prompt: "Summarize what changed and flag anything blocked.",
+        template: {
+          source: "acme-sync",
+          mainPath: "/repo/main/@acme",
+          strategyMarkdown: "Create crob job (claude/openclaw)\n\n- run daily\n- old template",
+          profile: {
+            id: "rsync-1",
+            projectPath: "/tmp/project",
+            primaryPath: "/repo/main/@acme",
+            mode: "rsync",
+          },
+        },
+        model: "claude-sonnet-4-6",
+        permissionMode: "ask",
+        worktree: { enabled: true },
+        schedule: {
+          type: "daily",
+          cron: "0 9 * * *",
+          timezone: "UTC",
+          enabled: true,
+          jitterMinutes: 10,
+        },
+        nextRunAt: null,
+        lastScheduledAt: null,
+        lastStartedAt: null,
+        lastFinishedAt: null,
+        lastMissedAt: null,
+        engineState: "idle",
+        rememberedApprovals: [],
+        importSource: "none",
+        importedAt: null,
+        createdAt: "2026-04-05T00:00:00.000Z",
+        updatedAt: "2026-04-05T00:00:00.000Z",
+      },
+    ];
+    const runs: ScheduledTaskRunRecord[] = [];
+    const updateScheduledTask = vi.fn(async (_taskId: string, input) => {
+      const currentTask = tasks[0]!;
+      tasks[0] = {
+        ...currentTask,
+        name: input.name,
+        description: input.description,
+        workspacePath: input.workspacePath,
+        prompt: input.prompt,
+        template: input.template,
+        worktree: { enabled: input.worktreeEnabled },
+        schedule: {
+          ...currentTask.schedule,
+          type: input.frequency,
+          cron: input.cron,
+        },
+      };
+      return tasks[0]!;
+    });
+
+    workspaceMocks.getWorkspaceFileContent.mockImplementation(async () => ({
+      filePath: "SYNC_STRATEGY.md",
+      content: "Create crob job (claude/openclaw)\n\n- run daily\n- refreshed template",
+      exists: true,
+      isBinary: false,
+      tooLarge: false,
+    }));
+
+    scheduledTaskWorkbenchMocks.createScheduledTaskWorkbench.mockImplementationOnce(async () => ({
+      createScheduledTask: vi.fn(async (input) => ({
+        ...tasks[0],
+        id: `sched-${tasks.length + 1}`,
+        name: input.name,
+      })),
+      updateScheduledTask,
+      getScheduledTask: vi.fn((taskId: string) =>
+        tasks.find((task) => task.id === taskId) ?? null,
+      ),
+      listScheduledTasks: vi.fn(() => tasks),
+      listScheduledRuns: vi.fn(() => runs),
+      listRunsByTask: vi.fn((taskId: string) =>
+        runs.filter((run) => run.scheduledTaskId === taskId),
+      ),
+      reconcileLinkedRun: vi.fn(async () => null),
+      runNow: vi.fn(async (taskId: string) => ({
+        runId: `run-${runs.length + 1}`,
+        scheduledTaskId: taskId,
+        scheduledFor: null,
+        startedAt: "2026-04-05T10:00:00.000Z",
+        finishedAt: "2026-04-05T10:01:00.000Z",
+        status: "completed",
+        reason: "run_now",
+        linkedSessionId: null,
+        linkedTaskId: null,
+        errorSummary: null,
+        summary: null,
+        createdAt: "2026-04-05T10:00:00.000Z",
+        updatedAt: "2026-04-05T10:01:00.000Z",
+      })),
+      tick: vi.fn(async () => []),
+    }));
+
+    const { AppShell } = await import("./app-shell");
+
+    flushSync(() => {
+      root?.render(
+        <AppShell
+          configView={<div data-testid="config-view" />}
+          chatsWorkspace={<div data-testid="conversation-workspace">Conversation workspace</div>}
+          syncView={<div data-testid="acme-sync-view">Acme Sync view</div>}
+        />,
+      );
+    });
+
+    await settleWorkbenchMount();
+
+    const scheduleButton = [...(container?.querySelectorAll("button") ?? [])].find(
+      (button) => button.textContent?.includes("Schedule"),
+    ) as HTMLButtonElement | undefined;
+
+    flushSync(() => {
+      scheduleButton?.click();
+    });
+
+    const taskButton = [...(container?.querySelectorAll("button") ?? [])].find(
+      (button) => button.textContent?.includes("Daily workspace check-in"),
+    ) as HTMLButtonElement | undefined;
+
+    flushSync(() => {
+      taskButton?.click();
+    });
+
+    const editButton = [...(container?.querySelectorAll("button") ?? [])].find(
+      (button) => button.textContent?.includes("Edit"),
+    ) as HTMLButtonElement | undefined;
+
+    flushSync(() => {
+      editButton?.click();
+    });
+
+    const workspaceInput = [...(container?.querySelectorAll("input") ?? [])].find(
+      (input) => input.getAttribute("aria-label") === "Workspace path",
+    ) as HTMLInputElement | undefined;
+    const cronInput = [...(container?.querySelectorAll("input") ?? [])].find(
+      (input) => input.getAttribute("aria-label") === "Cron expression",
+    ) as HTMLInputElement | undefined;
+    const worktreeToggle = [...(container?.querySelectorAll("input") ?? [])].find(
+      (input) => input.getAttribute("aria-label") === "Worktree enabled",
+    ) as HTMLInputElement | undefined;
+
+    flushSync(() => {
+      if (workspaceInput) {
+        setNativeInputValue(workspaceInput, "/tmp/project-b");
+        workspaceInput.dispatchEvent(new Event("input", { bubbles: true }));
+        workspaceInput.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      if (cronInput) {
+        setNativeInputValue(cronInput, "0 13 * * *");
+        cronInput.dispatchEvent(new Event("input", { bubbles: true }));
+        cronInput.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      worktreeToggle?.click();
+    });
+
+    const regenerateButton = [...(container?.querySelectorAll("button") ?? [])].find(
+      (button) => button.textContent?.includes("Regenerate prompt"),
+    ) as HTMLButtonElement | undefined;
+
+    await runWithActEnvironment(async () => {
+      await act(async () => {
+        regenerateButton?.click();
+        await flushPromises();
+      });
+    });
+
+    const nameInput = [...(container?.querySelectorAll("input") ?? [])].find(
+      (input) => input.getAttribute("aria-label") === "Name",
+    ) as HTMLInputElement | undefined;
+    const promptInput = [...(container?.querySelectorAll("textarea") ?? [])].find(
+      (input) => input.getAttribute("aria-label") === "Prompt",
+    ) as HTMLTextAreaElement | undefined;
+    const submitButton = [...(container?.querySelectorAll("button") ?? [])].find(
+      (button) => button.textContent?.includes("Save changes"),
+    ) as HTMLButtonElement | undefined;
+
+    expect(nameInput?.value).toBe("@acme sync project-b");
+    expect(promptInput?.value).toContain("Target project: /tmp/project-b");
+    expect(promptInput?.value).toContain("refreshed template");
+    expect(cronInput?.value).toBe("0 13 * * *");
+    expect(worktreeToggle?.checked).toBe(false);
+
+    await runWithActEnvironment(async () => {
+      await act(async () => {
+        submitButton?.click();
+        await flushPromises();
+      });
+    });
+
+    expect(updateScheduledTask).toHaveBeenCalledWith(
+      "sched-1",
+      expect.objectContaining({
+        name: "@acme sync project-b",
+        workspacePath: "/tmp/project-b",
+        prompt: expect.stringContaining("Target project: /tmp/project-b"),
+        cron: "0 13 * * *",
+        worktreeEnabled: false,
+        template: expect.objectContaining({
+          strategyMarkdown:
+            "Create crob job (claude/openclaw)\n\n- run daily\n- refreshed template",
+          profile: expect.objectContaining({
+            projectPath: "/tmp/project-b",
+          }),
+        }),
+      }),
+    );
+  });
+
   it("opens the schedule tab with a prefilled draft from the sync view", async () => {
     const { AppShell } = await import("./app-shell");
     const SyncView = ({
       onCreateScheduledSyncTask,
     }: {
-      onCreateScheduledSyncTask?: (draft: import("./scheduled-task-form").ScheduledTaskFormInput) => void;
+      onCreateScheduledSyncTask?: (draft: import("~/features/scheduled-tasks").ScheduledTaskFormInput) => void;
     }) => (
       <button
         type="button"
@@ -1857,7 +2162,7 @@ describe("AppShell", () => {
     const SyncView = ({
       onCreateScheduledSyncTask,
     }: {
-      onCreateScheduledSyncTask?: (draft: import("./scheduled-task-form").ScheduledTaskFormInput) => void;
+      onCreateScheduledSyncTask?: (draft: import("~/features/scheduled-tasks").ScheduledTaskFormInput) => void;
     }) => (
       <button
         type="button"
@@ -1928,7 +2233,7 @@ describe("AppShell", () => {
 
   it("warns when a schedule starts but persistence fails", async () => {
     scheduledTaskWorkbenchMocks.createScheduledTaskWorkbench.mockImplementationOnce(async () => {
-      const tasks = [
+      const tasks: ScheduledTaskDefinition[] = [
         {
           id: "sched-1",
           name: "Daily workspace check-in",
@@ -1958,7 +2263,7 @@ describe("AppShell", () => {
           updatedAt: "2026-04-05T10:00:00.000Z",
         },
       ];
-      const runs = [
+      const runs: ScheduledTaskRunRecord[] = [
         {
           runId: "run-1",
           scheduledTaskId: "sched-1",
@@ -1988,11 +2293,20 @@ describe("AppShell", () => {
         ),
         reconcileLinkedRun: vi.fn(async () => null),
         runNow: vi.fn(async () => {
-          const workbenchModule = await import("../lib/scheduled-task-workbench");
+          const workbenchModule = await import(
+            "~/features/scheduled-tasks/services/scheduled-task-workbench"
+          );
+          const run = runs[0];
+          const task = tasks[0];
+
+          if (!run || !task) {
+            throw new Error("Expected seeded scheduled task state");
+          }
+
           throw new workbenchModule.ScheduledRunPersistenceError({
             message: "Scheduled run started but its state could not be persisted",
-            run: runs[0],
-            task: tasks[0],
+            run,
+            task,
             cause: new Error("disk full"),
           });
         }),
@@ -2901,6 +3215,26 @@ describe("AppShell", () => {
       __TAURI_INTERNALS__?: unknown;
     };
     delete tauriWindow.__TAURI_INTERNALS__;
+
+    vi.resetModules();
+    vi.doMock("../components/acme-sync", () => ({
+      AcmeSync: () => <div data-testid="acme-sync-view" />,
+    }));
+    vi.doMock("../components/app-shell", () => ({
+      AppShell: () => <div data-testid="app-shell" />,
+    }));
+    vi.doMock("../components/claude-global-config", () => ({
+      ClaudeGlobalConfig: () => <div data-testid="claude-global-config" />,
+    }));
+    vi.doMock("../components/conversation-view", () => ({
+      ConversationView: () => <div data-testid="conversation-view" />,
+    }));
+    vi.doMock("../components/not-tauri-error", () => ({
+      NotTauriError: () => <div data-testid="not-tauri-error" />,
+    }));
+    vi.doMock("../components/toaster", () => ({
+      Toaster: () => <div data-testid="app-toaster" />,
+    }));
 
     const { default: App } = await import("../app");
 

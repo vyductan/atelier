@@ -28,13 +28,13 @@ import type {
   PreviewModalState,
   SubtreePreviewModalState,
 } from "./acme-sync-preview-modal-state";
-import type { ScheduledTaskFormInput } from "./scheduled-task-form";
+import type { ScheduledTaskFormInput } from "~/features/scheduled-tasks";
 import { AcmeSyncRsyncPreviewModal } from "../features/acme-sync/acme-sync-rsync-preview-modal";
 import { AcmeSyncSubtreePreviewModal } from "../features/acme-sync/acme-sync-subtree-preview-modal";
 import {
   buildScheduledSyncTaskDraft,
   parseSyncStrategyMarkdown,
-} from "../lib/scheduled-task-sync-strategy";
+} from "~/features/scheduled-tasks/domain/scheduled-task-sync-strategy";
 import {
   deleteSyncFile,
   executeSubtreeAdd,

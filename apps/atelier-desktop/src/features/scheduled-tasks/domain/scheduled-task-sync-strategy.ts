@@ -1,5 +1,19 @@
-import type { ScheduledTaskFormInput } from "../components/scheduled-task-form";
-import type { SyncProfile } from "./types";
+import type {
+  ScheduledSyncTemplate,
+  ScheduledTaskDefinition,
+} from "./scheduled-tasks";
+import type { SyncProfile } from "~/lib/types";
+
+export interface ScheduledSyncTaskDraft {
+  name: string;
+  description: string;
+  workspacePath: string;
+  prompt: string;
+  frequency: ScheduledTaskDefinition["schedule"]["type"];
+  cron: string | null;
+  worktreeEnabled: boolean;
+  template?: ScheduledSyncTemplate;
+}
 
 function getProjectLabel(projectPath: string): string {
   const segments = projectPath.split("/").filter(Boolean);
@@ -36,18 +50,12 @@ function appendStrategyMarkdown(basePrompt: string, strategyMarkdown?: string | 
   return `${basePrompt}\n\nStrategy markdown:\n${normalizedMarkdown}`;
 }
 
-export function buildScheduledSyncTaskDraft(input: {
+function buildScheduledSyncPrompt(input: {
   mainPath: string;
   profile: SyncProfile;
   strategyMarkdown?: string | null;
-}): ScheduledTaskFormInput {
-  const projectLabel = getProjectLabel(input.profile.projectPath);
-  const workspacePath =
-    input.profile.mode === "subtree" && input.profile.subtree
-      ? input.profile.subtree.repoRoot
-      : input.profile.projectPath;
-
-  const prompt = appendStrategyMarkdown(
+}): string {
+  return appendStrategyMarkdown(
     input.profile.mode === "subtree" && input.profile.subtree
       ? `Run the daily @acme sync workflow.\n\nContext:\n- Primary workspace: ${input.mainPath}\n- Target project: ${input.profile.projectPath}\n- Sync mode: subtree\n\nSubtree settings:\n- Repo root: ${input.profile.subtree.repoRoot}\n- Prefix: ${input.profile.subtree.prefix}\n- Remote: ${input.profile.subtree.remote}\n- Branch: ${input.profile.subtree.branch}\n- Squash: ${input.profile.subtree.squash ? "enabled" : "disabled"}\n\nWorkflow:\n1. Check the relevant GitHub/GitLab repositories and local branches for new changes on both sides.\n2. Validate git state before mutating subtree history. Stop immediately if the working tree is dirty, the expected branch is not checked out, or subtree configuration does not match the configured prefix/remote/branch.\n3. Review the intended subtree direction carefully before applying changes.\n4. If the primary workspace changed, update the target project's @acme subtree, review the result, run pnpm typecheck/lint/format, then commit, push, and create a PR.\n5. If the target project changed, update the source side, review the result, run pnpm typecheck/lint/format, then commit, push, and create a PR.\n6. Use worktree isolation for git mutations whenever possible.`
       : input.profile.mode === "patch"
@@ -55,22 +63,79 @@ export function buildScheduledSyncTaskDraft(input: {
         : `Run the daily @acme sync workflow.\n\nContext:\n- Primary workspace: ${input.mainPath}\n- Target project: ${input.profile.projectPath}\n- Sync mode: rsync\n\nWorkflow:\n1. Check the relevant GitHub/GitLab repositories and local branches for new changes on both sides.\n2. Review the file-level changes before mutating anything.\n3. If the primary workspace changed, update the target project's @acme copy, review the result, run pnpm typecheck/lint/format, then commit, push, and create a PR.\n4. If the target project changed, update the source side, review the result, run pnpm typecheck/lint/format, then commit, push, and create a PR.\n5. Use worktree isolation for git mutations whenever possible.\n6. Stop and report clearly if the working tree is dirty, branch expectations do not match, or the sync direction is ambiguous.`,
     input.strategyMarkdown,
   );
+}
+
+export function buildScheduledSyncTaskDraft(input: {
+  mainPath: string;
+  profile: SyncProfile;
+  strategyMarkdown?: string | null;
+}): ScheduledSyncTaskDraft {
+  const projectLabel = getProjectLabel(input.profile.projectPath);
+  const workspacePath =
+    input.profile.mode === "subtree" && input.profile.subtree
+      ? input.profile.subtree.repoRoot
+      : input.profile.projectPath;
+  const normalizedStrategyMarkdown = normalizeStrategyMarkdown(input.strategyMarkdown);
 
   return {
     name: `@acme sync ${projectLabel}`,
     description: `Daily bidirectional @acme sync for ${projectLabel} with review and PR creation.`,
     workspacePath,
-    prompt,
+    prompt: buildScheduledSyncPrompt({
+      mainPath: input.mainPath,
+      profile: input.profile,
+      strategyMarkdown: normalizedStrategyMarkdown,
+    }),
     frequency: "daily",
     cron: "0 9 * * *",
     worktreeEnabled: true,
+    template: {
+      source: "acme-sync",
+      mainPath: input.mainPath,
+      strategyMarkdown: normalizedStrategyMarkdown,
+      profile: {
+        ...input.profile,
+        projectPath: workspacePath,
+        ...(input.profile.mode === "subtree" && input.profile.subtree
+          ? {
+              subtree: {
+                ...input.profile.subtree,
+                repoRoot: workspacePath,
+              },
+            }
+          : {}),
+      },
+    },
   };
+}
+
+export function regenerateScheduledSyncTaskDraft(input: {
+  template: ScheduledSyncTemplate;
+  workspacePath: string;
+  strategyMarkdown?: string | null;
+}): ScheduledSyncTaskDraft {
+  return buildScheduledSyncTaskDraft({
+    mainPath: input.template.mainPath,
+    profile: {
+      ...input.template.profile,
+      projectPath: input.workspacePath,
+      ...(input.template.profile.mode === "subtree" && input.template.profile.subtree
+        ? {
+            subtree: {
+              ...input.template.profile.subtree,
+              repoRoot: input.workspacePath,
+            },
+          }
+        : {}),
+    },
+    strategyMarkdown: input.strategyMarkdown ?? input.template.strategyMarkdown,
+  });
 }
 
 export function parseSyncStrategyMarkdown(input: {
   workspacePath: string;
   strategyMarkdown: string;
-}): ScheduledTaskFormInput {
+}): ScheduledSyncTaskDraft {
   const normalizedMarkdown = normalizeStrategyMarkdown(input.strategyMarkdown);
 
   if (!normalizedMarkdown) {

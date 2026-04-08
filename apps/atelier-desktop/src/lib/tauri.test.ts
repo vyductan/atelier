@@ -137,7 +137,7 @@ describe("tauri wrappers", () => {
       readClaudeScheduledTaskFile,
       readScheduledTaskSnapshot,
       writeScheduledTaskSnapshot,
-    } = await import("./tauri");
+    } = await import("~/features/scheduled-tasks/services/scheduled-task-tauri");
 
     await readScheduledTaskSnapshot("scheduled-task-snapshot.json");
     await writeScheduledTaskSnapshot(

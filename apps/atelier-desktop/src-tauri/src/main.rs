@@ -14,11 +14,14 @@ use features::file_ops::{
     delete_sync_file, ensure_directory, execute_patch_sync, execute_rsync_conflict_resolutions,
     execute_rsync_sync, execute_subtree_add, execute_subtree_sync, get_latest_modified,
     get_repo_metadata, get_repo_remote_status, get_rsync_git_safety, get_sync_conflict_detail,
-    get_sync_status, list_claude_scheduled_task_files, open_global_claude_config,
-    open_global_codex_config, preview_subtree_sync, preview_sync_changes,
-    preview_sync_file_diff, read_claude_scheduled_task_file, read_global_claude_config,
-    read_scheduled_task_snapshot, read_task_snapshot, sync_claude_permissions_to_codex,
-    write_global_claude_config, write_scheduled_task_snapshot, write_task_snapshot,
+    get_sync_status, open_global_claude_config, open_global_codex_config,
+    preview_subtree_sync, preview_sync_changes, preview_sync_file_diff,
+    read_global_claude_config, read_task_snapshot, sync_claude_permissions_to_codex,
+    write_global_claude_config, write_task_snapshot,
+};
+use features::scheduled_tasks::{
+    list_claude_scheduled_task_files, read_claude_scheduled_task_file,
+    read_scheduled_task_snapshot, write_scheduled_task_snapshot,
 };
 use features::studio::start_studio_server;
 use features::watcher::start_fs_watcher;

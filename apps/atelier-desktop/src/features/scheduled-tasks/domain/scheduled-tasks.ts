@@ -53,6 +53,8 @@ export const SCHEDULED_TASK_RUN_REASONS = [
 
 export type ScheduledTaskRunReason = (typeof SCHEDULED_TASK_RUN_REASONS)[number];
 
+import type { SyncProfile } from "~/lib/types";
+
 export const SCHEDULED_TASK_IMPORT_SOURCES = ["none", "claude-desktop"] as const;
 
 export type ScheduledTaskImportSource = (typeof SCHEDULED_TASK_IMPORT_SOURCES)[number];
@@ -66,12 +68,20 @@ export interface ScheduledTaskImportDraft {
   sourceTaskDirName: string;
 }
 
+export interface ScheduledSyncTemplate {
+  source: "acme-sync";
+  mainPath: string;
+  strategyMarkdown: string | null;
+  profile: SyncProfile;
+}
+
 export interface ScheduledTaskDefinition {
   id: string;
   name: string;
   description: string;
   workspacePath: string;
   prompt: string;
+  template?: ScheduledSyncTemplate | null;
   model: string;
   permissionMode: ScheduledTaskPermissionMode;
   worktree: { enabled: boolean };

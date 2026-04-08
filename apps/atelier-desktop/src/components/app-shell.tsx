@@ -1,5 +1,5 @@
 import type { JSX, ReactNode } from "react";
-import { cloneElement, isValidElement, useEffect, useMemo, useState } from "react";
+import { cloneElement, isValidElement, useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   Tabs,
@@ -9,35 +9,36 @@ import {
 } from "@acme/ui/components/tabs";
 
 import type { TaskWorkbench } from "../lib/task-workbench";
-import type {
-  ScheduledTaskDefinition,
-  ScheduledTaskRunRecord,
-} from "../lib/scheduled-tasks";
+import {
+  ScheduleDetailPanel,
+  ScheduleSidebar,
+  type ScheduledTaskDefinition,
+  type ScheduledTaskFormInput,
+  type ScheduledTaskRunRecord,
+  createScheduledTaskWorkbench,
+  ScheduledRunPersistenceError,
+} from "~/features/scheduled-tasks";
 import type { TaskRecord, WorkspaceRecord } from "../lib/tasks";
 import type { WorkbenchStatusBarState } from "./workbench-status-bar";
 import { atelierClient } from "../lib/atelier-client";
-import { createScheduledTaskPersistence } from "../lib/scheduled-task-persistence";
 import {
-  createScheduledTaskWorkbench,
-  ScheduledRunPersistenceError,
-} from "../lib/scheduled-task-workbench";
-import { createTaskPersistence } from "../lib/task-persistence";
-import { createTaskWorkbench } from "../lib/task-workbench";
+  createScheduledTaskPersistence,
+} from "~/features/scheduled-tasks/services/scheduled-task-persistence";
 import {
   readScheduledTaskSnapshot,
-  readTaskSnapshot,
   writeScheduledTaskSnapshot,
-  writeTaskSnapshot,
-} from "../lib/tauri";
+} from "~/features/scheduled-tasks/services/scheduled-task-tauri";
+import { loadSyncStrategyMarkdown } from "~/features/scheduled-tasks/services/load-sync-strategy-markdown";
+import { createTaskPersistence } from "../lib/task-persistence";
+import { createTaskWorkbench } from "../lib/task-workbench";
+import { readTaskSnapshot, writeTaskSnapshot } from "../lib/tauri";
+import { regenerateScheduledSyncTaskDraft } from "~/features/scheduled-tasks/domain/scheduled-task-sync-strategy";
 import { useSessionStore } from "../store/session-store";
 import { useToastStore } from "../store/toast-store";
 import { TaskCreateBar } from "./task-create-bar";
 import { TaskDetailPanel } from "./task-detail-panel";
 import { WorkbenchStatusBar } from "./workbench-status-bar";
 import { ChatSidebar } from "./chat-sidebar";
-import { ScheduleSidebar } from "./schedule-sidebar";
-import { ScheduleDetailPanel } from "./schedule-detail-panel";
-import type { ScheduledTaskFormInput } from "./scheduled-task-form";
 import { SkillsManagerPanel } from "../features/skills-manager/skills-manager-panel";
 
 interface AppShellProps {
@@ -80,7 +81,25 @@ function sortTasksByUpdatedAtDesc(tasks: TaskRecord[]): TaskRecord[] {
   );
 }
 
-function mapTaskStatusToScheduledRunStatus(
+function mapStartedTaskStatusToScheduledRunStatus(
+  status: TaskRecord["status"],
+): "running" | "stalled_for_permission" | "failed" | "completed" {
+  if (status === "done") {
+    return "completed";
+  }
+
+  if (status === "awaiting_approval") {
+    return "stalled_for_permission";
+  }
+
+  if (status === "failed" || status === "blocked" || status === "cancelled") {
+    return "failed";
+  }
+
+  return "running";
+}
+
+function mapTerminalTaskStatusToScheduledRunStatus(
   status: TaskRecord["status"],
 ): ScheduledTaskRunRecord["status"] {
   if (status === "done") {
@@ -127,6 +146,7 @@ export function AppShell({
   const [scheduledTaskRuns, setScheduledTaskRuns] = useState<ScheduledTaskRunRecord[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [selectedScheduledTaskId, setSelectedScheduledTaskId] = useState<string | null>(null);
+  const [isEditingScheduledTask, setIsEditingScheduledTask] = useState(false);
   const [scheduledTaskDraft, setScheduledTaskDraft] =
     useState<ScheduledTaskFormInput | null>(null);
   const [scheduledTaskLoadError, setScheduledTaskLoadError] = useState<string | null>(null);
@@ -253,7 +273,7 @@ export function AppShell({
               return {
                 linkedSessionId: null,
                 linkedTaskId: task.id,
-                status: mapTaskStatusToScheduledRunStatus(
+                status: mapStartedTaskStatusToScheduledRunStatus(
                   startedTask?.status ?? task.status,
                 ),
               };
@@ -385,7 +405,7 @@ export function AppShell({
       if (scheduledTaskWorkbench) {
         const reconciledRun = await scheduledTaskWorkbench.reconcileLinkedRun({
           linkedTaskId: updatedTask.id,
-          status: mapTaskStatusToScheduledRunStatus(updatedTask.status),
+          status: mapTerminalTaskStatusToScheduledRunStatus(updatedTask.status),
         });
 
         if (reconciledRun) {
@@ -479,6 +499,10 @@ export function AppShell({
       )
     : [];
 
+  useEffect(() => {
+    setIsEditingScheduledTask(false);
+  }, [activeView, selectedScheduledTaskId]);
+
   const resolvedSyncView = isValidElement<{
     onCreateScheduledSyncTask?: (draft: ScheduledTaskFormInput) => void;
   }>(syncView)
@@ -494,6 +518,23 @@ export function AppShell({
         },
       })
     : syncView;
+
+  const regenerateScheduledTaskTemplate = useCallback(
+    async (input: ScheduledTaskFormInput): Promise<ScheduledTaskFormInput> => {
+      if (!input.template || input.template.source !== "acme-sync") {
+        return input;
+      }
+
+      const strategyMarkdown = await loadSyncStrategyMarkdown(input.template.mainPath);
+
+      return regenerateScheduledSyncTaskDraft({
+        template: input.template,
+        workspacePath: input.workspacePath,
+        strategyMarkdown,
+      });
+    },
+    [],
+  );
 
   return (
     <Tabs
@@ -662,7 +703,10 @@ export function AppShell({
           <ScheduleSidebar
             tasks={scheduledTasks}
             selectedTaskId={selectedScheduledTaskId}
-            onSelectTask={setSelectedScheduledTaskId}
+            onSelectTask={(taskId) => {
+              setIsEditingScheduledTask(false);
+              setSelectedScheduledTaskId(taskId);
+            }}
             onRunNow={(taskId) => {
               if (!scheduledTaskWorkbench) {
                 return;
@@ -695,8 +739,17 @@ export function AppShell({
               runs={selectedScheduledTaskRuns}
               errorMessage={scheduledTaskLoadError ?? scheduledTaskTickError}
               createDraft={selectedScheduledTask ? null : scheduledTaskDraft}
+              isEditing={isEditingScheduledTask && selectedScheduledTask !== null}
+              onRegenerateTemplate={regenerateScheduledTaskTemplate}
+              onStartEdit={() => {
+                setIsEditingScheduledTask(true);
+              }}
               onCancelCreate={() => {
+                setIsEditingScheduledTask(false);
                 setScheduledTaskDraft(null);
+              }}
+              onCancelEdit={() => {
+                setIsEditingScheduledTask(false);
               }}
               onCreateTask={async (input) => {
                 if (!scheduledTaskWorkbench) {
@@ -709,6 +762,7 @@ export function AppShell({
                     description: input.description,
                     workspacePath: input.workspacePath,
                     prompt: input.prompt,
+                    template: input.template ?? null,
                     model: "claude-sonnet-4-6",
                     permissionMode: "ask",
                     worktree: { enabled: input.worktreeEnabled },
@@ -724,6 +778,7 @@ export function AppShell({
                   setScheduledTasks(scheduledTaskWorkbench.listScheduledTasks());
                   setScheduledTaskRuns(scheduledTaskWorkbench.listScheduledRuns());
                   setSelectedScheduledTaskId(task.id);
+                  setIsEditingScheduledTask(false);
                   setScheduledTaskDraft(null);
                   setScheduledTaskLoadError(null);
                 } catch (error) {
@@ -733,6 +788,34 @@ export function AppShell({
                   });
                   addToast(
                     `Failed to create schedule: ${error instanceof Error ? error.message : String(error)}`,
+                    "error",
+                  );
+                  throw error;
+                }
+              }}
+              onEditTask={async (input) => {
+                if (!scheduledTaskWorkbench || !selectedScheduledTask) {
+                  return;
+                }
+
+                try {
+                  await scheduledTaskWorkbench.updateScheduledTask(
+                    selectedScheduledTask.id,
+                    input,
+                  );
+                  setScheduledTasks(scheduledTaskWorkbench.listScheduledTasks());
+                  setScheduledTaskRuns(scheduledTaskWorkbench.listScheduledRuns());
+                  setSelectedScheduledTaskId(selectedScheduledTask.id);
+                  setIsEditingScheduledTask(false);
+                  setScheduledTaskLoadError(null);
+                } catch (error) {
+                  console.error("Failed to update scheduled task:", error, {
+                    taskId: selectedScheduledTask.id,
+                    workspacePath: input.workspacePath,
+                    frequency: input.frequency,
+                  });
+                  addToast(
+                    `Failed to update schedule: ${error instanceof Error ? error.message : String(error)}`,
                     "error",
                   );
                   throw error;

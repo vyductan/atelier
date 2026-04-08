@@ -1,4 +1,21 @@
-import type { ScheduledTaskImportDraft } from "./scheduled-tasks";
+import type { ScheduledTaskImportDraft } from "../domain/scheduled-tasks";
+
+function normalizeYamlScalar(value: string | undefined): string | undefined {
+  const trimmedValue = value?.trim();
+
+  if (!trimmedValue) {
+    return trimmedValue;
+  }
+
+  if (
+    (trimmedValue.startsWith('"') && trimmedValue.endsWith('"')) ||
+    (trimmedValue.startsWith("'") && trimmedValue.endsWith("'"))
+  ) {
+    return trimmedValue.slice(1, -1);
+  }
+
+  return trimmedValue;
+}
 
 export function parseClaudeScheduledTaskSkillFile(input: {
   taskDirName: string;
@@ -17,8 +34,8 @@ export function parseClaudeScheduledTaskSkillFile(input: {
   const descriptionMatch = frontmatter.match(/^description:\s*(.+)$/m);
 
   return {
-    name: nameMatch?.[1]?.trim() ?? input.taskDirName,
-    description: descriptionMatch?.[1]?.trim() ?? "",
+    name: normalizeYamlScalar(nameMatch?.[1]) ?? input.taskDirName,
+    description: normalizeYamlScalar(descriptionMatch?.[1]) ?? "",
     workspacePath: input.workspacePath,
     prompt: body,
     importSource: "claude-desktop",
