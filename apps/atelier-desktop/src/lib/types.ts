@@ -59,7 +59,7 @@ export interface ProviderSession {
   };
 }
 
-export type SyncEngineMode = "rsync" | "subtree";
+export type SyncEngineMode = "rsync" | "subtree" | "patch";
 export type SyncDirection = "to-primary" | "from-primary";
 
 export interface RsyncSyncSettings {

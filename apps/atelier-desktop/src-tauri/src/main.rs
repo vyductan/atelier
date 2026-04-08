@@ -11,13 +11,17 @@ use features::sessions::{
     search_sessions, update_session_model_metadata,
 };
 use features::file_ops::{
-    delete_sync_file, ensure_directory, execute_rsync_conflict_resolutions, execute_rsync_sync,
-    execute_subtree_add, execute_subtree_sync, get_latest_modified, get_repo_metadata,
-    get_repo_remote_status, get_rsync_git_safety, get_sync_conflict_detail, get_sync_status,
-    preview_subtree_sync, preview_sync_changes, preview_sync_file_diff, read_global_claude_config,
-    open_global_claude_config,
-    open_global_codex_config, sync_claude_permissions_to_codex,
-    read_task_snapshot, write_global_claude_config, write_task_snapshot,
+    delete_sync_file, ensure_directory, execute_patch_sync, execute_rsync_conflict_resolutions,
+    execute_rsync_sync, execute_subtree_add, execute_subtree_sync, get_latest_modified,
+    get_repo_metadata, get_repo_remote_status, get_rsync_git_safety, get_sync_conflict_detail,
+    get_sync_status, open_global_claude_config, open_global_codex_config,
+    preview_subtree_sync, preview_sync_changes, preview_sync_file_diff,
+    read_global_claude_config, read_task_snapshot, sync_claude_permissions_to_codex,
+    write_global_claude_config, write_task_snapshot,
+};
+use features::scheduled_tasks::{
+    list_claude_scheduled_task_files, read_claude_scheduled_task_file,
+    read_scheduled_task_snapshot, write_scheduled_task_snapshot,
 };
 use features::studio::start_studio_server;
 use features::watcher::start_fs_watcher;
@@ -61,6 +65,7 @@ fn main() {
             get_sync_conflict_detail,
             execute_rsync_sync,
             execute_rsync_conflict_resolutions,
+            execute_patch_sync,
             get_rsync_git_safety,
             get_sync_status,
             preview_subtree_sync,
@@ -75,6 +80,10 @@ fn main() {
             sync_claude_permissions_to_codex,
             read_task_snapshot,
             write_task_snapshot,
+            read_scheduled_task_snapshot,
+            write_scheduled_task_snapshot,
+            list_claude_scheduled_task_files,
+            read_claude_scheduled_task_file,
             get_workspace_status,
             get_workspace_diff,
             get_workspace_file_content,

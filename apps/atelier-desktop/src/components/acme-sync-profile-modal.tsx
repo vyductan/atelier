@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Checkbox } from "@acme/ui/components/checkbox";
 import { Modal } from "@acme/ui/components/modal";
@@ -59,6 +59,12 @@ export function AcmeSyncProfileModal({
     if (!profile) return "";
     return `Configure sync mode for ${profile.projectPath}.`;
   }, [profile]);
+
+  useEffect(() => {
+    setMode(profile?.mode ?? "rsync");
+    setRsync(profile?.rsync ?? DEFAULT_RSYNC_SETTINGS);
+    setSubtree(getDefaultSubtreeSettings(profile));
+  }, [profileIdentity, profile]);
 
   const handleSave = () => {
     onSave({
@@ -121,6 +127,7 @@ export function AcmeSyncProfileModal({
               className="border-input bg-background flex h-10 w-full rounded-md border px-3 py-2 text-sm"
             >
               <option value="rsync">rsync</option>
+              <option value="patch">patch</option>
               <option value="subtree">subtree</option>
             </select>
           </div>

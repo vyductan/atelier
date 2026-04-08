@@ -1,6 +1,6 @@
 @import "@acme/ui/styles/globals.css";
 
-@source "../../../../@acme";
+@source "../../../../packages";
 
 @plugin "@tailwindcss/typography";
 

@@ -12,6 +12,7 @@
     "./lib/*": "./src/lib/*",
     "./hooks/*": "./src/hooks/*",
     "./styles/*": "./src/styles/*",
+    "./shadcn/*": "./src/shadcn/*",
     "./postcss.cjs": "./postcss.cjs"
   },
   "scripts": {

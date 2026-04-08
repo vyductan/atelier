@@ -251,6 +251,38 @@ export async function writeTaskSnapshot(
   return await invoke<void>("write_task_snapshot", { filePath, contents });
 }
 
+export async function readScheduledTaskSnapshot(
+  filePath: string,
+): Promise<string> {
+  ensureTauri();
+  return await invoke<string>("read_scheduled_task_snapshot", { filePath });
+}
+
+export async function writeScheduledTaskSnapshot(
+  filePath: string,
+  contents: string,
+): Promise<void> {
+  ensureTauri();
+  return await invoke<void>("write_scheduled_task_snapshot", {
+    filePath,
+    contents,
+  });
+}
+
+export async function listClaudeScheduledTaskFiles(): Promise<string[]> {
+  ensureTauri();
+  return await invoke<string[]>("list_claude_scheduled_task_files");
+}
+
+export async function readClaudeScheduledTaskFile(
+  taskDirName: string,
+): Promise<string> {
+  ensureTauri();
+  return await invoke<string>("read_claude_scheduled_task_file", {
+    taskDirName,
+  });
+}
+
 export async function getRsyncGitSafety(root: string): Promise<string[]> {
   ensureTauri();
   return await invoke<string[]>("get_rsync_git_safety", { root });
@@ -288,6 +320,14 @@ export async function executeSubtreeAdd(profile: SyncProfile): Promise<void> {
   return await invoke<void>("execute_subtree_add", { profile });
 }
 
+export async function executePatchSync(
+  profile: SyncProfile,
+  direction: SyncDirection,
+): Promise<void> {
+  ensureTauri();
+  return await invoke<void>("execute_patch_sync", { profile, direction });
+}
+
 export async function executeSyncAction(
   profile: SyncProfile,
   direction: SyncDirection,
@@ -300,6 +340,10 @@ export async function executeSyncAction(
 
   if (profile.mode === "subtree") {
     return await executeSubtreeSync(profile, direction);
+  }
+
+  if (profile.mode === "patch") {
+    return await executePatchSync(profile, direction);
   }
 
   if (!profile.primaryPath) {

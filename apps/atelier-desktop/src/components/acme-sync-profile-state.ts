@@ -57,13 +57,13 @@ export const buildPreviewRequestForAction = (
   return action === "push"
     ? {
         action,
-        mode: "rsync",
+        mode: profile.mode,
         src: profile.projectPath,
         dest: profile.primaryPath,
       }
     : {
         action,
-        mode: "rsync",
+        mode: profile.mode,
         src: profile.primaryPath,
         dest: profile.projectPath,
       };
@@ -92,13 +92,13 @@ export const buildPreviewRequestsForProfile = (
   return [
     {
       action: "push",
-      mode: "rsync",
+      mode: profile.mode,
       src: profile.projectPath,
       dest: profile.primaryPath,
     },
     {
       action: "pull",
-      mode: "rsync",
+      mode: profile.mode,
       src: profile.primaryPath,
       dest: profile.projectPath,
     },

@@ -158,6 +158,48 @@ describe("AcmeSyncProfileModal", () => {
     });
   });
 
+  it("supports selecting patch mode and saving it", () => {
+    const onSave = vi.fn();
+
+    render(
+      <AcmeSyncProfileModal
+        open
+        profile={{
+          id: "1",
+          projectPath: "/repo/project-a",
+          primaryPath: "/repo/primary",
+          mode: "rsync",
+          rsync: {
+            useGitSafetyChecks: true,
+          },
+        }}
+        onClose={vi.fn()}
+        onSave={onSave}
+      />,
+    );
+
+    fireEvent.change(getLastSelectById("acme-sync-profile-mode"), {
+      target: { value: "patch" },
+    });
+    const dialog = screen.getAllByRole("dialog").at(-1);
+    assert.ok(dialog, "Expected dialog to exist");
+    fireEvent.click(within(dialog).getByText("Save"));
+
+    expect(onSave).toHaveBeenCalledWith({
+      mode: "patch",
+      rsync: {
+        useGitSafetyChecks: true,
+      },
+      subtree: {
+        repoRoot: "/repo/project-a",
+        prefix: "@acme",
+        remote: "origin",
+        branch: "main",
+        squash: true,
+      },
+    });
+  });
+
   it("resets form state when a different profile is opened across modes", () => {
     const { rerender } = render(
       <AcmeSyncProfileModal

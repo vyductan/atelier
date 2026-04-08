@@ -6,12 +6,23 @@ import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const syncStrategyMarkdown = `Create crob job (claude/openclaw)
+
+- run daily
+- check github/gitlab repo
+- if any commit from vyductan-react -> in project using "@acme" switch to "ui" -> merge main branch -> copy code -> review -> check pnpm typecheck/lint/format -> commit & push -> create PR
+- if any commit from project using "@acme" -> in vyductan-react switch to "{project-name}" branch -> merge "main" branch -> copy code -> review -> check pnpm typecheck/lint/format -> commit & push -> create PR
+`;
+
 import type {
   PrimaryRemoteStatus,
   RepoMetadata,
   SyncProfile,
   SyncStatusResult,
 } from "../lib/types";
+import { getWorkspaceFileContent } from "../lib/workspace";
+
+const getWorkspaceFileContentMock = vi.mocked(getWorkspaceFileContent);
 
 const noop = () => {
   return null;
@@ -104,6 +115,10 @@ vi.mock("../lib/tauri", () => ({
   previewSubtreeSync: mocks.previewSubtreeSync,
   previewSyncChanges: mocks.previewSyncChanges,
   previewSyncFileDiff: vi.fn(),
+}));
+
+vi.mock("../lib/workspace", () => ({
+  getWorkspaceFileContent: vi.fn(),
 }));
 
 const storeState = {
@@ -227,6 +242,12 @@ describe("AcmeSync mount behavior", () => {
           squash: true,
         },
       },
+      {
+        id: "patch-1",
+        projectPath: "/repo/project-c",
+        primaryPath: "/repo/main",
+        mode: "patch",
+      },
     ];
 
     mocks.addToast.mockReset();
@@ -238,6 +259,7 @@ describe("AcmeSync mount behavior", () => {
     mocks.onFocusChanged.mockReset();
     mocks.previewSubtreeSync.mockReset();
     mocks.previewSyncChanges.mockReset();
+    getWorkspaceFileContentMock.mockReset();
 
     mocks.getRepoMetadata.mockImplementation(async () =>
       getSubtreeRepoMetadata(),
@@ -247,6 +269,13 @@ describe("AcmeSync mount behavior", () => {
     );
     mocks.invoke.mockResolvedValue("2026-03-10 12:00:00");
     mocks.onFocusChanged.mockResolvedValue(noop);
+    getWorkspaceFileContentMock.mockResolvedValue({
+      filePath: "SYNC_STRATEGY.md",
+      content: "",
+      exists: false,
+      isBinary: false,
+      tooLarge: false,
+    });
     mocks.previewSyncChanges.mockResolvedValue({
       files: [],
       summary: { added: 0, modified: 0, deleted: 0 },
@@ -539,6 +568,25 @@ describe("AcmeSync mount behavior", () => {
     ).toBeNull();
   });
 
+  it("shows patch row actions with patch badge", async () => {
+    const { AcmeSync } = await import("./acme-sync");
+
+    flushSync(() => {
+      root?.render(<AcmeSync />);
+    });
+
+    await flushAsyncWork();
+
+    const row = getProjectRow("/repo/project-c");
+
+    expect(row.textContent).toContain("PATCH");
+    expect(row.textContent).toContain("Pull");
+    expect(row.textContent).toContain("Push");
+    expect(row.textContent).toContain("Preview Pull");
+    expect(row.textContent).toContain("Preview Push");
+    expect(row.textContent).toContain("AI Sync");
+  });
+
   it("shows the full rsync row action set for rsync profiles", async () => {
     const { AcmeSync } = await import("./acme-sync");
 
@@ -794,6 +842,131 @@ describe("AcmeSync mount behavior", () => {
     expect(
       screen.getByText("Uncommitted changes in primary repo"),
     ).toBeTruthy();
+  });
+
+  it("calls the schedule callback with a prefilled scheduled sync draft", async () => {
+    const onCreateScheduledSyncTask = vi.fn();
+    getWorkspaceFileContentMock
+      .mockResolvedValueOnce({
+        filePath: "SYNC_STRATEGY.md",
+        content: syncStrategyMarkdown,
+        exists: true,
+        isBinary: false,
+        tooLarge: false,
+      })
+      .mockResolvedValueOnce({
+        filePath: "SYNC_STRAITEGY.md",
+        content: syncStrategyMarkdown,
+        exists: true,
+        isBinary: false,
+        tooLarge: false,
+      });
+
+    const { AcmeSync } = await import("./acme-sync");
+
+    flushSync(() => {
+      root?.render(
+        <AcmeSync onCreateScheduledSyncTask={onCreateScheduledSyncTask} />,
+      );
+    });
+
+    await flushAsyncWork();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /schedule sync/i })[0]!);
+    await flushAsyncWork();
+
+    expect(getWorkspaceFileContentMock).toHaveBeenCalledWith(
+      "/repo/main",
+      "SYNC_STRATEGY.md",
+    );
+    expect(onCreateScheduledSyncTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "@acme sync project-a",
+        workspacePath: "/repo/project-a",
+        frequency: "daily",
+        cron: "0 9 * * *",
+        worktreeEnabled: true,
+        prompt: expect.stringContaining("Create crob job (claude/openclaw)"),
+      }),
+    );
+  });
+
+  it("falls back to the legacy misspelled strategy filename", async () => {
+    const onCreateScheduledSyncTask = vi.fn();
+    getWorkspaceFileContentMock
+      .mockResolvedValueOnce({
+        filePath: "SYNC_STRATEGY.md",
+        content: "",
+        exists: false,
+        isBinary: false,
+        tooLarge: false,
+      })
+      .mockResolvedValueOnce({
+        filePath: "SYNC_STRAITEGY.md",
+        content: syncStrategyMarkdown,
+        exists: true,
+        isBinary: false,
+        tooLarge: false,
+      });
+
+    const { AcmeSync } = await import("./acme-sync");
+
+    flushSync(() => {
+      root?.render(
+        <AcmeSync onCreateScheduledSyncTask={onCreateScheduledSyncTask} />,
+      );
+    });
+
+    await flushAsyncWork();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /schedule sync/i })[0]!);
+    await flushAsyncWork();
+
+    expect(getWorkspaceFileContentMock).toHaveBeenNthCalledWith(
+      1,
+      "/repo/main",
+      "SYNC_STRATEGY.md",
+    );
+    expect(getWorkspaceFileContentMock).toHaveBeenNthCalledWith(
+      2,
+      "/repo/main",
+      "SYNC_STRAITEGY.md",
+    );
+    expect(onCreateScheduledSyncTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: expect.stringContaining("Create crob job (claude/openclaw)"),
+      }),
+    );
+  });
+
+  it("shows an error and skips draft creation when the strategy file is invalid", async () => {
+    const onCreateScheduledSyncTask = vi.fn();
+    getWorkspaceFileContentMock.mockResolvedValueOnce({
+      filePath: "SYNC_STRATEGY.md",
+      content: "Create crob job (claude/openclaw)\n\n- run weekly\n",
+      exists: true,
+      isBinary: false,
+      tooLarge: false,
+    });
+
+    const { AcmeSync } = await import("./acme-sync");
+
+    flushSync(() => {
+      root?.render(
+        <AcmeSync onCreateScheduledSyncTask={onCreateScheduledSyncTask} />,
+      );
+    });
+
+    await flushAsyncWork();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /schedule sync/i })[0]!);
+    await flushAsyncWork();
+
+    expect(onCreateScheduledSyncTask).not.toHaveBeenCalled();
+    expect(mocks.addToast).toHaveBeenCalledWith(
+      "Sync strategy must explicitly include 'run daily' for the V1 preset",
+      "error",
+    );
   });
 
   it("shows Not Synced to Remote with ahead count", async () => {

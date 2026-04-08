@@ -30,10 +30,18 @@ function getWorkspacePath(group: {
 interface ChatSidebarProps {
   allTasks: TaskRecord[];
   selectedTaskId: string | null;
+  selectedWorkspaceId?: string | null;
+  onSelectWorkspace?: (workspaceId: string) => void;
   onSelectTask: (taskId: string) => void;
 }
 
-export function ChatSidebar({ allTasks, selectedTaskId, onSelectTask }: ChatSidebarProps) {
+export function ChatSidebar({
+  allTasks,
+  selectedTaskId,
+  selectedWorkspaceId: selectedWorkspaceIdOverride,
+  onSelectWorkspace,
+  onSelectTask,
+}: ChatSidebarProps) {
   const {
     selectedSessionId,
     setSelectedSessionId,
@@ -105,7 +113,10 @@ export function ChatSidebar({ allTasks, selectedTaskId, onSelectTask }: ChatSide
       workspaces,
       sessions: workspaceSessions,
       selectedSessionId,
-      selectedWorkspaceId,
+      selectedWorkspaceId:
+        selectedWorkspaceIdOverride === undefined
+          ? selectedWorkspaceId
+          : selectedWorkspaceIdOverride,
       expandedWorkspaceIds,
       searchQuery,
     });
@@ -220,9 +231,22 @@ export function ChatSidebar({ allTasks, selectedTaskId, onSelectTask }: ChatSide
         onSearchQueryChange={setSearchQuery}
         renamingSessionId={renamingSession?.sessionId ?? null}
         selectedTaskId={selectedTaskId}
+        selectedWorkspaceId={
+          selectedWorkspaceIdOverride === undefined
+            ? selectedWorkspaceId
+            : selectedWorkspaceIdOverride
+        }
         onAddGeneralWorkspace={handleAddGeneralWorkspace}
         onAddWorkspace={handleAddWorkspace}
         onToggleWorkspace={toggleWorkspaceExpanded}
+        onSelectWorkspace={(workspaceId) => {
+          if (onSelectWorkspace) {
+            onSelectWorkspace(workspaceId);
+            return;
+          }
+
+          setSelectedWorkspaceId(workspaceId);
+        }}
         onCreateSession={(projectPath) => {
           setSelectedWorkspaceId(projectPath);
           setNewSessionProject(projectPath);

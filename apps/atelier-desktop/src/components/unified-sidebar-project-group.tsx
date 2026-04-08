@@ -12,7 +12,9 @@ interface UnifiedSidebarProjectGroupProps {
   sessionsById: Map<string, SessionEntry>;
   renamingSessionId: string | null;
   selectedTaskId: string | null;
+  selectedWorkspaceId: string | null;
   onToggleExpanded: (workspacePath: string) => void;
+  onSelectWorkspace: (workspacePath: string) => void;
   onCreateSession: (workspacePath: string) => void;
   onSelectTask: (taskId: string) => void;
   onSelectSession: (sessionId: string) => void;
@@ -29,7 +31,9 @@ export function UnifiedSidebarProjectGroup({
   sessionsById,
   renamingSessionId,
   selectedTaskId,
+  selectedWorkspaceId,
   onToggleExpanded,
+  onSelectWorkspace,
   onCreateSession,
   onSelectTask,
   onSelectSession,
@@ -45,7 +49,8 @@ export function UnifiedSidebarProjectGroup({
       <div className="group flex items-center justify-between px-3 py-1 text-sm font-medium hover:bg-muted/50 rounded-md">
         <button
           className="flex flex-1 items-center gap-2 overflow-hidden text-left"
-          onClick={() => onToggleExpanded(group.workspacePath)}
+          data-selected={group.workspacePath === selectedWorkspaceId}
+          onClick={() => onSelectWorkspace(group.workspacePath)}
         >
           {group.isCollapsed ? (
             <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -57,6 +62,23 @@ export function UnifiedSidebarProjectGroup({
             {group.itemCount}
           </Badge>
         </button>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleExpanded(group.workspacePath);
+          }}
+          title={group.isCollapsed ? "Expand workspace" : "Collapse workspace"}
+        >
+          {group.isCollapsed ? (
+            <ChevronRight className="h-4 w-4" />
+          ) : (
+            <ChevronDown className="h-4 w-4" />
+          )}
+        </Button>
 
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           {group.isMissing ? (
