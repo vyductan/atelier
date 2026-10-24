@@ -30,6 +30,7 @@ const HEALTH_STYLE: Record<ServiceHealth, { dot: string; label: string }> = {
   starting: { dot: "bg-sky-500 animate-pulse", label: "Starting" },
   crashed: { dot: "bg-red-500", label: "Crashed" },
   down: { dot: "bg-muted-foreground/40", label: "Down" },
+  unmanaged: { dot: "bg-violet-500", label: "Running outside Atelier" },
 };
 
 function groupServices(services: ServiceStatus[]): [string, ServiceStatus[]][] {
