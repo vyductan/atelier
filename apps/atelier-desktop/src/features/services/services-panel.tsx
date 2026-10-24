@@ -81,7 +81,7 @@ const HEALTH_STYLE: Record<ServiceHealth, { dot: string; label: string }> = {
   starting: { dot: "bg-sky-500 animate-pulse", label: "Starting" },
   crashed: { dot: "bg-red-500", label: "Crashed" },
   down: { dot: "bg-muted-foreground/40", label: "Down" },
-  unmanaged: { dot: "bg-violet-500", label: "Running outside Atelier" },
+  unmanaged: { dot: "bg-violet-500", label: "Outside Atelier" },
 };
 
 function describeProbe(service: ServiceStatus): string | null {
@@ -93,11 +93,35 @@ function describeProbe(service: ServiceStatus): string | null {
   return health.error;
 }
 
+/**
+ * Text for the status column. Up and down already read from the dot, so they
+ * get none; the rest says what is unusual about the service.
+ */
+function statusNote(
+  health: ServiceHealth,
+  service: ServiceStatus,
+): string | null {
+  switch (health) {
+    case "up":
+    case "down":
+      return null;
+    case "crashed":
+      return service.launchd?.lastExitCode
+        ? `Crashed · exit ${service.launchd.lastExitCode}`
+        : "Crashed";
+    case "degraded":
+      return describeProbe(service) ?? "Degraded";
+    case "starting":
+    case "unmanaged":
+      return HEALTH_STYLE[health].label;
+  }
+}
+
 function ServiceIcon({ name }: { name: keyof typeof SERVICE_ICONS }) {
   const Icon = SERVICE_ICONS[name];
   return (
     <Icon
-      className="text-muted-foreground size-4 shrink-0"
+      className="size-4 shrink-0 text-muted-foreground"
       aria-hidden="true"
     />
   );
@@ -206,6 +230,9 @@ function ServiceRow({
   const pid = service.listener?.pid ?? service.launchd?.pid ?? null;
   const canControl = def.kind !== "remote";
   const isRunning = health !== "down" && health !== "crashed";
+  // Opening a page that refuses connections only shows a browser error.
+  const answers =
+    health === "up" || health === "degraded" || health === "unmanaged";
   // Remote services have no log file, so their row is not a button.
   const hasLog = service.logPath !== null;
 
@@ -248,6 +275,17 @@ function ServiceRow({
       : "bg-sky-500 animate-pulse"
     : style.dot;
   const label = transition ? TRANSITION_LABEL[transition.action] : style.label;
+  const note = transition
+    ? TRANSITION_LABEL[transition.action]
+    : statusNote(health, service);
+  // Full detail stays one hover away on the dot.
+  const detail = [
+    label,
+    pid === null ? null : `pid ${pid}`,
+    describeProbe(service),
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <div
@@ -279,11 +317,11 @@ function ServiceRow({
           onSelect();
         }
       }}
-      className={`flex touch-none items-center gap-3 rounded-lg border px-3 py-2 transition-colors select-none ${selected ? "border-primary/50 bg-primary/5" : "bg-card"} ${hasLog ? "hover:bg-muted/40 cursor-pointer" : "cursor-grab"} focus-visible:ring-ring outline-none focus-visible:ring-2`}
+      className={`flex touch-none items-center gap-3 rounded-lg border px-3 py-2 transition-colors select-none ${selected ? "border-primary/50 bg-primary/5" : "bg-card"} ${hasLog ? "cursor-pointer hover:bg-muted/40" : "cursor-grab"} outline-none focus-visible:ring-2 focus-visible:ring-ring`}
     >
       <span
         className={`size-2.5 shrink-0 rounded-full transition-colors ${dot}`}
-        title={label}
+        title={detail}
       />
       {iconSource.type === "image" ? (
         <img
@@ -295,7 +333,7 @@ function ServiceRow({
         <ServiceIcon name={iconSource.name} />
       )}
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2" title={detail}>
           <span className="truncate text-sm font-medium">
             {def.name ?? def.id}
           </span>
@@ -304,7 +342,7 @@ function ServiceRow({
               className={`shrink-0 rounded-md border px-1.5 py-px font-mono text-xs tabular-nums ${
                 service.listener
                   ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                  : "text-muted-foreground border-border bg-muted/40"
+                  : "border-border bg-muted/40 text-muted-foreground"
               }`}
               title={
                 service.listener
@@ -315,29 +353,36 @@ function ServiceRow({
               :{def.port}
             </span>
           )}
-          <span className="text-muted-foreground text-xs">{def.kind}</span>
-        </div>
-        <div className="text-muted-foreground flex gap-3 truncate text-xs">
-          <span className={busy ? "text-foreground" : undefined}>{label}</span>
-          {pid === null ? null : <span>pid {pid}</span>}
-          {service.launchd?.lastExitCode ? (
-            <span>exit {service.launchd.lastExitCode}</span>
-          ) : null}
-          {describeProbe(service) ? (
-            <span>{describeProbe(service)}</span>
-          ) : null}
+          <span className="text-xs text-muted-foreground">{def.kind}</span>
         </div>
       </div>
 
+      {note === null ? null : (
+        <span
+          className={`max-w-40 shrink-0 truncate text-xs ${
+            busy
+              ? "text-foreground"
+              : health === "crashed"
+                ? "text-red-600 dark:text-red-400"
+                : "text-muted-foreground"
+          }`}
+          title={note}
+        >
+          {note}
+        </span>
+      )}
+
       {/* Actions keep their own behavior instead of also toggling the logs. */}
       <div
-        className="flex shrink-0 items-center gap-1"
+        // Room for Open + Restart + Stop, so buttons and the status text line
+        // up across rows whatever subset a row shows.
+        className="flex w-[84px] shrink-0 items-center justify-end gap-1"
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => event.stopPropagation()}
         // Pressing a button must not start dragging the row.
         onPointerDown={(event) => event.stopPropagation()}
       >
-        {def.url ? (
+        {def.url && answers ? (
           <Button
             type="text"
             size="small"
@@ -405,7 +450,7 @@ function LogPane({ serviceId }: { serviceId: string }) {
 
   return (
     <section className="flex min-h-0 w-1/2 shrink-0 flex-col border-l">
-      <header className="text-muted-foreground border-b px-4 py-2 text-xs">
+      <header className="border-b px-4 py-2 text-xs text-muted-foreground">
         Logs · {serviceId}
       </header>
       <pre
@@ -432,14 +477,14 @@ function UnregisteredListeners({ listeners }: { listeners: Listener[] }) {
   if (listeners.length === 0) return null;
   return (
     <details className="mt-6">
-      <summary className="text-muted-foreground cursor-pointer text-xs font-medium tracking-wide uppercase">
+      <summary className="cursor-pointer text-xs font-medium tracking-wide text-muted-foreground uppercase">
         Other listening ports ({listeners.length})
       </summary>
       <div className="mt-2 flex flex-col gap-1">
         {listeners.map((listener) => (
           <div
             key={`${listener.pid}:${listener.port}`}
-            className="text-muted-foreground flex gap-3 font-mono text-xs whitespace-nowrap"
+            className="flex gap-3 font-mono text-xs whitespace-nowrap text-muted-foreground"
           >
             <span className="w-14 text-right">:{listener.port}</span>
             <span className="w-28 truncate">{listener.command}</span>
@@ -555,7 +600,7 @@ export function ServicesPanel() {
       <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto px-6 py-5">
         <header className="mb-4 flex items-center gap-2">
           <h2 className="text-sm font-semibold">Services</h2>
-          <span className="text-muted-foreground truncate text-xs">
+          <span className="truncate text-xs text-muted-foreground">
             {snapshot.data?.configPath}
           </span>
           <div className="ml-auto flex gap-1">
@@ -579,10 +624,10 @@ export function ServicesPanel() {
         </header>
 
         {snapshot.error ? (
-          <p className="text-destructive text-sm">{String(snapshot.error)}</p>
+          <p className="text-sm text-destructive">{String(snapshot.error)}</p>
         ) : null}
         {snapshot.data?.configError ? (
-          <p className="text-destructive mb-4 rounded-md border border-current/30 px-3 py-2 font-mono text-xs">
+          <p className="mb-4 rounded-md border border-current/30 px-3 py-2 font-mono text-xs text-destructive">
             {snapshot.data.configError}
           </p>
         ) : null}
@@ -609,7 +654,7 @@ export function ServicesPanel() {
                       {...groupDrag.attributes}
                       {...groupDrag.listeners}
                       aria-label={`Group ${group.name}, drag to reorder`}
-                      className="text-muted-foreground focus-visible:ring-ring mb-2 flex w-fit cursor-grab touch-none items-center gap-1 rounded text-xs font-medium tracking-wide uppercase outline-none select-none focus-visible:ring-2 active:cursor-grabbing"
+                      className="mb-2 flex w-fit cursor-grab touch-none items-center gap-1 rounded text-xs font-medium tracking-wide text-muted-foreground uppercase outline-none select-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
                     >
                       {group.name}
                     </h3>
@@ -660,7 +705,7 @@ export function ServicesPanel() {
       {logServiceId ? (
         <LogPane key={logServiceId} serviceId={logServiceId} />
       ) : (
-        <section className="text-muted-foreground flex w-1/2 shrink-0 items-center justify-center border-l text-xs">
+        <section className="flex w-1/2 shrink-0 items-center justify-center border-l text-xs text-muted-foreground">
           No service with a log yet.
         </section>
       )}
