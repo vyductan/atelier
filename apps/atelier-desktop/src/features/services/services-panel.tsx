@@ -18,7 +18,7 @@ import type { ServiceHealth } from "./service-health";
 import { servicesClient } from "../../lib/services-client";
 import { useToastStore } from "../../store/toast-store";
 import { deriveServiceHealth } from "./service-health";
-import { inferServiceIcon, SERVICE_ICONS } from "./service-icon";
+import { resolveServiceIcon, SERVICE_ICONS } from "./service-icon";
 
 const SERVICES_QUERY_KEY = ["services"] as const;
 
@@ -52,6 +52,13 @@ function describeProbe(service: ServiceStatus): string | null {
   return health.error;
 }
 
+function ServiceIcon({ name }: { name: keyof typeof SERVICE_ICONS }) {
+  const Icon = SERVICE_ICONS[name];
+  return (
+    <Icon className="text-muted-foreground size-4 shrink-0" aria-hidden="true" />
+  );
+}
+
 function ServiceRow({
   service,
   selected,
@@ -66,7 +73,10 @@ function ServiceRow({
   const health = deriveServiceHealth(service);
   const style = HEALTH_STYLE[health];
   const { def } = service;
-  const Icon = SERVICE_ICONS[inferServiceIcon(def)];
+  const iconSource = resolveServiceIcon(def, service.favicon);
+  // Favicons keep their colors only while the service runs, so a gray row
+  // reads as "stopped" at a glance and the logo never outshouts the dot.
+  const isStopped = health === "down" || health === "crashed";
   const pid = service.listener?.pid ?? service.launchd?.pid ?? null;
   const canControl = def.kind !== "remote";
   const isRunning = health !== "down" && health !== "crashed";
@@ -91,10 +101,15 @@ function ServiceRow({
         className={`size-2.5 shrink-0 rounded-full ${style.dot}`}
         title={style.label}
       />
-      <Icon
-        className="text-muted-foreground size-4 shrink-0"
-        aria-hidden="true"
-      />
+      {iconSource.type === "image" ? (
+        <img
+          src={iconSource.src}
+          alt=""
+          className={`size-4 shrink-0 rounded-sm object-contain transition ${isStopped ? "opacity-50 grayscale" : ""}`}
+        />
+      ) : (
+        <ServiceIcon name={iconSource.name} />
+      )}
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
           <span className="truncate text-sm font-medium">

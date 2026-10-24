@@ -4,6 +4,7 @@ use std::process::Command;
 use serde::Serialize;
 
 use super::discovery::{self, Listener};
+use super::favicon;
 use super::health::{self, HealthResult};
 use super::launchd::{self, LaunchdState};
 use super::registry::{self, ServiceDef};
@@ -16,6 +17,8 @@ pub struct ServiceStatus {
     pub listener: Option<Listener>,
     pub health: Option<HealthResult>,
     pub log_path: Option<String>,
+    /// Cached favicon as a data URL; kept while the service is down.
+    pub favicon: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -64,11 +67,20 @@ pub async fn list_services() -> Result<ServicesSnapshot, String> {
     .map_err(|e| e.to_string())?;
 
     let client = health::client();
+    let favicon_client = favicon::client();
     let mut probes = tokio::task::JoinSet::new();
     for (index, def) in defs.iter().enumerate() {
         if let Some(url) = health_url(def) {
             let client = client.clone();
-            probes.spawn(async move { (index, health::probe(&client, url).await) });
+            let favicon_client = favicon_client.clone();
+            let def = def.clone();
+            probes.spawn(async move {
+                let result = health::probe(&client, url).await;
+                if result.status_code.is_some_and(|code| code < 500) {
+                    favicon::refresh(&favicon_client, &def).await;
+                }
+                (index, result)
+            });
         }
     }
     let mut health_results: Vec<Option<HealthResult>> = vec![None; defs.len()];
@@ -93,6 +105,7 @@ pub async fn list_services() -> Result<ServicesSnapshot, String> {
             listener: def
                 .port
                 .and_then(|port| listeners.iter().find(|l| l.port == port).cloned()),
+            favicon: favicon::cached(&def.id),
             def,
             launchd,
             health,

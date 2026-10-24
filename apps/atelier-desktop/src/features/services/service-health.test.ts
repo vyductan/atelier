@@ -73,6 +73,7 @@ function makeStatus({
             ...health,
           },
     logPath: null,
+    favicon: null,
   };
 }
 

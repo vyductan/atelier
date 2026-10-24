@@ -51,6 +51,8 @@ export interface ServiceStatus {
   listener: Listener | null;
   health: HealthResult | null;
   logPath: string | null;
+  /** Cached favicon as a data URL, kept while the service is down. */
+  favicon: string | null;
 }
 
 export interface ServicesSnapshot {

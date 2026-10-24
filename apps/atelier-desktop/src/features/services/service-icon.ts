@@ -32,6 +32,30 @@ function isServiceIconName(value: string): value is ServiceIconName {
   return Object.hasOwn(SERVICE_ICONS, value);
 }
 
+function explicitIcon(def: ServiceDef): ServiceIconName | null {
+  const explicit = def.icon?.trim().toLowerCase();
+  return explicit && isServiceIconName(explicit) ? explicit : null;
+}
+
+export type ServiceIconSource =
+  | { type: "image"; src: string }
+  | { type: "icon"; name: ServiceIconName };
+
+/**
+ * What to draw for a service: an explicit `icon:` from services.yaml, else
+ * the site's own favicon, else the icon inferred from kind/cmd.
+ */
+export function resolveServiceIcon(
+  def: ServiceDef,
+  favicon: string | null,
+): ServiceIconSource {
+  const explicit = explicitIcon(def);
+  if (explicit) return { type: "icon", name: explicit };
+  // The backend only ever sends data URLs; anything else is not ours to load.
+  if (favicon?.startsWith("data:image/")) return { type: "image", src: favicon };
+  return { type: "icon", name: inferServiceIcon(def) };
+}
+
 /**
  * Picks an icon for a service: an explicit, known `icon` wins, otherwise it is
  * inferred from `kind` and `cmd`. Rules run most specific first, because
@@ -39,8 +63,8 @@ function isServiceIconName(value: string): value is ServiceIconName {
  * through to the generic dev-server rule.
  */
 export function inferServiceIcon(def: ServiceDef): ServiceIconName {
-  const explicit = def.icon?.trim().toLowerCase();
-  if (explicit && isServiceIconName(explicit)) return explicit;
+  const explicit = explicitIcon(def);
+  if (explicit) return explicit;
 
   if (def.kind === "remote") return "cloud";
   if (def.kind === "launchd") return "cog";

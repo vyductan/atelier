@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ServiceDef, ServiceKind } from "../../lib/services-client";
-import { inferServiceIcon } from "./service-icon";
+import { inferServiceIcon, resolveServiceIcon } from "./service-icon";
 
 function makeDef({
   kind = "process",
@@ -97,5 +97,47 @@ describe("inferServiceIcon", () => {
     it("uses terminal when there is no cmd", () => {
       expect(inferServiceIcon(makeDef({}))).toBe("terminal");
     });
+  });
+});
+
+describe("resolveServiceIcon", () => {
+  const favicon = "data:image/svg+xml;base64,PHN2Zy8+";
+
+  it("prefers an explicit icon over the favicon", () => {
+    expect(
+      resolveServiceIcon(makeDef({ cmd: "pnpm dev", icon: "server" }), favicon),
+    ).toEqual({ type: "icon", name: "server" });
+  });
+
+  it("uses the favicon when there is no explicit icon", () => {
+    expect(resolveServiceIcon(makeDef({ cmd: "pnpm dev" }), favicon)).toEqual({
+      type: "image",
+      src: favicon,
+    });
+  });
+
+  it("uses the favicon when the explicit icon is unknown", () => {
+    expect(
+      resolveServiceIcon(makeDef({ cmd: "pnpm dev", icon: "rocket" }), favicon),
+    ).toEqual({ type: "image", src: favicon });
+  });
+
+  it("falls back to the inferred icon without a favicon", () => {
+    expect(resolveServiceIcon(makeDef({ cmd: "supabase start" }), null)).toEqual(
+      { type: "icon", name: "database" },
+    );
+  });
+
+  it("refuses favicons that are not image data URLs", () => {
+    for (const src of [
+      "http://localhost:3000/favicon.ico",
+      "data:text/html;base64,PGgxPg==",
+      "javascript:alert(1)",
+    ]) {
+      expect(resolveServiceIcon(makeDef({ kind: "remote" }), src)).toEqual({
+        type: "icon",
+        name: "cloud",
+      });
+    }
   });
 });
