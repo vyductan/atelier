@@ -28,6 +28,10 @@ use features::skills::commands::{
     get_installed_skills, install_skill, search_skills, uninstall_skill, enable_skill_for_agent, disable_skill_for_agent,
     get_detected_agents,
 };
+use features::services::commands::{
+    list_services, open_services_config, read_service_log, restart_service, start_service,
+    stop_service,
+};
 
 fn main() {
     let _ = fix_path_env::fix();
@@ -85,6 +89,12 @@ fn main() {
             enable_skill_for_agent,
             disable_skill_for_agent,
             get_detected_agents,
+            list_services,
+            start_service,
+            stop_service,
+            restart_service,
+            read_service_log,
+            open_services_config,
         ])
         .setup(|app| {
             start_fs_watcher(app.handle().clone());

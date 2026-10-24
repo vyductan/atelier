@@ -22,6 +22,7 @@ import { TaskDetailPanel } from "./task-detail-panel";
 import { WorkbenchStatusBar } from "./workbench-status-bar";
 import { ChatSidebar } from "./chat-sidebar";
 import { SkillsManagerPanel } from "../features/skills-manager/skills-manager-panel";
+import { ServicesPanel } from "../features/services/services-panel";
 
 interface AppShellProps {
   chatsWorkspace: React.ReactNode;
@@ -70,10 +71,11 @@ export function AppShell({
   syncView,
   configView,
 }: AppShellProps): JSX.Element {
-  const [activeView, setActiveView] = useState<"chats" | "sync" | "skills" | "config">("chats");
+  const [activeView, setActiveView] = useState<"chats" | "sync" | "services" | "skills" | "config">("chats");
   const [hasMountedSyncView, setHasMountedSyncView] = useState(false);
   const [hasMountedConfigView, setHasMountedConfigView] = useState(false);
   const [hasMountedSkillsView, setHasMountedSkillsView] = useState(false);
+  const [hasMountedServicesView, setHasMountedServicesView] = useState(false);
   const [taskWorkbench, setTaskWorkbench] = useState<TaskWorkbench | null>(
     null,
   );
@@ -312,7 +314,7 @@ export function AppShell({
     <Tabs
       value={activeView}
       onValueChange={(value: string) => {
-        if (value === "chats" || value === "sync" || value === "skills" || value === "config") {
+        if (value === "chats" || value === "sync" || value === "services" || value === "skills" || value === "config") {
           if (value === "sync") {
             setHasMountedSyncView(true);
           }
@@ -321,6 +323,9 @@ export function AppShell({
           }
           if (value === "skills") {
             setHasMountedSkillsView(true);
+          }
+          if (value === "services") {
+            setHasMountedServicesView(true);
           }
 
           setActiveView(value);
@@ -340,6 +345,9 @@ export function AppShell({
           </TabsTrigger>
           <TabsTrigger value="sync" className="px-3 py-1 text-xs">
             @acme Sync
+          </TabsTrigger>
+          <TabsTrigger value="services" className="px-3 py-1 text-xs">
+            Services
           </TabsTrigger>
           <TabsTrigger value="skills" className="px-3 py-1 text-xs">
             Skills
@@ -463,6 +471,13 @@ export function AppShell({
         <TabsContent value="sync" className="flex-1 overflow-hidden">
           {hasMountedSyncView ? (
             <main className="flex-1 overflow-hidden">{syncView}</main>
+          ) : null}
+        </TabsContent>
+        <TabsContent value="services" className="flex flex-1 flex-col overflow-hidden">
+          {hasMountedServicesView ? (
+            <main className="bg-background flex flex-1 flex-col overflow-hidden">
+              <ServicesPanel />
+            </main>
           ) : null}
         </TabsContent>
         <TabsContent value="skills" className="flex flex-1 flex-col overflow-hidden">
