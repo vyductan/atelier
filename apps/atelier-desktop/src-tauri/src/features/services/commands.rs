@@ -7,6 +7,7 @@ use super::discovery::{self, Listener};
 use super::favicon;
 use super::health::{self, HealthResult};
 use super::launchd::{self, LaunchdState};
+use super::order;
 use super::registry::{self, ServiceDef};
 
 #[derive(Debug, Serialize)]
@@ -248,4 +249,16 @@ pub async fn open_services_config() -> Result<(), String> {
         .spawn()
         .map(|_| ())
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_services_order() -> Result<order::ServicesOrder, String> {
+    Ok(order::load())
+}
+
+#[tauri::command]
+pub async fn save_services_order(order: order::ServicesOrder) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || order::save(&order))
+        .await
+        .map_err(|e| e.to_string())?
 }

@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import type { ServicesOrder } from "../features/services/services-order";
+
 // Mirrors src-tauri/src/features/services. `ServiceDef` keeps the snake_case
 // keys of ~/.atelier/services.yaml; runtime facts are camelCase.
 
@@ -70,4 +72,7 @@ export const servicesClient = {
   readLog: (id: string, lines?: number) =>
     invoke<string>("read_service_log", { id, lines }),
   openConfig: () => invoke<void>("open_services_config"),
+  getOrder: () => invoke<ServicesOrder>("get_services_order"),
+  saveOrder: (order: ServicesOrder) =>
+    invoke<void>("save_services_order", { order }),
 };

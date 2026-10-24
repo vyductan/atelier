@@ -29,8 +29,8 @@ use features::skills::commands::{
     get_detected_agents, get_skill_usage,
 };
 use features::services::commands::{
-    list_services, open_services_config, read_service_log, restart_service, start_service,
-    stop_service,
+    get_services_order, list_services, open_services_config, read_service_log, restart_service,
+    save_services_order, start_service, stop_service,
 };
 
 fn main() {
@@ -96,6 +96,8 @@ fn main() {
             restart_service,
             read_service_log,
             open_services_config,
+            get_services_order,
+            save_services_order,
         ])
         .setup(|app| {
             start_fs_watcher(app.handle().clone());

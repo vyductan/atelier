@@ -1,9 +1,26 @@
+import type { DragEndEvent, Modifier } from "@dnd-kit/core";
+import type { ReactNode } from "react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { open } from "@tauri-apps/plugin-shell";
 import {
   ExternalLink,
-  FileText,
+  GripVertical,
   Play,
   RefreshCw,
   RotateCw,
@@ -15,12 +32,20 @@ import { Button } from "@acme/ui/components/button";
 
 import type { Listener, ServiceStatus } from "../../lib/services-client";
 import type { ServiceHealth } from "./service-health";
+import type { OrderedGroup, ServicesOrder } from "./services-order";
 import { servicesClient } from "../../lib/services-client";
 import { useToastStore } from "../../store/toast-store";
 import { deriveServiceHealth } from "./service-health";
 import { resolveServiceIcon, SERVICE_ICONS } from "./service-icon";
+import { applyOrder, moveGroup, moveService, toOrder } from "./services-order";
 
 const SERVICES_QUERY_KEY = ["services"] as const;
+const ORDER_QUERY_KEY = ["services-order"] as const;
+
+const restrictToVerticalAxis: Modifier = ({ transform }) => ({
+  ...transform,
+  x: 0,
+});
 
 /** How close to the bottom (px) still counts as "following" the log. */
 const FOLLOW_THRESHOLD = 24;
@@ -34,15 +59,6 @@ const HEALTH_STYLE: Record<ServiceHealth, { dot: string; label: string }> = {
   unmanaged: { dot: "bg-violet-500", label: "Running outside Atelier" },
 };
 
-function groupServices(services: ServiceStatus[]): [string, ServiceStatus[]][] {
-  const groups = new Map<string, ServiceStatus[]>();
-  for (const service of services) {
-    const group = service.def.group ?? "Other";
-    groups.set(group, [...(groups.get(group) ?? []), service]);
-  }
-  return [...groups.entries()];
-}
-
 function describeProbe(service: ServiceStatus): string | null {
   const { health } = service;
   if (!health) return null;
@@ -55,7 +71,74 @@ function describeProbe(service: ServiceStatus): string | null {
 function ServiceIcon({ name }: { name: keyof typeof SERVICE_ICONS }) {
   const Icon = SERVICE_ICONS[name];
   return (
-    <Icon className="text-muted-foreground size-4 shrink-0" aria-hidden="true" />
+    <Icon
+      className="text-muted-foreground size-4 shrink-0"
+      aria-hidden="true"
+    />
+  );
+}
+
+/** Sortable wrapper: the item moves as a whole, but only `handle` starts a drag. */
+// Separate hover scopes: a group wrapper contains service wrappers, and a
+// shared name would reveal every row's handle when hovering the group.
+const HOVER_SCOPE = {
+  group: { root: "group/grp", handle: "group-hover/grp:opacity-100" },
+  service: { root: "group/svc", handle: "group-hover/svc:opacity-100" },
+} as const;
+
+function Sortable({
+  id,
+  label,
+  scope,
+  children,
+}: {
+  id: string;
+  label: string;
+  scope: keyof typeof HOVER_SCOPE;
+  children: (handle: ReactNode) => ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const handle = (
+    <button
+      type="button"
+      ref={setActivatorNodeRef}
+      {...attributes}
+      {...listeners}
+      aria-label={`Drag to reorder ${label}`}
+      onClick={(event) => event.stopPropagation()}
+      className={`text-muted-foreground/60 hover:text-foreground -ml-1 flex size-5 shrink-0 cursor-grab touch-none items-center justify-center rounded opacity-0 transition ${HOVER_SCOPE[scope].handle} focus-visible:opacity-100 active:cursor-grabbing`}
+    >
+      <GripVertical className="size-3.5" />
+    </button>
+  );
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`${HOVER_SCOPE[scope].root} ${isDragging ? "relative z-10 opacity-80" : ""}`}
+      style={{ transform: CSS.Translate.toString(transform), transition }}
+    >
+      {children(handle)}
+    </div>
+  );
+}
+
+function useSortSensors() {
+  return useSensors(
+    // A few pixels of travel before a drag starts, so clicks stay clicks.
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
   );
 }
 
@@ -63,10 +146,12 @@ function ServiceRow({
   service,
   selected,
   onSelect,
+  handle,
 }: {
   service: ServiceStatus;
   selected: boolean;
   onSelect: () => void;
+  handle: ReactNode;
 }) {
   const queryClient = useQueryClient();
   const addToast = useToastStore((state) => state.addToast);
@@ -80,6 +165,8 @@ function ServiceRow({
   const pid = service.listener?.pid ?? service.launchd?.pid ?? null;
   const canControl = def.kind !== "remote";
   const isRunning = health !== "down" && health !== "crashed";
+  // Remote services have no log file, so their row is not a button.
+  const hasLog = service.logPath !== null;
 
   const action = useMutation({
     mutationFn: async (kind: "start" | "stop" | "restart") => {
@@ -95,8 +182,28 @@ function ServiceRow({
 
   return (
     <div
-      className={`flex items-center gap-3 rounded-lg border px-3 py-2 ${selected ? "border-primary/50 bg-primary/5" : "bg-card"}`}
+      {...(hasLog
+        ? {
+            role: "button",
+            tabIndex: 0,
+            "aria-expanded": selected,
+            "aria-label": `${selected ? "Hide" : "Show"} logs for ${def.name ?? def.id}`,
+            onClick: onSelect,
+            onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => {
+              // Only the row itself: Enter on a nested button runs that button.
+              if (
+                event.key === "Enter" &&
+                event.target === event.currentTarget
+              ) {
+                event.preventDefault();
+                onSelect();
+              }
+            },
+          }
+        : {})}
+      className={`flex items-center gap-3 rounded-lg border px-3 py-2 transition-colors ${selected ? "border-primary/50 bg-primary/5" : "bg-card"} ${hasLog ? "hover:bg-muted/40 focus-visible:ring-ring cursor-pointer outline-none focus-visible:ring-2" : ""}`}
     >
+      {handle}
       <span
         className={`size-2.5 shrink-0 rounded-full ${style.dot}`}
         title={style.label}
@@ -124,11 +231,18 @@ function ServiceRow({
           {service.launchd?.lastExitCode ? (
             <span>exit {service.launchd.lastExitCode}</span>
           ) : null}
-          {describeProbe(service) ? <span>{describeProbe(service)}</span> : null}
+          {describeProbe(service) ? (
+            <span>{describeProbe(service)}</span>
+          ) : null}
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-1">
+      {/* Actions keep their own behavior instead of also toggling the logs. */}
+      <div
+        className="flex shrink-0 items-center gap-1"
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+      >
         {def.url ? (
           <Button
             type="text"
@@ -136,15 +250,6 @@ function ServiceRow({
             icon={<ExternalLink className="size-3.5" />}
             aria-label="Open"
             onClick={() => void open(def.url!)}
-          />
-        ) : null}
-        {service.logPath ? (
-          <Button
-            type="text"
-            size="small"
-            icon={<FileText className="size-3.5" />}
-            aria-label="Logs"
-            onClick={onSelect}
           />
         ) : null}
         {canControl ? (
@@ -214,7 +319,7 @@ function LogPane({ serviceId }: { serviceId: string }) {
             element.scrollHeight - element.scrollTop - element.clientHeight <
             FOLLOW_THRESHOLD;
         }}
-        className="min-h-0 flex-1 overflow-auto px-4 py-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]"
+        className="min-h-0 flex-1 overflow-auto px-4 py-3 font-mono text-[11px] leading-relaxed [overflow-wrap:anywhere] whitespace-pre-wrap"
       >
         {log.error
           ? String(log.error)
@@ -257,10 +362,43 @@ export function ServicesPanel() {
     queryFn: servicesClient.list,
     refetchInterval: 5000,
   });
+  const queryClient = useQueryClient();
+  const addToast = useToastStore((state) => state.addToast);
+  const order = useQuery({
+    queryKey: ORDER_QUERY_KEY,
+    queryFn: servicesClient.getOrder,
+    staleTime: Infinity,
+  });
+  const saveOrder = useMutation({
+    mutationFn: servicesClient.saveOrder,
+    // Show the new order at once; the file write catches up behind it.
+    onMutate: (next: ServicesOrder) => {
+      queryClient.setQueryData(ORDER_QUERY_KEY, next);
+    },
+    onError: (error) => {
+      addToast(`Could not save the order: ${String(error)}`, "error");
+      void queryClient.invalidateQueries({ queryKey: ORDER_QUERY_KEY });
+    },
+  });
   const groups = useMemo(
-    () => groupServices(snapshot.data?.services ?? []),
-    [snapshot.data],
+    () => applyOrder(snapshot.data?.services ?? [], order.data),
+    [snapshot.data, order.data],
   );
+  const sensors = useSortSensors();
+
+  const persist = (next: OrderedGroup<ServiceStatus>[]) => {
+    saveOrder.mutate(toOrder(next));
+  };
+  const handleGroupDragEnd = ({ active, over }: DragEndEvent) => {
+    if (over && active.id !== over.id) {
+      persist(moveGroup(groups, String(active.id), String(over.id)));
+    }
+  };
+  const handleServiceDragEnd = ({ active, over }: DragEndEvent) => {
+    if (over && active.id !== over.id) {
+      persist(moveService(groups, String(active.id), String(over.id)));
+    }
+  };
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -299,27 +437,74 @@ export function ServicesPanel() {
           </p>
         ) : null}
 
-        {groups.map(([group, services]) => (
-          <div key={group} className="mb-5">
-            <h3 className="text-muted-foreground mb-2 text-xs font-medium tracking-wide uppercase">
-              {group}
-            </h3>
-            <div className="flex flex-col gap-2">
-              {services.map((service) => (
-                <ServiceRow
-                  key={service.def.id}
-                  service={service}
-                  selected={service.def.id === selectedId}
-                  onSelect={() =>
-                    setSelectedId((current) =>
-                      current === service.def.id ? null : service.def.id,
-                    )
-                  }
-                />
-              ))}
-            </div>
-          </div>
-        ))}
+        {/* Groups and each group's services are separate drag contexts, so a
+            service can only be dropped within its own group. */}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          modifiers={[restrictToVerticalAxis]}
+          onDragEnd={handleGroupDragEnd}
+        >
+          <SortableContext
+            items={groups.map((group) => group.name)}
+            strategy={verticalListSortingStrategy}
+          >
+            {groups.map((group) => (
+              <Sortable
+                key={group.name}
+                scope="group"
+                id={group.name}
+                label={`group ${group.name}`}
+              >
+                {(groupHandle) => (
+                  <div className="mb-5">
+                    <h3 className="text-muted-foreground mb-2 flex items-center gap-1 text-xs font-medium tracking-wide uppercase">
+                      {groupHandle}
+                      {group.name}
+                    </h3>
+                    <DndContext
+                      sensors={sensors}
+                      collisionDetection={closestCenter}
+                      modifiers={[restrictToVerticalAxis]}
+                      onDragEnd={handleServiceDragEnd}
+                    >
+                      <SortableContext
+                        items={group.services.map((service) => service.def.id)}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        <div className="flex flex-col gap-2">
+                          {group.services.map((service) => (
+                            <Sortable
+                              key={service.def.id}
+                              scope="service"
+                              id={service.def.id}
+                              label={service.def.name ?? service.def.id}
+                            >
+                              {(handle) => (
+                                <ServiceRow
+                                  service={service}
+                                  handle={handle}
+                                  selected={service.def.id === selectedId}
+                                  onSelect={() =>
+                                    setSelectedId((current) =>
+                                      current === service.def.id
+                                        ? null
+                                        : service.def.id,
+                                    )
+                                  }
+                                />
+                              )}
+                            </Sortable>
+                          ))}
+                        </div>
+                      </SortableContext>
+                    </DndContext>
+                  </div>
+                )}
+              </Sortable>
+            ))}
+          </SortableContext>
+        </DndContext>
 
         <UnregisteredListeners listeners={snapshot.data?.unregistered ?? []} />
       </section>
