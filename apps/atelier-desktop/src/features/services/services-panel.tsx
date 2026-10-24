@@ -21,7 +21,6 @@ import { ask } from "@tauri-apps/plugin-dialog";
 import { open } from "@tauri-apps/plugin-shell";
 import {
   ExternalLink,
-  GripVertical,
   Play,
   RefreshCw,
   RotateCw,
@@ -43,7 +42,30 @@ import { TRANSITION_LABEL, transitionStatus } from "./service-transition";
 import { applyOrder, moveGroup, moveService, toOrder } from "./services-order";
 
 const SERVICES_QUERY_KEY = ["services"] as const;
+/** Last service whose logs were shown; a per-viewer convenience only. */
+const SELECTED_STORAGE_KEY = "atelier.services.selectedLog";
+
+function readSelected(): string | null {
+  try {
+    return localStorage.getItem(SELECTED_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeSelected(id: string) {
+  try {
+    localStorage.setItem(SELECTED_STORAGE_KEY, id);
+  } catch {
+    // Storage can be unavailable; the pane still works for this session.
+  }
+}
 const ORDER_QUERY_KEY = ["services-order"] as const;
+
+// dnd-kit scrolls when the pointer is within 20% of the scroll area's edge by
+// default; in this tall panel that is ~140px, and dragging a row to the top
+// of the list scrolled it away from the drop target.
+const AUTO_SCROLL = { threshold: { x: 0, y: 0.06 } };
 
 const restrictToVerticalAxis: Modifier = ({ transform }) => ({
   ...transform,
@@ -82,23 +104,22 @@ function ServiceIcon({ name }: { name: keyof typeof SERVICE_ICONS }) {
 }
 
 /** Sortable wrapper: the item moves as a whole, but only `handle` starts a drag. */
-// Separate hover scopes: a group wrapper contains service wrappers, and a
-// shared name would reveal every row's handle when hovering the group.
-const HOVER_SCOPE = {
-  group: { root: "group/grp", handle: "group-hover/grp:opacity-100" },
-  service: { root: "group/svc", handle: "group-hover/svc:opacity-100" },
-} as const;
+type DragBindings = Pick<
+  ReturnType<typeof useSortable>,
+  "attributes" | "listeners" | "setActivatorNodeRef"
+> & { isDragging: boolean };
 
+/**
+ * Sortable wrapper: the child spreads `drag` on whatever should start a
+ * drag (a whole service row, a group header). A pointer must travel a few
+ * pixels first (see useSortSensors), so a plain click still clicks.
+ */
 function Sortable({
   id,
-  label,
-  scope,
   children,
 }: {
   id: string;
-  label: string;
-  scope: keyof typeof HOVER_SCOPE;
-  children: (handle: ReactNode) => ReactNode;
+  children: (drag: DragBindings) => ReactNode;
 }) {
   const {
     attributes,
@@ -110,27 +131,32 @@ function Sortable({
     isDragging,
   } = useSortable({ id });
 
-  const handle = (
-    <button
-      type="button"
-      ref={setActivatorNodeRef}
-      {...attributes}
-      {...listeners}
-      aria-label={`Drag to reorder ${label}`}
-      onClick={(event) => event.stopPropagation()}
-      className={`text-muted-foreground/60 hover:text-foreground -ml-1 flex size-5 shrink-0 cursor-grab touch-none items-center justify-center rounded opacity-0 transition ${HOVER_SCOPE[scope].handle} focus-visible:opacity-100 active:cursor-grabbing`}
-    >
-      <GripVertical className="size-3.5" />
-    </button>
-  );
+  // Releasing the pointer after a drag still fires a click on the row under
+  // it; swallow that one click so a reorder does not also toggle the logs.
+  const draggedRef = useRef(false);
+  useEffect(() => {
+    if (isDragging) draggedRef.current = true;
+  }, [isDragging]);
 
   return (
     <div
       ref={setNodeRef}
-      className={`${HOVER_SCOPE[scope].root} ${isDragging ? "relative z-10 opacity-80" : ""}`}
+      className={
+        isDragging ? "relative z-10 cursor-grabbing opacity-80" : undefined
+      }
       style={{ transform: CSS.Translate.toString(transform), transition }}
+      onPointerDownCapture={() => {
+        draggedRef.current = false;
+      }}
+      onClickCapture={(event) => {
+        if (draggedRef.current) {
+          draggedRef.current = false;
+          event.stopPropagation();
+          event.preventDefault();
+        }
+      }}
     >
-      {children(handle)}
+      {children({ attributes, listeners, setActivatorNodeRef, isDragging })}
     </div>
   );
 }
@@ -141,6 +167,12 @@ function useSortSensors() {
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
+      // Space picks a row up; Enter stays "toggle logs".
+      keyboardCodes: {
+        start: ["Space"],
+        cancel: ["Escape"],
+        end: ["Space", "Enter"],
+      },
     }),
   );
 }
@@ -149,14 +181,15 @@ function ServiceRow({
   service,
   selected,
   onSelect,
-  handle,
+  drag,
   transition,
   onTransition,
 }: {
   service: ServiceStatus;
   selected: boolean;
   onSelect: () => void;
-  handle: ReactNode;
+  /** Makes the whole row the drag source. */
+  drag: DragBindings;
   /** Set while a start/stop/restart is on its way, until the snapshot catches up. */
   transition: Transition | undefined;
   onTransition: (transition: Transition | null) => void;
@@ -218,28 +251,36 @@ function ServiceRow({
 
   return (
     <div
+      ref={drag.setActivatorNodeRef}
+      {...drag.attributes}
+      {...drag.listeners}
       {...(hasLog
         ? {
             role: "button",
             tabIndex: 0,
-            "aria-expanded": selected,
-            "aria-label": `${selected ? "Hide" : "Show"} logs for ${def.name ?? def.id}`,
+            "aria-pressed": selected,
+            "aria-label": `Show logs for ${def.name ?? def.id}`,
             onClick: onSelect,
-            onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => {
-              // Only the row itself: Enter on a nested button runs that button.
-              if (
-                event.key === "Enter" &&
-                event.target === event.currentTarget
-              ) {
-                event.preventDefault();
-                onSelect();
-              }
-            },
           }
         : {})}
-      className={`flex items-center gap-3 rounded-lg border px-3 py-2 transition-colors ${selected ? "border-primary/50 bg-primary/5" : "bg-card"} ${hasLog ? "hover:bg-muted/40 focus-visible:ring-ring cursor-pointer outline-none focus-visible:ring-2" : ""}`}
+      onKeyDown={(event: React.KeyboardEvent<HTMLDivElement>) => {
+        // Space goes to the drag sensor (pick up / drop the row).
+        const dragKeyDown = drag.listeners?.onKeyDown as
+          ((event: React.KeyboardEvent<HTMLDivElement>) => void) | undefined;
+        dragKeyDown?.(event);
+        // Enter toggles the logs, but only on the row itself: Enter on a
+        // nested button runs that button.
+        if (
+          hasLog &&
+          event.key === "Enter" &&
+          event.target === event.currentTarget
+        ) {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+      className={`flex touch-none items-center gap-3 rounded-lg border px-3 py-2 transition-colors select-none ${selected ? "border-primary/50 bg-primary/5" : "bg-card"} ${hasLog ? "hover:bg-muted/40 cursor-pointer" : "cursor-grab"} focus-visible:ring-ring outline-none focus-visible:ring-2`}
     >
-      {handle}
       <span
         className={`size-2.5 shrink-0 rounded-full transition-colors ${dot}`}
         title={label}
@@ -254,15 +295,30 @@ function ServiceRow({
         <ServiceIcon name={iconSource.name} />
       )}
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
+        <div className="flex items-center gap-2">
           <span className="truncate text-sm font-medium">
             {def.name ?? def.id}
           </span>
+          {def.port === null ? null : (
+            <span
+              className={`shrink-0 rounded-md border px-1.5 py-px font-mono text-xs tabular-nums ${
+                service.listener
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                  : "text-muted-foreground border-border bg-muted/40"
+              }`}
+              title={
+                service.listener
+                  ? `localhost:${def.port}, in use by pid ${service.listener.pid} (${service.listener.command})`
+                  : `localhost:${def.port}, free`
+              }
+            >
+              :{def.port}
+            </span>
+          )}
           <span className="text-muted-foreground text-xs">{def.kind}</span>
         </div>
         <div className="text-muted-foreground flex gap-3 truncate text-xs">
           <span className={busy ? "text-foreground" : undefined}>{label}</span>
-          {def.port === null ? null : <span>:{def.port}</span>}
           {pid === null ? null : <span>pid {pid}</span>}
           {service.launchd?.lastExitCode ? (
             <span>exit {service.launchd.lastExitCode}</span>
@@ -278,6 +334,8 @@ function ServiceRow({
         className="flex shrink-0 items-center gap-1"
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => event.stopPropagation()}
+        // Pressing a button must not start dragging the row.
+        onPointerDown={(event) => event.stopPropagation()}
       >
         {def.url ? (
           <Button
@@ -395,7 +453,7 @@ function UnregisteredListeners({ listeners }: { listeners: Listener[] }) {
 }
 
 export function ServicesPanel() {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(readSelected);
   const [transitions, setTransitions] = useState<Record<string, Transition>>(
     {},
   );
@@ -429,6 +487,19 @@ export function ServicesPanel() {
     [snapshot.data, order.data],
   );
   const sensors = useSortSensors();
+
+  // The log pane is always there; it shows the chosen service, or the first
+  // one with a log until something is chosen (or the choice was removed).
+  const logServiceId = useMemo(() => {
+    const withLogs = groups
+      .flatMap((group) => group.services)
+      .filter((service) => service.logPath !== null);
+    return (
+      withLogs.find((service) => service.def.id === selectedId)?.def.id ??
+      withLogs[0]?.def.id ??
+      null
+    );
+  }, [groups, selectedId]);
 
   // Retire transitions the latest snapshot has caught up with.
   useEffect(() => {
@@ -522,6 +593,7 @@ export function ServicesPanel() {
           sensors={sensors}
           collisionDetection={closestCenter}
           modifiers={[restrictToVerticalAxis]}
+          autoScroll={AUTO_SCROLL}
           onDragEnd={handleGroupDragEnd}
         >
           <SortableContext
@@ -529,22 +601,23 @@ export function ServicesPanel() {
             strategy={verticalListSortingStrategy}
           >
             {groups.map((group) => (
-              <Sortable
-                key={group.name}
-                scope="group"
-                id={group.name}
-                label={`group ${group.name}`}
-              >
-                {(groupHandle) => (
+              <Sortable key={group.name} id={group.name}>
+                {(groupDrag) => (
                   <div className="mb-5">
-                    <h3 className="text-muted-foreground mb-2 flex items-center gap-1 text-xs font-medium tracking-wide uppercase">
-                      {groupHandle}
+                    <h3
+                      ref={groupDrag.setActivatorNodeRef}
+                      {...groupDrag.attributes}
+                      {...groupDrag.listeners}
+                      aria-label={`Group ${group.name}, drag to reorder`}
+                      className="text-muted-foreground focus-visible:ring-ring mb-2 flex w-fit cursor-grab touch-none items-center gap-1 rounded text-xs font-medium tracking-wide uppercase outline-none select-none focus-visible:ring-2 active:cursor-grabbing"
+                    >
                       {group.name}
                     </h3>
                     <DndContext
                       sensors={sensors}
                       collisionDetection={closestCenter}
                       modifiers={[restrictToVerticalAxis]}
+                      autoScroll={AUTO_SCROLL}
                       onDragEnd={handleServiceDragEnd}
                     >
                       <SortableContext
@@ -553,28 +626,20 @@ export function ServicesPanel() {
                       >
                         <div className="flex flex-col gap-2">
                           {group.services.map((service) => (
-                            <Sortable
-                              key={service.def.id}
-                              scope="service"
-                              id={service.def.id}
-                              label={service.def.name ?? service.def.id}
-                            >
-                              {(handle) => (
+                            <Sortable key={service.def.id} id={service.def.id}>
+                              {(drag) => (
                                 <ServiceRow
                                   service={service}
-                                  handle={handle}
+                                  drag={drag}
                                   transition={transitions[service.def.id]}
                                   onTransition={(transition) =>
                                     setTransition(service.def.id, transition)
                                   }
-                                  selected={service.def.id === selectedId}
-                                  onSelect={() =>
-                                    setSelectedId((current) =>
-                                      current === service.def.id
-                                        ? null
-                                        : service.def.id,
-                                    )
-                                  }
+                                  selected={service.def.id === logServiceId}
+                                  onSelect={() => {
+                                    setSelectedId(service.def.id);
+                                    writeSelected(service.def.id);
+                                  }}
                                 />
                               )}
                             </Sortable>
@@ -592,7 +657,13 @@ export function ServicesPanel() {
         <UnregisteredListeners listeners={snapshot.data?.unregistered ?? []} />
       </section>
 
-      {selectedId ? <LogPane key={selectedId} serviceId={selectedId} /> : null}
+      {logServiceId ? (
+        <LogPane key={logServiceId} serviceId={logServiceId} />
+      ) : (
+        <section className="text-muted-foreground flex w-1/2 shrink-0 items-center justify-center border-l text-xs">
+          No service with a log yet.
+        </section>
+      )}
     </div>
   );
 }
