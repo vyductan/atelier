@@ -185,3 +185,13 @@ pub async fn get_detected_agents() -> Result<Vec<String>, String> {
 
     Ok(agents)
 }
+
+/// Per-skill usage counted from Claude Code transcripts and Antigravity
+/// conversations. The first call scans everything (seconds); later calls only
+/// read what changed.
+#[tauri::command]
+pub async fn get_skill_usage() -> Result<super::usage::SkillUsageReport, String> {
+    tokio::task::spawn_blocking(super::usage::collect)
+        .await
+        .map_err(|e| e.to_string())
+}

@@ -9,7 +9,11 @@ import {
   TabsTrigger,
 } from "@acme/ui/components/tabs";
 
-import type { InstalledSkill, Skill } from "../../lib/skills-client";
+import type {
+  InstalledSkill,
+  Skill,
+  SkillUsageReport,
+} from "../../lib/skills-client";
 import { skillsClient } from "../../lib/skills-client";
 import { installSkill } from "../../lib/tauri";
 import { useToastStore } from "../../store/toast-store";
@@ -30,6 +34,7 @@ export function SkillsManagerPanel() {
 
   // Installed state
   const [installedSkills, setInstalledSkills] = useState<InstalledSkill[]>([]);
+  const [skillUsage, setSkillUsage] = useState<SkillUsageReport | null>(null);
   const [isLoadingInstalled, setIsLoadingInstalled] = useState(false);
   const [installedError, setInstalledError] = useState<string | null>(null);
   const [uninstallingSkillName, setUninstallingSkillName] = useState<
@@ -78,6 +83,14 @@ export function SkillsManagerPanel() {
   const fetchInstalledSkills = async () => {
     setIsLoadingInstalled(true);
     setInstalledError(null);
+    // Usage is extra information: it loads alongside, and a failed history
+    // scan leaves the columns at "–" instead of blocking the list.
+    skillsClient
+      .getSkillUsage()
+      .then(setSkillUsage)
+      .catch((error: unknown) => {
+        console.error("Failed to count skill usage:", error);
+      });
     try {
       const fetchedSkills = await skillsClient.getInstalledSkills();
       setInstalledSkills(fetchedSkills);
@@ -382,6 +395,7 @@ export function SkillsManagerPanel() {
                   )
                 }
                 onUninstall={(skillName) => void handleUninstall(skillName)}
+                usage={skillUsage}
               />
             )}
           </div>

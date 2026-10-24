@@ -3,7 +3,14 @@ import { Search, Trash2 } from "lucide-react";
 
 import { Input } from "@acme/ui/components/input";
 
-import type { InstalledSkill } from "../../lib/skills-client";
+import type { InstalledSkill, SkillUsageReport } from "../../lib/skills-client";
+import type { SkillSort } from "./skill-usage";
+import {
+  describeUsage,
+  formatLastUsed,
+  indexUsage,
+  sortSkills,
+} from "./skill-usage";
 
 const SUPPORTED_AGENTS = [
   { id: "claude-code", name: "Claude Code" },
@@ -62,7 +69,15 @@ interface InstalledSkillsTableProps {
     isEnabled: boolean,
   ) => void;
   onUninstall: (skillName: string) => void;
+  /** Null while the history scan runs (or if it failed). */
+  usage: SkillUsageReport | null;
 }
+
+const SORT_LABELS: Record<SkillSort, string> = {
+  name: "Skill",
+  uses: "Uses",
+  "last-used": "Last used",
+};
 
 /**
  * One row per skill, one toggle column per agent, so a few dozen skills fit
@@ -75,8 +90,13 @@ export function InstalledSkillsTable({
   uninstallingSkillName,
   onToggleAgent,
   onUninstall,
+  usage,
 }: InstalledSkillsTableProps) {
   const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<SkillSort>("uses");
+  const [unusedOnly, setUnusedOnly] = useState(false);
+  const usageIndex = useMemo(() => indexUsage(usage), [usage]);
+  const now = Date.now();
 
   // Columns follow what is installed on this machine, not what skills claim:
   // the skills CLI keeps reporting an agent while its skills folder lingers
@@ -88,7 +108,7 @@ export function InstalledSkillsTable({
 
   const filteredGroups = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return groups;
+    if (!needle && !unusedOnly) return groups;
     return groups
       .map(
         ([group, skills]) =>
@@ -96,24 +116,54 @@ export function InstalledSkillsTable({
             group,
             skills.filter(
               (skill) =>
-                skill.name.toLowerCase().includes(needle) ||
-                sourceLabel(skill).toLowerCase().includes(needle) ||
-                group.toLowerCase().includes(needle),
+                (!unusedOnly || !usageIndex.has(skill.name)) &&
+                (skill.name.toLowerCase().includes(needle) ||
+                  sourceLabel(skill).toLowerCase().includes(needle) ||
+                  group.toLowerCase().includes(needle)),
             ),
           ] as [string, InstalledSkill[]],
       )
       .filter(([, skills]) => skills.length > 0);
-  }, [groups, query]);
+  }, [groups, query, unusedOnly, usageIndex]);
+
+  // Grouped by source when sorted by name; one flat ranked list otherwise,
+  // since "most used" across groups is the point of the other sorts.
+  const sections = useMemo<[string | null, InstalledSkill[]][]>(
+    () =>
+      sort === "name"
+        ? filteredGroups
+        : [
+            [
+              null,
+              sortSkills(
+                filteredGroups.flatMap(([, skills]) => skills),
+                sort,
+                usageIndex,
+              ),
+            ],
+          ],
+    [filteredGroups, sort, usageIndex],
+  );
+  const neverUsed = usage
+    ? groups.reduce(
+        (sum, [, skills]) =>
+          sum + skills.filter((skill) => !usageIndex.has(skill.name)).length,
+        0,
+      )
+    : null;
 
   const total = groups.reduce((sum, [, skills]) => sum + skills.length, 0);
   const shown = filteredGroups.reduce(
     (sum, [, skills]) => sum + skills.length,
     0,
   );
-  const gridTemplateColumns = `minmax(0, 1fr) repeat(${agents.length}, 5.5rem) 2rem`;
+  const gridTemplateColumns = `minmax(0, 1fr) 3.5rem 5rem repeat(${agents.length}, 5.5rem) 2rem`;
 
   const renderRow = (skill: InstalledSkill) => {
     const isUninstalling = uninstallingSkillName === skill.name;
+    const skillUsage = usageIndex.get(skill.name);
+    // Dim only once usage has loaded, so a slow scan does not flash everything gray.
+    const isUnused = usage !== null && !skillUsage;
     return (
       <div
         key={skill.path}
@@ -121,7 +171,7 @@ export function InstalledSkillsTable({
         style={{ gridTemplateColumns }}
       >
         <div
-          className="flex min-w-0 items-baseline gap-2"
+          className={`flex min-w-0 items-baseline gap-2 ${isUnused ? "opacity-50" : ""}`}
           title={formatDates(skill)}
         >
           <span className="truncate text-sm font-medium">{skill.name}</span>
@@ -132,6 +182,23 @@ export function InstalledSkillsTable({
             {sourceLabel(skill)}
           </span>
         </div>
+
+        <span
+          className="text-right text-xs tabular-nums"
+          title={describeUsage(skillUsage)}
+        >
+          {usage ? (skillUsage?.total ?? 0) : "–"}
+        </span>
+        <span
+          className="text-muted-foreground pl-3 text-xs tabular-nums"
+          title={
+            skillUsage?.lastUsed
+              ? new Date(skillUsage.lastUsed).toLocaleString()
+              : undefined
+          }
+        >
+          {usage ? formatLastUsed(skillUsage?.lastUsed, now) : "–"}
+        </span>
 
         {agents.map((agent) => {
           const isUniversal = UNIVERSAL_AGENTS.has(agent.id);
@@ -189,6 +256,18 @@ export function InstalledSkillsTable({
     );
   };
 
+  const sortHeader = (key: SkillSort, className = "") => (
+    <button
+      type="button"
+      onClick={() => setSort(key)}
+      aria-pressed={sort === key}
+      className={`hover:text-foreground uppercase ${sort === key ? "text-foreground" : ""} ${className}`}
+    >
+      {SORT_LABELS[key]}
+      {sort === key ? (key === "name" ? " ↑" : " ↓") : ""}
+    </button>
+  );
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="mb-3 flex items-center gap-3">
@@ -205,7 +284,21 @@ export function InstalledSkillsTable({
         </div>
         <span className="text-muted-foreground text-xs">
           {shown === total ? `${total} skills` : `${shown} of ${total} skills`}
+          {neverUsed === null ? null : ` · ${neverUsed} never used`}
+          {usage?.since
+            ? ` · since ${new Date(usage.since).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`
+            : null}
         </span>
+        {neverUsed ? (
+          <button
+            type="button"
+            aria-pressed={unusedOnly}
+            onClick={() => setUnusedOnly((value) => !value)}
+            className={`rounded-md border px-2 py-0.5 text-xs ${unusedOnly ? "border-primary/40 bg-primary/10 text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            Unused only
+          </button>
+        ) : null}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border">
@@ -213,7 +306,9 @@ export function InstalledSkillsTable({
           className="bg-muted/60 text-muted-foreground sticky top-0 z-10 grid items-center border-b px-3 py-1.5 text-[11px] font-medium tracking-wide uppercase backdrop-blur"
           style={{ gridTemplateColumns }}
         >
-          <span>Skill</span>
+          {sortHeader("name", "text-left")}
+          {sortHeader("uses", "text-right")}
+          {sortHeader("last-used", "pl-3 text-left")}
           {agents.map((agent) => (
             <span key={agent.id} className="text-center">
               {agent.name}
@@ -228,12 +323,16 @@ export function InstalledSkillsTable({
           </p>
         ) : null}
 
-        {filteredGroups.map(([group, skills]) => (
-          <section key={group}>
-            <h3 className="bg-background text-muted-foreground flex items-center gap-2 border-b px-3 pt-2.5 pb-1 text-xs font-medium">
-              {group}
-              <span className="text-muted-foreground/70">{skills.length}</span>
-            </h3>
+        {sections.map(([group, skills]) => (
+          <section key={group ?? "all"}>
+            {group === null ? null : (
+              <h3 className="bg-background text-muted-foreground flex items-center gap-2 border-b px-3 pt-2.5 pb-1 text-xs font-medium">
+                {group}
+                <span className="text-muted-foreground/70">
+                  {skills.length}
+                </span>
+              </h3>
+            )}
             {skills.map(renderRow)}
           </section>
         ))}

@@ -5,6 +5,7 @@ import {
   enableSkillForAgent as enableSkillForAgentTauri,
   disableSkillForAgent as disableSkillForAgentTauri,
   getDetectedAgents as getDetectedAgentsTauri,
+  getSkillUsage as getSkillUsageTauri,
 } from "./tauri";
 
 export interface Skill {
@@ -21,6 +22,24 @@ export interface SearchSkillsResponse {
   skills: Skill[];
   count: number;
   duration_ms: number;
+}
+
+/** Mirrors src-tauri/src/features/skills/usage.rs. */
+export interface SkillUsage {
+  name: string;
+  claudeAuto: number;
+  claudeSlash: number;
+  antigravityLoad: number;
+  antigravityRequest: number;
+  total: number;
+  last30Days: number;
+  lastUsed: string | null;
+}
+
+export interface SkillUsageReport {
+  skills: SkillUsage[];
+  since: string | null;
+  scannedFiles: number;
 }
 
 export interface InstalledSkill {
@@ -49,6 +68,10 @@ export const skillsClient = {
     } catch (error) {
       throw new Error(`Failed to fetch skills: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
+  },
+
+  async getSkillUsage(): Promise<SkillUsageReport> {
+    return await getSkillUsageTauri();
   },
 
   async getInstalledSkills(): Promise<InstalledSkill[]> {

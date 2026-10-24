@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import type { SkillUsageReport } from "./skills-client";
+
 import type {
   ClaudeContextWindowValue,
   ClaudeModelOptions,
@@ -413,4 +415,9 @@ export async function disableSkillForAgent(skillName: string, agentName: string)
 export async function getDetectedAgents(): Promise<string[]> {
   ensureTauri();
   return await invoke<string[]>("get_detected_agents");
+}
+
+export async function getSkillUsage(): Promise<SkillUsageReport> {
+  ensureTauri();
+  return await invoke<SkillUsageReport>("get_skill_usage");
 }

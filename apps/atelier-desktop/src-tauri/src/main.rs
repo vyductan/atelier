@@ -26,7 +26,7 @@ use features::workspace::{
 };
 use features::skills::commands::{
     get_installed_skills, install_skill, search_skills, uninstall_skill, enable_skill_for_agent, disable_skill_for_agent,
-    get_detected_agents,
+    get_detected_agents, get_skill_usage,
 };
 use features::services::commands::{
     list_services, open_services_config, read_service_log, restart_service, start_service,
@@ -89,6 +89,7 @@ fn main() {
             enable_skill_for_agent,
             disable_skill_for_agent,
             get_detected_agents,
+            get_skill_usage,
             list_services,
             start_service,
             stop_service,
