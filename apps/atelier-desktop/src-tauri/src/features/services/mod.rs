@@ -5,3 +5,4 @@ mod health;
 mod launchd;
 mod order;
 mod registry;
+mod unmanaged;

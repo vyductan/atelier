@@ -1,6 +1,6 @@
 import type { DragEndEvent, Modifier } from "@dnd-kit/core";
 import type { ReactNode } from "react";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   closestCenter,
   DndContext,
@@ -17,6 +17,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ask } from "@tauri-apps/plugin-dialog";
 import { open } from "@tauri-apps/plugin-shell";
 import {
   ExternalLink,
@@ -32,11 +33,13 @@ import { Button } from "@acme/ui/components/button";
 
 import type { Listener, ServiceStatus } from "../../lib/services-client";
 import type { ServiceHealth } from "./service-health";
+import type { ServiceAction, Transition } from "./service-transition";
 import type { OrderedGroup, ServicesOrder } from "./services-order";
 import { servicesClient } from "../../lib/services-client";
 import { useToastStore } from "../../store/toast-store";
 import { deriveServiceHealth } from "./service-health";
 import { resolveServiceIcon, SERVICE_ICONS } from "./service-icon";
+import { TRANSITION_LABEL, transitionStatus } from "./service-transition";
 import { applyOrder, moveGroup, moveService, toOrder } from "./services-order";
 
 const SERVICES_QUERY_KEY = ["services"] as const;
@@ -147,11 +150,16 @@ function ServiceRow({
   selected,
   onSelect,
   handle,
+  transition,
+  onTransition,
 }: {
   service: ServiceStatus;
   selected: boolean;
   onSelect: () => void;
   handle: ReactNode;
+  /** Set while a start/stop/restart is on its way, until the snapshot catches up. */
+  transition: Transition | undefined;
+  onTransition: (transition: Transition | null) => void;
 }) {
   const queryClient = useQueryClient();
   const addToast = useToastStore((state) => state.addToast);
@@ -169,16 +177,44 @@ function ServiceRow({
   const hasLog = service.logPath !== null;
 
   const action = useMutation({
-    mutationFn: async (kind: "start" | "stop" | "restart") => {
+    mutationFn: async (kind: ServiceAction) => {
       await servicesClient[kind](def.id);
     },
     onError: (error, kind) => {
+      onTransition(null);
       addToast(`${kind} ${def.id} failed: ${String(error)}`, "error");
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: SERVICES_QUERY_KEY });
     },
   });
+
+  const run = async (kind: ServiceAction) => {
+    // Stopping something Atelier did not start signals a process the user
+    // launched elsewhere (often a terminal), so ask first.
+    if (health === "unmanaged" && kind !== "start") {
+      const confirmed = await ask(
+        `${def.name ?? def.id} is running outside Atelier (pid ${pid ?? "?"}). ` +
+          (kind === "stop"
+            ? "Stop that process?"
+            : "Stop it and restart it under Atelier?"),
+        {
+          title: kind === "stop" ? "Stop process" : "Restart under Atelier",
+          kind: "warning",
+        },
+      );
+      if (!confirmed) return;
+    }
+    onTransition({ action: kind, since: Date.now(), pid });
+    action.mutate(kind);
+  };
+  const busy = transition !== undefined;
+  const dot = transition
+    ? transition.action === "stop"
+      ? "bg-amber-500 animate-pulse"
+      : "bg-sky-500 animate-pulse"
+    : style.dot;
+  const label = transition ? TRANSITION_LABEL[transition.action] : style.label;
 
   return (
     <div
@@ -205,8 +241,8 @@ function ServiceRow({
     >
       {handle}
       <span
-        className={`size-2.5 shrink-0 rounded-full ${style.dot}`}
-        title={style.label}
+        className={`size-2.5 shrink-0 rounded-full transition-colors ${dot}`}
+        title={label}
       />
       {iconSource.type === "image" ? (
         <img
@@ -225,7 +261,7 @@ function ServiceRow({
           <span className="text-muted-foreground text-xs">{def.kind}</span>
         </div>
         <div className="text-muted-foreground flex gap-3 truncate text-xs">
-          <span>{style.label}</span>
+          <span className={busy ? "text-foreground" : undefined}>{label}</span>
           {def.port === null ? null : <span>:{def.port}</span>}
           {pid === null ? null : <span>pid {pid}</span>}
           {service.launchd?.lastExitCode ? (
@@ -258,28 +294,31 @@ function ServiceRow({
               <Button
                 type="text"
                 size="small"
-                loading={action.isPending && action.variables === "restart"}
+                loading={transition?.action === "restart"}
+                disabled={busy}
                 icon={<RotateCw className="size-3.5" />}
                 aria-label="Restart"
-                onClick={() => action.mutate("restart")}
+                onClick={() => void run("restart")}
               />
               <Button
                 type="text"
                 size="small"
-                loading={action.isPending && action.variables === "stop"}
+                loading={transition?.action === "stop"}
+                disabled={busy}
                 icon={<Square className="size-3.5" />}
                 aria-label="Stop"
-                onClick={() => action.mutate("stop")}
+                onClick={() => void run("stop")}
               />
             </>
           ) : (
             <Button
               type="text"
               size="small"
-              loading={action.isPending && action.variables === "start"}
+              loading={transition?.action === "start"}
+              disabled={busy}
               icon={<Play className="size-3.5" />}
               aria-label="Start"
-              onClick={() => action.mutate("start")}
+              onClick={() => void run("start")}
             />
           )
         ) : null}
@@ -357,10 +396,15 @@ function UnregisteredListeners({ listeners }: { listeners: Listener[] }) {
 
 export function ServicesPanel() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [transitions, setTransitions] = useState<Record<string, Transition>>(
+    {},
+  );
+  const hasTransitions = Object.keys(transitions).length > 0;
   const snapshot = useQuery({
     queryKey: SERVICES_QUERY_KEY,
     queryFn: servicesClient.list,
-    refetchInterval: 5000,
+    // Poll fast while an action is in flight so the row settles promptly.
+    refetchInterval: hasTransitions ? 1000 : 5000,
   });
   const queryClient = useQueryClient();
   const addToast = useToastStore((state) => state.addToast);
@@ -385,6 +429,41 @@ export function ServicesPanel() {
     [snapshot.data, order.data],
   );
   const sensors = useSortSensors();
+
+  // Retire transitions the latest snapshot has caught up with.
+  useEffect(() => {
+    if (!snapshot.data || !hasTransitions) return;
+    const now = Date.now();
+    const next: Record<string, Transition> = {};
+    for (const [id, transition] of Object.entries(transitions)) {
+      const service = snapshot.data.services.find((s) => s.def.id === id);
+      if (!service) continue;
+      const pid = service.listener?.pid ?? service.launchd?.pid ?? null;
+      const status = transitionStatus(
+        transition,
+        deriveServiceHealth(service),
+        pid,
+        now,
+      );
+      if (status === "pending") next[id] = transition;
+      if (status === "timeout") {
+        addToast(
+          `${service.def.name ?? id}: still ${transition.action === "stop" ? "running" : "not up"} after 20s`,
+          "error",
+        );
+      }
+    }
+    if (Object.keys(next).length !== Object.keys(transitions).length) {
+      setTransitions(next);
+    }
+  }, [snapshot.data, transitions, hasTransitions, addToast]);
+
+  const setTransition = (id: string, transition: Transition | null) => {
+    setTransitions((current) => {
+      const { [id]: _previous, ...rest } = current;
+      return transition ? { ...rest, [id]: transition } : rest;
+    });
+  };
 
   const persist = (next: OrderedGroup<ServiceStatus>[]) => {
     saveOrder.mutate(toOrder(next));
@@ -484,6 +563,10 @@ export function ServicesPanel() {
                                 <ServiceRow
                                   service={service}
                                   handle={handle}
+                                  transition={transitions[service.def.id]}
+                                  onTransition={(transition) =>
+                                    setTransition(service.def.id, transition)
+                                  }
                                   selected={service.def.id === selectedId}
                                   onSelect={() =>
                                     setSelectedId((current) =>

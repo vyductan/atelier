@@ -8,7 +8,8 @@ use super::favicon;
 use super::health::{self, HealthResult};
 use super::launchd::{self, LaunchdState};
 use super::order;
-use super::registry::{self, ServiceDef};
+use super::registry::{self, ServiceDef, ServiceKind};
+use super::unmanaged;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -131,16 +132,37 @@ pub async fn start_service(id: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn stop_service(id: String) -> Result<(), String> {
-    tokio::task::spawn_blocking(move || launchd::stop(&registry::find(&id)?))
+    tokio::task::spawn_blocking(move || stop_any(&registry::find(&id)?))
         .await
         .map_err(|e| e.to_string())?
+}
+
+/// Port held by a process that Atelier's launchd job does not own: a dev
+/// server started in a terminal, or orphaned when that terminal closed.
+fn unmanaged_port(def: &ServiceDef) -> Option<u16> {
+    if def.kind != ServiceKind::Process {
+        return None;
+    }
+    let port = def.port?;
+    let label = launchd::label_for(def)?;
+    (!launchd::state(&label).loaded && unmanaged::is_listening(port)).then_some(port)
+}
+
+/// Stops the service however it runs: Atelier's own job is booted out, a
+/// process outside Atelier is signalled through its process group.
+fn stop_any(def: &ServiceDef) -> Result<(), String> {
+    match unmanaged_port(def) {
+        Some(port) => unmanaged::stop(port),
+        None => launchd::stop(def),
+    }
 }
 
 #[tauri::command]
 pub async fn restart_service(id: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
         let def = registry::find(&id)?;
-        launchd::stop(&def)?;
+        // For an unmanaged service this hands it over to Atelier.
+        stop_any(&def)?;
         launchd::start(&def)
     })
     .await
