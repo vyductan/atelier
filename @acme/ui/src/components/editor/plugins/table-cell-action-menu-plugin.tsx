@@ -1,0 +1,1402 @@
+import type { TableCellNode } from "@lexical/table";
+import type { LexicalNode } from "lexical";
+import type { JSX, PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
+import {
+  $deleteTableColumnAtSelection,
+  $deleteTableRowAtSelection,
+  $getTableColumnIndexFromTableCellNode,
+  $getTableNodeFromLexicalNodeOrThrow,
+  $getTableRowNodeFromTableCellNodeOrThrow,
+  $insertTableColumnAtSelection,
+  $insertTableRowAtSelection,
+  $isTableCellNode,
+  $isTableRowNode,
+  $isTableSelection,
+  $moveTableColumn,
+  TableCellHeaderStates,
+} from "@lexical/table";
+import { mergeRegister } from "@lexical/utils";
+import {
+  $copyNode,
+  $createParagraphNode,
+  $getNearestNodeFromDOMNode,
+  $getSelection,
+  $isElementNode,
+  $isRangeSelection,
+} from "lexical";
+import { GripHorizontal, GripVertical } from "lucide-react";
+import { createPortal } from "react-dom";
+
+import { Button } from "@acme/ui/components/button";
+import { Dropdown } from "@acme/ui/components/dropdown";
+import { Switch } from "@acme/ui/components/switch";
+import { Icon } from "@acme/ui/icons";
+import { cn } from "@acme/ui/lib/utils";
+
+/** Where the pointer is during a handle drag: all a drag needs of an event. */
+type DragPoint = Pick<PointerEvent, "clientX" | "clientY">;
+
+/** Travel before a press on a handle becomes a drag rather than a click. */
+const DRAG_THRESHOLD_PX = 4;
+
+/**
+ * The index a dragged row or column ends at, dropped before or after the one
+ * at `target`. Taking it out first shifts everything after it up by one.
+ * (The old arithmetic was off by one going up or left: a row could not be
+ * moved to the top, nor a column to the left of its neighbour's left edge.)
+ */
+function finalIndex(origin: number, target: number, insertAfter: boolean) {
+  const index = insertAfter ? target + 1 : target;
+  return origin < index ? index - 1 : index;
+}
+
+/** A header row (all <th>) stays first: nothing is dropped above it. */
+function isHeaderRow(row: HTMLTableRowElement) {
+  return (
+    row.cells.length > 0 &&
+    [...row.cells].every((cell) => cell.tagName === "TH")
+  );
+}
+
+/** The cells of the row or column a handle drags. */
+function draggedCells(
+  table: HTMLTableElement,
+  axis: "row" | "column",
+  index: number,
+): HTMLTableCellElement[] {
+  return axis === "row"
+    ? [...(table.rows[index]?.cells ?? [])]
+    : [...table.rows].flatMap((row) => {
+        const cell = row.cells[index];
+        return cell ? [cell] : [];
+      });
+}
+
+/**
+ * A translucent copy of the dragged row or column, laid over it, to follow
+ * the pointer along its axis — as Notion shows what is being moved. It lives
+ * beside the other table overlays, outside the editable root, so the editor
+ * never sees it. The cells keep their measured sizes: a copy re-laid out on
+ * its own would come out a different width.
+ */
+function createDragPreview(
+  table: HTMLTableElement,
+  axis: "row" | "column",
+  index: number,
+  anchor: HTMLElement,
+): HTMLElement | null {
+  const cells = draggedCells(table, axis, index);
+  const first = cells[0];
+  if (!first) return null;
+
+  const anchorRect = anchor.getBoundingClientRect();
+  const firstRect = first.getBoundingClientRect();
+  const copy = document.createElement("table");
+  copy.className = table.className;
+  const body = document.createElement("tbody");
+  copy.append(body);
+
+  if (axis === "row") {
+    const row = document.createElement("tr");
+    for (const cell of cells) {
+      const clone = cell.cloneNode(true) as HTMLTableCellElement;
+      clone.style.width = `${cell.getBoundingClientRect().width}px`;
+      row.append(clone);
+    }
+    body.append(row);
+  } else {
+    for (const cell of cells) {
+      const row = document.createElement("tr");
+      const clone = cell.cloneNode(true) as HTMLTableCellElement;
+      clone.style.width = `${firstRect.width}px`;
+      clone.style.height = `${cell.getBoundingClientRect().height}px`;
+      row.append(clone);
+      body.append(row);
+    }
+  }
+
+  const preview = document.createElement("div");
+  preview.className = "EditorTheme__tableDragPreview";
+  preview.dataset.tableDragPreview = axis;
+  preview.setAttribute("aria-hidden", "true");
+  preview.style.top = `${firstRect.top - anchorRect.top}px`;
+  preview.style.left = `${firstRect.left - anchorRect.left}px`;
+  preview.append(copy);
+  anchor.append(preview);
+  return preview;
+}
+
+/*
+ * Handle sizing lives in the className of each button, measured off Notion's
+ * own `notion-simple-table-selector`: an 18x6 bar with a 4px radius, centred on
+ * the grid line (`top: 234` against a `tableTop` of 236) so it reads as part of
+ * the row or column it acts on. Notion keeps a 16x16 grip glyph inside that
+ * 6px-tall box, clipped until the pointer arrives — at rest a bar, under the
+ * pointer a button. Here the bar is a child of a larger transparent button so
+ * the 6px mark is not the hit target, and the glyph swaps in on hover.
+ *
+ * Both wrappers position by CENTRE rather than by corner: Button re-adds
+ * horizontal padding whenever it holds an svg, so any arithmetic off its box
+ * drifts the bar off the line.
+ */
+
+type FocusedCellState = {
+  cell: HTMLTableCellElement;
+  table: HTMLTableElement;
+  rowIndex: number;
+  columnIndex: number;
+};
+
+type DragAxis = "row" | "column";
+
+type DragState = {
+  axis: DragAxis;
+  originIndex: number;
+} | null;
+
+type DropIndicatorState = {
+  axis: DragAxis;
+  index: number;
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+} | null;
+
+type ColorSummary =
+  { kind: "none" } | { kind: "single"; value: string } | { kind: "mixed" };
+
+const TABLE_COLOR_PRESETS = [
+  { key: "default", label: "Default", value: null },
+  { key: "gray", label: "Gray", value: "#f3f4f6" },
+  { key: "red", label: "Red", value: "#fee2e2" },
+  { key: "orange", label: "Orange", value: "#ffedd5" },
+  { key: "yellow", label: "Yellow", value: "#fef3c7" },
+  { key: "green", label: "Green", value: "#dcfce7" },
+  { key: "blue", label: "Blue", value: "#dbeafe" },
+] as const;
+
+function summarizeColors(
+  values: Array<string | null | undefined>,
+): ColorSummary {
+  const uniqueColors = new Set(values.map((value) => value?.trim() || ""));
+
+  if (
+    uniqueColors.size === 0 ||
+    (uniqueColors.size === 1 && uniqueColors.has(""))
+  ) {
+    return { kind: "none" };
+  }
+
+  if (uniqueColors.size === 1) {
+    const [value] = uniqueColors;
+    return value ? { kind: "single", value } : { kind: "none" };
+  }
+
+  return { kind: "mixed" };
+}
+
+function cloneNodeSubtree(node: LexicalNode): LexicalNode {
+  const clonedNode = $copyNode(node);
+
+  if ($isElementNode(node) && $isElementNode(clonedNode)) {
+    for (const child of node.getChildren()) {
+      clonedNode.append(cloneNodeSubtree(child));
+    }
+  }
+
+  return clonedNode;
+}
+
+function replaceTableCellWithCopy(
+  sourceCell: TableCellNode,
+  targetCell: TableCellNode,
+) {
+  targetCell.clear();
+
+  for (const child of sourceCell.getChildren()) {
+    targetCell.append(cloneNodeSubtree(child));
+  }
+
+  if (targetCell.getChildrenSize() === 0) {
+    targetCell.append($createParagraphNode());
+  }
+
+  targetCell.setBackgroundColor(sourceCell.getBackgroundColor());
+}
+
+function ColorPreview({
+  axis,
+  summary,
+}: {
+  axis: "row" | "column";
+  summary: ColorSummary;
+}) {
+  if (summary.kind === "mixed") {
+    return (
+      <span
+        data-testid={`table-action-color-mixed-${axis}`}
+        className="border-border inline-flex size-4 items-center justify-center rounded-full border bg-[linear-gradient(135deg,var(--color-muted)_0%,var(--color-muted)_45%,var(--color-foreground)_45%,var(--color-foreground)_55%,var(--color-muted)_55%,var(--color-muted)_100%)]"
+      />
+    );
+  }
+
+  return (
+    <span
+      data-testid={`table-action-color-preview-${axis}`}
+      className="border-border inline-flex size-4 rounded-full border"
+      style={{
+        backgroundColor:
+          summary.kind === "single" ? summary.value : "transparent",
+      }}
+    />
+  );
+}
+
+function TableCellActionMenuInner({
+  anchorElem,
+}: {
+  anchorElem: HTMLElement;
+}): JSX.Element | null {
+  const [editor] = useLexicalComposerContext();
+  /** Last cell the pointer was over, so mousemove only acts on a change. */
+  const hoveredCellReference = useRef<HTMLTableCellElement | null>(null);
+  const [focusedCellState, setFocusedCellState] =
+    useState<FocusedCellState | null>(null);
+  const [openMenu, setOpenMenu] = useState<"row" | "column" | null>(null);
+  const [activeAxis, setActiveAxis] = useState<"row" | "column" | null>(null);
+  const [dragState, setDragState] = useState<DragState>(null);
+  const [dropIndicator, setDropIndicator] = useState<DropIndicatorState>(null);
+  const dragStateReference = useRef<DragState>(null);
+  const focusedCell = focusedCellState?.cell ?? null;
+  const focusedTable = focusedCellState?.table ?? null;
+  const focusedCellRect = focusedCell?.getBoundingClientRect() ?? null;
+  const focusedTableRect = focusedTable?.getBoundingClientRect() ?? null;
+  /**
+   * The portal target (`div.group.relative` in plugins.tsx) lives INSIDE the
+   * scroll container, so it translates with the table. Offsets taken against it
+   * are therefore scroll-invariant, which is what lets these overlays be
+   * `absolute` with no scroll listener — the same formula
+   * code-action-menu-plugin and both floating toolbars already use.
+   */
+  const anchorRect = anchorElem.getBoundingClientRect();
+
+  const handleInsertRow = (insertAfter: boolean) => {
+    if (!focusedCell) return;
+    editor.update(() => {
+      const node = $getNearestNodeFromDOMNode(focusedCell);
+      if (!$isTableCellNode(node)) {
+        return;
+      }
+
+      const rowNode = $getTableRowNodeFromTableCellNodeOrThrow(node);
+      const sourceCells = rowNode.getChildren().filter($isTableCellNode);
+
+      node.selectEnd();
+      $insertTableRowAtSelection(insertAfter);
+
+      const insertedRow = insertAfter
+        ? rowNode.getNextSibling()
+        : rowNode.getPreviousSibling();
+      if (!$isTableRowNode(insertedRow)) {
+        return;
+      }
+
+      const insertedCells = insertedRow.getChildren().filter($isTableCellNode);
+      for (const [index, cell] of insertedCells.entries()) {
+        const sourceCell = sourceCells[index];
+        if (!sourceCell) {
+          continue;
+        }
+
+        cell.setBackgroundColor(sourceCell.getBackgroundColor());
+      }
+    });
+  };
+
+  const clearDragState = useCallback(() => {
+    dragStateReference.current = null;
+    setDragState(null);
+    setDropIndicator(null);
+  }, []);
+
+  const handleRowDragStart = () => {
+    const rowIndex = focusedCellState?.rowIndex;
+    if (rowIndex == undefined) {
+      return;
+    }
+
+    const nextDragState = { axis: "row", originIndex: rowIndex } as const;
+    setActiveAxis("row");
+    setOpenMenu(null);
+    dragStateReference.current = nextDragState;
+    setDragState(nextDragState);
+  };
+
+  const handleRowDragOver = useCallback(
+    (event: DragPoint) => {
+      const currentDragState = dragStateReference.current;
+      if (
+        !focusedTable ||
+        !currentDragState ||
+        currentDragState.axis !== "row"
+      ) {
+        return;
+      }
+
+      const tableRect = focusedTable.getBoundingClientRect();
+      const rows = [...focusedTable.rows];
+      const targetRow = rows.find((row) => {
+        const rect = row.getBoundingClientRect();
+        return event.clientY >= rect.top && event.clientY <= rect.bottom;
+      });
+
+      if (!targetRow) {
+        setDropIndicator(null);
+        return;
+      }
+
+      const targetIndex = rows.indexOf(targetRow);
+      const rect = targetRow.getBoundingClientRect();
+      const insertAfter = event.clientY >= rect.top + rect.height / 2;
+      // Nothing goes above a header row.
+      if (targetIndex === 0 && !insertAfter && isHeaderRow(targetRow)) {
+        setDropIndicator(null);
+        return;
+      }
+      const indicatorIndex = insertAfter ? targetIndex + 1 : targetIndex;
+
+      setDropIndicator({
+        axis: "row",
+        index: indicatorIndex,
+        top: insertAfter ? rect.bottom - 1 : rect.top - 1,
+        left: tableRect.left,
+        width: tableRect.width,
+        height: 2,
+      });
+    },
+    [focusedTable],
+  );
+
+  const handleRowDrop = useCallback(
+    (event: DragPoint) => {
+      const currentDragState = dragStateReference.current;
+      if (
+        !focusedCell ||
+        !focusedTable ||
+        !currentDragState ||
+        currentDragState.axis !== "row"
+      ) {
+        clearDragState();
+        return;
+      }
+
+      const rows = [...focusedTable.rows];
+      const targetRow = rows.find((row) => {
+        const rect = row.getBoundingClientRect();
+        return event.clientY >= rect.top && event.clientY <= rect.bottom;
+      });
+
+      if (!targetRow) {
+        clearDragState();
+        return;
+      }
+
+      const targetIndex = rows.indexOf(targetRow);
+      const targetRect = targetRow.getBoundingClientRect();
+      const insertAfter =
+        event.clientY >= targetRect.top + targetRect.height / 2;
+      const destinationIndex = finalIndex(
+        currentDragState.originIndex,
+        targetIndex,
+        insertAfter,
+      );
+
+      if (
+        destinationIndex === currentDragState.originIndex ||
+        (destinationIndex === 0 && rows[0] && isHeaderRow(rows[0]))
+      ) {
+        clearDragState();
+        return;
+      }
+
+      editor.update(() => {
+        const node = $getNearestNodeFromDOMNode(focusedCell);
+        if (!$isTableCellNode(node)) {
+          return;
+        }
+
+        const tableNode = $getTableNodeFromLexicalNodeOrThrow(node);
+        const rows = tableNode.getChildren().filter($isTableRowNode);
+        const originRow = rows[currentDragState.originIndex];
+        if (!originRow) return;
+
+        // Where it lands among the other rows.
+        const others = rows.filter((row) => row !== originRow);
+        const before = others[destinationIndex];
+        if (before) before.insertBefore(originRow);
+        else others.at(-1)?.insertAfter(originRow);
+      });
+
+      clearDragState();
+    },
+    [clearDragState, editor, focusedCell, focusedTable],
+  );
+
+  const handleInsertColumn = (insertAfter: boolean) => {
+    if (!focusedCell) return;
+    editor.update(() => {
+      const node = $getNearestNodeFromDOMNode(focusedCell);
+      if (!$isTableCellNode(node)) {
+        return;
+      }
+
+      const tableNode = $getTableNodeFromLexicalNodeOrThrow(node);
+      const targetColumnIndex = $getTableColumnIndexFromTableCellNode(node);
+      const sourceCells = tableNode
+        .getChildren()
+        .filter($isTableRowNode)
+        .map((row) => {
+          const sourceCell = row.getChildAtIndex(targetColumnIndex);
+          return $isTableCellNode(sourceCell) ? sourceCell : null;
+        });
+
+      node.selectEnd();
+      $insertTableColumnAtSelection(insertAfter);
+
+      const insertedColumnIndex = insertAfter
+        ? targetColumnIndex + 1
+        : targetColumnIndex;
+      for (const [rowIndex, row] of tableNode
+        .getChildren()
+        .filter($isTableRowNode)
+        .entries()) {
+        const insertedCell = row.getChildAtIndex(insertedColumnIndex);
+        const sourceCell = sourceCells[rowIndex];
+        if ($isTableCellNode(insertedCell) && sourceCell) {
+          insertedCell.setBackgroundColor(sourceCell.getBackgroundColor());
+        }
+      }
+    });
+  };
+
+  const handleColumnDragStart = () => {
+    const columnIndex = focusedCellState?.columnIndex;
+    if (columnIndex == undefined) {
+      return;
+    }
+
+    const nextDragState = { axis: "column", originIndex: columnIndex } as const;
+    setActiveAxis("column");
+    setOpenMenu(null);
+    dragStateReference.current = nextDragState;
+    setDragState(nextDragState);
+  };
+
+  const handleColumnDragOver = useCallback(
+    (event: DragPoint) => {
+      const currentDragState = dragStateReference.current;
+      if (
+        !focusedTable ||
+        !currentDragState ||
+        currentDragState.axis !== "column"
+      ) {
+        return;
+      }
+
+      const tableRect = focusedTable.getBoundingClientRect();
+      const firstRow = focusedTable.rows.item(0);
+      if (!firstRow) {
+        setDropIndicator(null);
+        return;
+      }
+
+      const cells = [...firstRow.cells];
+      const targetCell = cells.find((cell) => {
+        const rect = cell.getBoundingClientRect();
+        return event.clientX >= rect.left && event.clientX <= rect.right;
+      });
+
+      if (!targetCell) {
+        setDropIndicator(null);
+        return;
+      }
+
+      const targetIndex = cells.indexOf(targetCell);
+      const rect = targetCell.getBoundingClientRect();
+      const insertAfter = event.clientX >= rect.left + rect.width / 2;
+      const indicatorIndex = insertAfter ? targetIndex + 1 : targetIndex;
+
+      setDropIndicator({
+        axis: "column",
+        index: indicatorIndex,
+        top: tableRect.top,
+        left: insertAfter ? rect.right - 1 : rect.left - 1,
+        width: 2,
+        height: tableRect.height,
+      });
+    },
+    [focusedTable],
+  );
+
+  const handleColumnDrop = useCallback(
+    (event: DragPoint) => {
+      const currentDragState = dragStateReference.current;
+      if (
+        !focusedCell ||
+        !focusedTable ||
+        !currentDragState ||
+        currentDragState.axis !== "column"
+      ) {
+        clearDragState();
+        return;
+      }
+
+      const firstRow = focusedTable.rows.item(0);
+      if (!firstRow) {
+        clearDragState();
+        return;
+      }
+
+      const cells = [...firstRow.cells];
+      const targetCell = cells.find((cell) => {
+        const rect = cell.getBoundingClientRect();
+        return event.clientX >= rect.left && event.clientX <= rect.right;
+      });
+
+      if (!targetCell) {
+        clearDragState();
+        return;
+      }
+
+      const targetIndex = cells.indexOf(targetCell);
+      const targetRect = targetCell.getBoundingClientRect();
+      const insertAfter =
+        event.clientX >= targetRect.left + targetRect.width / 2;
+      const destinationIndex = finalIndex(
+        currentDragState.originIndex,
+        targetIndex,
+        insertAfter,
+      );
+
+      if (destinationIndex === currentDragState.originIndex) {
+        clearDragState();
+        return;
+      }
+
+      editor.update(() => {
+        const node = $getNearestNodeFromDOMNode(focusedCell);
+        if (!$isTableCellNode(node)) {
+          return;
+        }
+
+        const tableNode = $getTableNodeFromLexicalNodeOrThrow(node);
+        $moveTableColumn(
+          tableNode,
+          currentDragState.originIndex,
+          destinationIndex,
+        );
+      });
+
+      clearDragState();
+    },
+    [clearDragState, editor, focusedCell, focusedTable],
+  );
+
+  const handleDeleteRow = () => {
+    if (!focusedCell) return;
+    editor.update(() => {
+      const node = $getNearestNodeFromDOMNode(focusedCell);
+      if ($isTableCellNode(node)) {
+        node.selectEnd();
+        $deleteTableRowAtSelection();
+      }
+    });
+  };
+
+  const handleDeleteColumn = () => {
+    if (!focusedCell) return;
+    editor.update(() => {
+      const node = $getNearestNodeFromDOMNode(focusedCell);
+      if ($isTableCellNode(node)) {
+        node.selectEnd();
+        $deleteTableColumnAtSelection();
+      }
+    });
+  };
+
+  const handleDuplicateRow = () => {
+    if (!focusedCell) return;
+    editor.update(() => {
+      const node = $getNearestNodeFromDOMNode(focusedCell);
+      if (!$isTableCellNode(node)) {
+        return;
+      }
+
+      const rowNode = $getTableRowNodeFromTableCellNodeOrThrow(node);
+      const sourceCells = rowNode.getChildren().filter($isTableCellNode);
+
+      node.selectEnd();
+      $insertTableRowAtSelection(true);
+
+      const duplicateRow = rowNode.getNextSibling();
+      if (!$isTableRowNode(duplicateRow)) {
+        return;
+      }
+
+      const duplicateCells = duplicateRow
+        .getChildren()
+        .filter($isTableCellNode);
+      for (const [index, cell] of duplicateCells.entries()) {
+        const sourceCell = sourceCells[index];
+        if (sourceCell) {
+          replaceTableCellWithCopy(sourceCell, cell);
+        }
+      }
+    });
+  };
+
+  const handleDuplicateColumn = () => {
+    if (!focusedCell) return;
+    editor.update(() => {
+      const node = $getNearestNodeFromDOMNode(focusedCell);
+      if (!$isTableCellNode(node)) {
+        return;
+      }
+
+      const tableNode = $getTableNodeFromLexicalNodeOrThrow(node);
+      const targetColumnIndex = $getTableColumnIndexFromTableCellNode(node);
+      const sourceCells = tableNode
+        .getChildren()
+        .filter($isTableRowNode)
+        .map((row) => {
+          const sourceCell = row.getChildAtIndex(targetColumnIndex);
+          return $isTableCellNode(sourceCell) ? sourceCell : null;
+        });
+
+      node.selectEnd();
+      $insertTableColumnAtSelection(true);
+
+      const duplicateColumnIndex = targetColumnIndex + 1;
+      for (const [rowIndex, row] of tableNode
+        .getChildren()
+        .filter($isTableRowNode)
+        .entries()) {
+        const duplicateCell = row.getChildAtIndex(duplicateColumnIndex);
+        const sourceCell = sourceCells[rowIndex];
+        if ($isTableCellNode(duplicateCell) && sourceCell) {
+          replaceTableCellWithCopy(sourceCell, duplicateCell);
+        }
+      }
+    });
+  };
+
+  const handleClearRowContents = () => {
+    if (!focusedCell) return;
+    editor.update(() => {
+      const node = $getNearestNodeFromDOMNode(focusedCell);
+      if (!$isTableCellNode(node)) {
+        return;
+      }
+
+      const rowNode = $getTableRowNodeFromTableCellNodeOrThrow(node);
+      for (const child of rowNode.getChildren()) {
+        if ($isTableCellNode(child)) {
+          child.clear();
+          child.append($createParagraphNode());
+        }
+      }
+    });
+  };
+
+  const handleClearColumnContents = () => {
+    if (!focusedCell) return;
+    editor.update(() => {
+      const node = $getNearestNodeFromDOMNode(focusedCell);
+      if (!$isTableCellNode(node)) {
+        return;
+      }
+
+      const tableNode = $getTableNodeFromLexicalNodeOrThrow(node);
+      const targetColumnIndex = $getTableColumnIndexFromTableCellNode(node);
+      for (const row of tableNode.getChildren().filter($isTableRowNode)) {
+        const cell = row.getChildAtIndex(targetColumnIndex);
+        if ($isTableCellNode(cell)) {
+          cell.clear();
+          cell.append($createParagraphNode());
+        }
+      }
+    });
+  };
+
+  const handleToggleHeader = (axis: "row" | "column") => {
+    if (!focusedCell) return;
+    editor.update(() => {
+      const node = $getNearestNodeFromDOMNode(focusedCell);
+      if (!$isTableCellNode(node)) {
+        return;
+      }
+
+      if (axis === "row") {
+        const rowNode = $getTableRowNodeFromTableCellNodeOrThrow(node);
+        for (const child of rowNode.getChildren()) {
+          if ($isTableCellNode(child)) {
+            child.toggleHeaderStyle(TableCellHeaderStates.ROW);
+          }
+        }
+        return;
+      }
+
+      const tableNode = $getTableNodeFromLexicalNodeOrThrow(node);
+      const targetColumnIndex = $getTableColumnIndexFromTableCellNode(node);
+      for (const row of tableNode.getChildren().filter($isTableRowNode)) {
+        const cell = row.getChildAtIndex(targetColumnIndex);
+        if ($isTableCellNode(cell)) {
+          cell.toggleHeaderStyle(TableCellHeaderStates.COLUMN);
+        }
+      }
+    });
+  };
+
+  const handleSetRowColor = (backgroundColor: string | null) => {
+    if (!focusedCell) return;
+    editor.update(() => {
+      const node = $getNearestNodeFromDOMNode(focusedCell);
+      if (!$isTableCellNode(node)) {
+        return;
+      }
+
+      const rowNode = $getTableRowNodeFromTableCellNodeOrThrow(node);
+      for (const child of rowNode.getChildren()) {
+        if ($isTableCellNode(child)) {
+          child.setBackgroundColor(backgroundColor);
+        }
+      }
+    });
+  };
+
+  const handleSetColumnColor = (backgroundColor: string | null) => {
+    if (!focusedCell) return;
+    editor.update(() => {
+      const node = $getNearestNodeFromDOMNode(focusedCell);
+      if (!$isTableCellNode(node)) {
+        return;
+      }
+
+      const tableNode = $getTableNodeFromLexicalNodeOrThrow(node);
+      const targetColumnIndex = $getTableColumnIndexFromTableCellNode(node);
+      for (const row of tableNode.getChildren().filter($isTableRowNode)) {
+        const cell = row.getChildAtIndex(targetColumnIndex);
+        if ($isTableCellNode(cell)) {
+          cell.setBackgroundColor(backgroundColor);
+        }
+      }
+    });
+  };
+
+  const rowIndex = focusedCellState?.rowIndex ?? 0;
+  const columnIndex = focusedCellState?.columnIndex ?? 0;
+  const rowHeaderEnabled = focusedCell?.tagName === "TH" && rowIndex === 0;
+  const columnHeaderEnabled = focusedCell?.tagName === "TH";
+  const rowColorSummary = summarizeColors(
+    focusedCellState?.table.rows[rowIndex]
+      ? [...focusedCellState.table.rows[rowIndex].cells].map(
+          (cell) =>
+            (cell as HTMLTableCellElement).style.backgroundColor || null,
+        )
+      : [],
+  );
+  const columnColorSummary = summarizeColors(
+    focusedCellState?.table
+      ? [...focusedCellState.table.rows].map(
+          (row) =>
+            (row.cells[columnIndex] as HTMLTableCellElement | undefined)?.style
+              .backgroundColor || null,
+        )
+      : [],
+  );
+
+  useEffect(() => {
+    const setFocusedCellFromElement = (element: HTMLElement | null) => {
+      const editorRoot = editor.getRootElement();
+      const isOnActionHandle =
+        element?.closest(".EditorTheme__tableCellActionMenuHandle") !== null;
+      const isInsideOpenMenu =
+        element?.closest('[data-slot="dropdown-menu-content"]') !== null ||
+        element?.closest('[data-slot="dropdown-menu-sub-content"]') !== null;
+      // The column resizer is portalled out of the table, so `closest("td, th")`
+      // finds nothing while the pointer sits on it and the handles would tear
+      // themselves down exactly as the user reaches for the line they were
+      // aiming at. Reaching for a table affordance is not leaving the table.
+      const isOnColumnResizer =
+        element?.closest("[data-table-column-resizer]") != null;
+      const cell = element?.closest<HTMLTableCellElement>("td, th") ?? null;
+      const table = cell?.closest<HTMLTableElement>("table") ?? null;
+
+      if (isOnActionHandle || isInsideOpenMenu || isOnColumnResizer) {
+        return;
+      }
+
+      if (!editorRoot || !cell || !table || !editorRoot.contains(table)) {
+        setFocusedCellState(null);
+        setOpenMenu(null);
+        setActiveAxis((current) =>
+          dragStateReference.current ? current : null,
+        );
+        return;
+      }
+
+      const row = cell.closest("tr");
+
+      setFocusedCellState({
+        cell,
+        table,
+        rowIndex: row instanceof HTMLTableRowElement ? row.rowIndex : 0,
+        columnIndex: cell.cellIndex,
+      });
+    };
+
+    const syncFocusedCellFromSelection = () => {
+      // The pointer owns the handles. This runs on every editor update, so
+      // without the guard a keystroke would drag the bars back to the caret's
+      // cell while the pointer rested on another one.
+      if (hoveredCellReference.current) {
+        return;
+      }
+
+      editor.getEditorState().read(() => {
+        const selection = $getSelection();
+        if ($isTableSelection(selection)) {
+          setFocusedCellState(null);
+          setOpenMenu(null);
+          setActiveAxis((current) =>
+            dragStateReference.current ? current : null,
+          );
+          return;
+        }
+
+        if (!$isRangeSelection(selection)) {
+          return;
+        }
+
+        const anchorNode = selection.anchor.getNode();
+        const tableCellNode = $isTableCellNode(anchorNode)
+          ? anchorNode
+          : anchorNode.getParents().find((node) => $isTableCellNode(node));
+
+        if (!$isTableCellNode(tableCellNode)) {
+          setFocusedCellState(null);
+          setOpenMenu(null);
+          setActiveAxis((current) =>
+            dragStateReference.current ? current : null,
+          );
+          return;
+        }
+
+        const element = editor.getElementByKey(tableCellNode.getKey());
+        setFocusedCellFromElement(element as HTMLTableCellElement | null);
+      });
+    };
+
+    const handleMouseUp = (event: MouseEvent) => {
+      setFocusedCellFromElement(event.target as HTMLElement | null);
+    };
+
+    /**
+     * The handles belong to the cell under the POINTER, not to the caret. Left
+     * on mouseup alone they sat wherever the last click landed and did not move
+     * as the pointer crossed into another column, which reads as stuck.
+     *
+     * Guarded on the cell actually changing: mousemove fires per pixel, and
+     * re-setting the same state would re-render the whole plugin on every one.
+     */
+    const handleMouseMove = (event: MouseEvent) => {
+      if (dragStateReference.current) {
+        return;
+      }
+
+      const cell =
+        (event.target as HTMLElement | null)?.closest<HTMLTableCellElement>(
+          "td, th",
+        ) ?? null;
+
+      if (cell === hoveredCellReference.current) {
+        return;
+      }
+
+      hoveredCellReference.current = cell;
+      setFocusedCellFromElement(event.target as HTMLElement | null);
+    };
+
+    syncFocusedCellFromSelection();
+
+    return mergeRegister(
+      editor.registerUpdateListener(() => {
+        syncFocusedCellFromSelection();
+      }),
+      editor.registerRootListener(() => {
+        if (editor.getRootElement() === null) {
+          setFocusedCellState(null);
+          clearDragState();
+          setOpenMenu(null);
+          setActiveAxis(null);
+        }
+      }),
+      (() => {
+        document.addEventListener("mouseup", handleMouseUp);
+        document.addEventListener("mousemove", handleMouseMove, {
+          passive: true,
+        });
+
+        return () => {
+          document.removeEventListener("mouseup", handleMouseUp);
+          document.removeEventListener("mousemove", handleMouseMove);
+        };
+      })(),
+    );
+  }, [
+    clearDragState,
+    editor,
+    handleColumnDragOver,
+    handleColumnDrop,
+    handleRowDragOver,
+    handleRowDrop,
+  ]);
+
+  /*
+   * Dragging a handle, with pointer events rather than HTML drag and drop:
+   * inside VS Code's webview a native drag's dragover and drop never reach
+   * the page, so the grip's ghost followed the pointer and nothing moved.
+   * Past a few px of travel a press becomes a drag; the click that ends a
+   * drag must not open the menu, which a plain click does.
+   */
+  // The handlers of the render the press happened in: the table and the
+  // cell a drag acts on do not change while it lasts.
+  const dragHandlers = {
+    row: {
+      start: handleRowDragStart,
+      over: handleRowDragOver,
+      drop: handleRowDrop,
+    },
+    column: {
+      start: handleColumnDragStart,
+      over: handleColumnDragOver,
+      drop: handleColumnDrop,
+    },
+  };
+  const suppressClickReference = useRef(false);
+
+  const startHandleDrag = (
+    axis: "row" | "column",
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    if (event.button !== 0) return;
+    // No text selection and no focus jump while the pointer is down.
+    event.preventDefault();
+    const origin = { x: event.clientX, y: event.clientY };
+    let dragging = false;
+    const handlers = () => dragHandlers[axis];
+    const index =
+      axis === "row"
+        ? focusedCellState?.rowIndex
+        : focusedCellState?.columnIndex;
+    let preview: HTMLElement | null = null;
+    let faded: HTMLTableCellElement[] = [];
+
+    const onMove = (move: PointerEvent) => {
+      if (!dragging) {
+        const travel = Math.hypot(
+          move.clientX - origin.x,
+          move.clientY - origin.y,
+        );
+        if (travel < DRAG_THRESHOLD_PX) return;
+        dragging = true;
+        handlers().start();
+        if (focusedTable && index !== undefined) {
+          preview = createDragPreview(focusedTable, axis, index, anchorElem);
+          faded = draggedCells(focusedTable, axis, index);
+          for (const cell of faded) cell.dataset.tableDragOrigin = "";
+        }
+      }
+      if (preview) {
+        preview.style.transform =
+          axis === "row"
+            ? `translateY(${move.clientY - origin.y}px)`
+            : `translateX(${move.clientX - origin.x}px)`;
+      }
+      handlers().over(move);
+    };
+    const finish = (end: PointerEvent, drop: boolean) => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointercancel", onCancel);
+      preview?.remove();
+      for (const cell of faded) delete cell.dataset.tableDragOrigin;
+      if (!dragging) return;
+      suppressClickReference.current = true;
+      if (drop) handlers().drop(end);
+      else clearDragState();
+    };
+    const onUp = (up: PointerEvent) => finish(up, true);
+    const onCancel = (cancel: PointerEvent) => finish(cancel, false);
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+    document.addEventListener("pointercancel", onCancel);
+  };
+
+  /** True once for the click that ends a drag, which must not open the menu. */
+  const isDragEndClick = () => {
+    const suppressed = suppressClickReference.current;
+    suppressClickReference.current = false;
+    return suppressed;
+  };
+
+  const rowMenu = {
+    items: [
+      { key: "search", label: "Search actions...", disabled: true },
+      ...(rowIndex === 0
+        ? [
+            {
+              key: "header-row",
+              label: "Header row",
+              icon: <Icon className="size-4" icon="icon-[lucide--rows-3]" />,
+              extra: (
+                <Switch
+                  checked={rowHeaderEnabled}
+                  size="small"
+                  tabIndex={-1}
+                  aria-hidden="true"
+                  data-testid="table-action-toggle-header-row"
+                  className="pointer-events-none"
+                />
+              ),
+              onClick: () => handleToggleHeader("row"),
+            },
+          ]
+        : []),
+      {
+        key: "color",
+        label: "Color",
+        icon: <Icon className="size-4" icon="icon-[lucide--palette]" />,
+        extra: <ColorPreview axis="row" summary={rowColorSummary} />,
+        children: TABLE_COLOR_PRESETS.map((preset) => ({
+          key: `row-color-${preset.key}`,
+          label: preset.label,
+          icon:
+            preset.value === null ? (
+              <Icon className="size-4" icon="icon-[lucide--ban]" />
+            ) : (
+              <span
+                className="border-border size-4 rounded-full border"
+                style={{ backgroundColor: preset.value }}
+              />
+            ),
+          onClick: () => handleSetRowColor(preset.value),
+        })),
+      },
+      { type: "divider" as const },
+      {
+        key: "insert-above",
+        label: "Insert above",
+        icon: <Icon className="size-4" icon="icon-[lucide--arrow-up]" />,
+        onClick: () => handleInsertRow(false),
+      },
+      {
+        key: "insert-below",
+        label: "Insert below",
+        icon: <Icon className="size-4" icon="icon-[lucide--arrow-down]" />,
+        onClick: () => handleInsertRow(true),
+      },
+      {
+        key: "duplicate-row",
+        label: "Duplicate",
+        icon: <Icon className="size-4" icon="icon-[lucide--copy]" />,
+        onClick: handleDuplicateRow,
+      },
+      {
+        key: "clear-row",
+        label: "Clear contents",
+        icon: <Icon className="size-4" icon="icon-[lucide--eraser]" />,
+        onClick: handleClearRowContents,
+      },
+      {
+        key: "delete-row",
+        label: "Delete",
+        icon: (
+          <Icon className="size-4 text-red-500" icon="icon-[lucide--trash]" />
+        ),
+        danger: true,
+        onClick: handleDeleteRow,
+      },
+    ],
+  };
+
+  const columnMenu = {
+    items: [
+      { key: "search", label: "Search actions...", disabled: true },
+      {
+        key: "header-column",
+        label: "Header column",
+        icon: <Icon className="size-4" icon="icon-[lucide--columns-2]" />,
+        extra: (
+          <Switch
+            checked={columnHeaderEnabled}
+            size="small"
+            tabIndex={-1}
+            aria-hidden="true"
+            data-testid="table-action-toggle-header-column"
+            className="pointer-events-none"
+          />
+        ),
+        onClick: () => handleToggleHeader("column"),
+      },
+      {
+        key: "color",
+        label: "Color",
+        icon: <Icon className="size-4" icon="icon-[lucide--palette]" />,
+        extra: <ColorPreview axis="column" summary={columnColorSummary} />,
+        children: TABLE_COLOR_PRESETS.map((preset) => ({
+          key: `column-color-${preset.key}`,
+          label: preset.label,
+          icon:
+            preset.value === null ? (
+              <Icon className="size-4" icon="icon-[lucide--ban]" />
+            ) : (
+              <span
+                className="border-border size-4 rounded-full border"
+                style={{ backgroundColor: preset.value }}
+              />
+            ),
+          onClick: () => handleSetColumnColor(preset.value),
+        })),
+      },
+      { type: "divider" as const },
+      {
+        key: "insert-left",
+        label: "Insert left",
+        icon: <Icon className="size-4" icon="icon-[lucide--arrow-left]" />,
+        onClick: () => handleInsertColumn(false),
+      },
+      {
+        key: "insert-right",
+        label: "Insert right",
+        icon: <Icon className="size-4" icon="icon-[lucide--arrow-right]" />,
+        onClick: () => handleInsertColumn(true),
+      },
+      {
+        key: "duplicate-column",
+        label: "Duplicate",
+        icon: <Icon className="size-4" icon="icon-[lucide--copy]" />,
+        onClick: handleDuplicateColumn,
+      },
+      {
+        key: "clear-column",
+        label: "Clear contents",
+        icon: <Icon className="size-4" icon="icon-[lucide--eraser]" />,
+        onClick: handleClearColumnContents,
+      },
+      {
+        key: "delete-column",
+        label: "Delete",
+        icon: (
+          <Icon className="size-4 text-red-500" icon="icon-[lucide--trash]" />
+        ),
+        danger: true,
+        onClick: handleDeleteColumn,
+      },
+    ],
+  };
+
+  if (!focusedCell || !focusedCellRect || !focusedTable || !focusedTableRect) {
+    return null;
+  }
+
+  return createPortal(
+    <>
+      <div
+        aria-hidden="true"
+        className={cn(
+          "EditorTheme__tableCellActionMenuHighlight border-primary/70 bg-primary/5 pointer-events-none absolute z-40 rounded-md border-2",
+          activeAxis === "row" ? "opacity-100" : "opacity-0",
+        )}
+        style={{
+          top: focusedCellRect.top - anchorRect.top,
+          left: focusedTableRect.left - anchorRect.left,
+          width: focusedTableRect.width,
+          height: focusedCellRect.height,
+        }}
+      />
+      <div
+        aria-hidden="true"
+        className={cn(
+          "EditorTheme__tableCellActionMenuHighlight border-primary/70 bg-primary/5 pointer-events-none absolute z-40 rounded-md border-2",
+          activeAxis === "column" ? "opacity-100" : "opacity-0",
+        )}
+        style={{
+          top: focusedTableRect.top - anchorRect.top,
+          left: focusedCellRect.left - anchorRect.left,
+          width: focusedCellRect.width,
+          height: focusedTableRect.height,
+        }}
+      />
+      {dropIndicator ? (
+        <div
+          aria-hidden="true"
+          data-table-drop-indicator={dropIndicator.axis}
+          data-table-drop-index={dropIndicator.index}
+          className="EditorTheme__tableCellActionMenuDropIndicator"
+          style={{
+            top: dropIndicator.top - anchorRect.top,
+            left: dropIndicator.left - anchorRect.left,
+            width: dropIndicator.width,
+            height: dropIndicator.height,
+          }}
+        />
+      ) : null}
+      <div
+        style={{
+          position: "absolute",
+          display: "flex",
+          // Positioned by centre, not by corner: Button re-adds padding around
+          // an svg child, so arithmetic off its box drifts the bar off the line.
+          top:
+            focusedCellRect.top + focusedCellRect.height / 2 - anchorRect.top,
+          left: focusedTableRect.left - anchorRect.left,
+          transform: "translate(-50%, -50%)",
+          zIndex: 50,
+        }}
+      >
+        {/* The menu's trigger is this stand-in over the handle, not the handle:
+            a dropdown trigger opens on pointerdown and cancels it, and a
+            cancelled pointerdown never becomes a drag. The handle opens the
+            menu on click, as Notion's does, and is free to be dragged. */}
+        <Dropdown
+          open={openMenu === "row"}
+          onOpenChange={(open) => {
+            setOpenMenu(open ? "row" : null);
+            setActiveAxis(open ? "row" : null);
+          }}
+          menu={rowMenu}
+          placement="bottomLeft"
+        >
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0"
+          />
+        </Dropdown>
+        <Button
+          type="button"
+          variant="ghost"
+          aria-label="Row actions"
+          // What the dropdown trigger used to say about its menu.
+          aria-haspopup="menu"
+          aria-expanded={openMenu === "row"}
+          data-state={openMenu === "row" ? "open" : "closed"}
+          className="EditorTheme__tableCellActionMenuHandle group/handle text-muted-foreground hover:border-border hover:bg-background relative flex h-[24px] min-h-0 w-[14px] items-center justify-center rounded-md border border-transparent bg-transparent p-0 transition-colors hover:shadow-sm"
+          onMouseEnter={() => setActiveAxis("row")}
+          onMouseLeave={() => {
+            if (openMenu !== "row" && !dragState) {
+              setActiveAxis(null);
+            }
+          }}
+          onClick={() => {
+            if (isDragEndClick()) return;
+            setActiveAxis("row");
+            setOpenMenu((current) => (current === "row" ? null : "row"));
+          }}
+          onPointerDown={(event) => startHandleDrag("row", event)}
+          data-table-row-index={rowIndex}
+        >
+          {/* A bar at rest, the grip once the pointer is on it. Notion's own
+                bar measures 18x6 at r4; ours is deliberately half as thick
+                because our cells are narrower (96px vs Notion's 150px), so the
+                same bar reads heavier against them. MAX_HANDLE_BAR_THICKNESS in
+                editor-table-action-menu.stories.tsx pins this. */}
+          <span
+            aria-hidden="true"
+            data-slot="table-handle-bar"
+            className="bg-muted-foreground/70 h-[18px] w-[3px] shrink-0 rounded-full group-hover/handle:hidden"
+          />
+          <GripVertical className="hidden size-3.5 group-hover/handle:block" />
+        </Button>
+      </div>
+      <div
+        style={{
+          position: "absolute",
+          display: "flex",
+          top: focusedTableRect.top - anchorRect.top,
+          left:
+            focusedCellRect.left + focusedCellRect.width / 2 - anchorRect.left,
+          transform: "translate(-50%, -50%)",
+          zIndex: 50,
+        }}
+      >
+        {/* The menu's trigger is this stand-in over the handle, not the handle:
+            a dropdown trigger opens on pointerdown and cancels it, and a
+            cancelled pointerdown never becomes a drag. The handle opens the
+            menu on click, as Notion's does, and is free to be dragged. */}
+        <Dropdown
+          open={openMenu === "column"}
+          onOpenChange={(open) => {
+            setOpenMenu(open ? "column" : null);
+            setActiveAxis(open ? "column" : null);
+          }}
+          menu={columnMenu}
+          placement="bottomLeft"
+        >
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0"
+          />
+        </Dropdown>
+        <Button
+          type="button"
+          variant="ghost"
+          aria-label="Column actions"
+          // What the dropdown trigger used to say about its menu.
+          aria-haspopup="menu"
+          aria-expanded={openMenu === "column"}
+          data-state={openMenu === "column" ? "open" : "closed"}
+          className="EditorTheme__tableCellActionMenuHandle group/handle text-muted-foreground hover:border-border hover:bg-background relative flex h-[14px] min-h-0 w-[24px] items-center justify-center rounded-md border border-transparent bg-transparent p-0 transition-colors hover:shadow-sm"
+          onMouseEnter={() => setActiveAxis("column")}
+          onMouseLeave={() => {
+            if (openMenu !== "column" && !dragState) {
+              setActiveAxis(null);
+            }
+          }}
+          onClick={() => {
+            if (isDragEndClick()) return;
+            setActiveAxis("column");
+            setOpenMenu((current) => (current === "column" ? null : "column"));
+          }}
+          onPointerDown={(event) => startHandleDrag("column", event)}
+          data-table-column-index={columnIndex}
+        >
+          {/* A bar at rest, the grip once the pointer is on it. Notion's own
+                bar measures 18x6 at r4; ours is deliberately half as thick
+                because our cells are narrower (96px vs Notion's 150px), so the
+                same bar reads heavier against them. MAX_HANDLE_BAR_THICKNESS in
+                editor-table-action-menu.stories.tsx pins this. */}
+          <span
+            aria-hidden="true"
+            data-slot="table-handle-bar"
+            className="bg-muted-foreground/70 h-[3px] w-[18px] shrink-0 rounded-full group-hover/handle:hidden"
+          />
+          <GripHorizontal className="hidden size-3.5 group-hover/handle:block" />
+        </Button>
+      </div>
+    </>,
+    anchorElem,
+  );
+}
+
+export function TableCellActionMenuPlugin({
+  anchorElem,
+}: {
+  anchorElem: HTMLElement | null;
+}): JSX.Element | null {
+  if (!anchorElem) return null;
+  return <TableCellActionMenuInner anchorElem={anchorElem} />;
+}

@@ -1,0 +1,1 @@
+- [ ] Trong atelier, phần "@acme sync", tôi muốn làm một cái visual hoặc là form copy nhanh các component sang các project khác. Ví dụ copy component từ source library sang các project khác hoặc ngược lại

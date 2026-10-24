@@ -1,0 +1,48 @@
+import { Meta } from "@storybook/addon-docs/blocks";
+
+import { ComponentSource } from "@acme/ui/components/mdx";
+
+import * as AlertModalStories from "./alert-modal.stories";
+import AlertModalBasicDemo from "./examples/basic";
+import TypesDemo from "./examples/types";
+import WithTextareaDemo from "./examples/with-textarea";
+
+<Meta of={AlertModalStories} />
+
+# AlertModal
+
+A confirmation dialog component that displays an alert message with confirm/cancel actions. Built on top of the AlertDialog primitive components and follows Ant Design API patterns with Shadcn UI styling.
+
+## Examples
+
+### Basic Usage
+
+Display the document sample code for the basic usage of the AlertModal component.
+
+<ComponentSource
+  src="alert-modal/examples/basic.tsx"
+  __comp__={AlertModalBasicDemo}
+/>
+
+### Types
+
+AlertModal supports different types to display different visual styles and icons: `confirm`, `warning`, `info`, `success`, and `error`.
+
+<ComponentSource src="alert-modal/examples/types.tsx" __comp__={TypesDemo} />
+
+### With Body Content
+
+Pass `children` to render extra body content — such as a textarea collecting a reason — between the description and the footer.
+
+<ComponentSource
+  src="alert-modal/examples/with-textarea.tsx"
+  __comp__={WithTextareaDemo}
+/>
+
+## Text selection
+
+Title, description, and body text select and copy in one drag, same as Modal. The
+alert box is short, so a drag usually leaves it — dragging out past the
+bottom/right selects through to the end of its text, past the top/left back to
+the start, instead of losing the selection. Footer button labels are treated as
+chrome and never end up in the copy.

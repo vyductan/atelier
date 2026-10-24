@@ -1,0 +1,292 @@
+"use client";
+
+import React from "react";
+import { toast } from "sonner";
+
+import { WarningFilled } from "@acme/ui/icons";
+
+import type { ConfirmConfig } from "../modal";
+import { Modal as InternalModal } from "../modal";
+
+// Notification types
+export interface NotificationConfig {
+  message: string;
+  description?: string;
+  duration?: number;
+  key?: string | number;
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
+}
+
+// App context interface
+interface AppContextType {
+  modal: {
+    confirm: (config: ConfirmConfig) => {
+      destroy: () => void;
+    };
+    warning: (config: ConfirmConfig) => {
+      destroy: () => void;
+    };
+  };
+  message: {
+    success: (content: string) => void;
+    error: (content: string) => void;
+    warning: (content: string) => void;
+    info: (content: string) => void;
+  };
+  notification: {
+    success: (config: NotificationConfig) => void;
+    error: (config: NotificationConfig) => void;
+    warning: (config: NotificationConfig) => void;
+    info: (config: NotificationConfig) => void;
+    destroy: (key?: string) => void;
+  };
+}
+
+// Modal state for the app context
+interface ModalState {
+  visible: boolean;
+  config: ConfirmConfig;
+  loading: boolean;
+}
+
+// Create App context
+const AppContext = React.createContext<AppContextType | null>(null);
+
+// App component props
+export interface AppProps {
+  children: React.ReactNode;
+}
+
+// App component implementation
+export const App: React.FC<AppProps> & {
+  useApp: () => AppContextType;
+} = ({ children }) => {
+  const [modalState, setModalState] = React.useState<ModalState>({
+    visible: false,
+    config: {},
+    loading: false,
+  });
+
+  // Modal confirm function
+  const confirm = React.useCallback((config: ConfirmConfig) => {
+    setModalState({
+      visible: true,
+      config,
+      loading: false,
+    });
+
+    return {
+      destroy: () => {
+        setModalState((prev) => ({
+          ...prev,
+          visible: false,
+        }));
+      },
+    };
+  }, []);
+
+  // Modal warning function (AntD-like)
+  const warning = React.useCallback(
+    (config: ConfirmConfig) => {
+      return confirm({
+        title: config.title ?? "Warning",
+        // Prepend warning icon to content like Ant Design
+        content: (
+          <div className="flex items-start gap-3">
+            <WarningFilled className="mt-0.5 size-5 text-amber-500" />
+            <div>{config.content}</div>
+          </div>
+        ),
+        okText: config.okText ?? "OK",
+        okButtonProps: {
+          type: "primary",
+          color: "amber",
+          ...config.okButtonProps,
+        },
+        // Mark type to customize footer rendering (hide Cancel)
+        type: "warning",
+        onOk: config.onOk,
+        onCancel: config.onCancel,
+      });
+    },
+    [confirm],
+  );
+
+  // Handle modal OK
+  const handleOk = React.useCallback(async () => {
+    const { onOk } = modalState.config;
+    if (onOk) {
+      setModalState((prev) => ({ ...prev, loading: true }));
+      try {
+        await onOk();
+        setModalState((prev) => ({ ...prev, visible: false, loading: false }));
+      } catch (error) {
+        console.error("Modal onOk error:", error);
+        setModalState((prev) => ({ ...prev, loading: false }));
+      }
+    } else {
+      setModalState((prev) => ({ ...prev, visible: false }));
+    }
+  }, [modalState.config]);
+
+  // Handle modal cancel
+  const handleCancel = React.useCallback(() => {
+    const { onCancel } = modalState.config;
+    onCancel?.();
+    setModalState((prev) => ({ ...prev, visible: false }));
+  }, [modalState.config]);
+
+  // Escape-to-close for the global modal.
+  //
+  // This modal is rendered at the App root, but it's often stacked on top of a
+  // vaul Drawer. vaul and radix-ui bundle DIFFERENT copies of Radix's
+  // DismissableLayer (separate `layers` Sets), and the drawer's copy — mounted
+  // first — handles Escape first and calls preventDefault(). radix-ui's copy
+  // then sees `event.defaultPrevented` and refuses to close THIS modal, so
+  // Escape does nothing. Beat that race with a window-capture listener (capture
+  // on window fires before document-level listeners), close ourselves, and stop
+  // the event so the drawer underneath doesn't react to it either.
+  React.useEffect(() => {
+    if (!modalState.visible) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      handleCancel();
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [modalState.visible, handleCancel]);
+
+  // Message functions (placeholder - can be extended later)
+  const message = React.useMemo(
+    () => ({
+      success: (content: string) => {
+        console.log("Message Success:", content);
+        // TODO: Implement actual message component
+      },
+      error: (content: string) => {
+        console.error("Message Error:", content);
+        // TODO: Implement actual message component
+      },
+      warning: (content: string) => {
+        console.warn("Message Warning:", content);
+        // TODO: Implement actual message component
+      },
+      info: (content: string) => {
+        console.info("Message Info:", content);
+        // TODO: Implement actual message component
+      },
+    }),
+    [],
+  );
+
+  // Notification functions using sonner
+  const notification = React.useMemo(
+    () => ({
+      success: (config: NotificationConfig) => {
+        toast.success(config.message, {
+          description: config.description,
+          duration: config.duration,
+          id: config.key,
+          action: config.action,
+        });
+      },
+      error: (config: NotificationConfig) => {
+        toast.error(config.message, {
+          description: config.description,
+          duration: config.duration,
+          id: config.key,
+          action: config.action,
+        });
+      },
+      warning: (config: NotificationConfig) => {
+        toast.warning(config.message, {
+          description: config.description,
+          duration: config.duration,
+          id: config.key,
+          action: config.action,
+        });
+      },
+      info: (config: NotificationConfig) => {
+        toast.info(config.message, {
+          description: config.description,
+          duration: config.duration,
+          id: config.key,
+          action: config.action,
+        });
+      },
+      destroy: (key?: string) => {
+        toast.dismiss(key);
+      },
+    }),
+    [],
+  );
+
+  // App context value
+  const contextValue = React.useMemo<AppContextType>(
+    () => ({
+      modal: {
+        confirm,
+        warning,
+      },
+      message,
+      notification,
+    }),
+    [confirm, warning, message, notification],
+  );
+
+  const {
+    title = "Confirm",
+    content,
+    okText = "OK",
+    okType,
+    okButtonProps,
+    cancelText = "Cancel",
+  } = modalState.config;
+
+  return (
+    <AppContext.Provider value={contextValue}>
+      {children}
+
+      {/* Global Modal */}
+      <InternalModal
+        open={modalState.visible}
+        title={title}
+        onOk={handleOk}
+        onCancel={handleCancel}
+        okText={okText}
+        okType={okType}
+        okButtonProps={okButtonProps}
+        cancelText={cancelText}
+        confirmLoading={modalState.loading}
+        footer={
+          modalState.config.type === "warning"
+            ? ({ extra }) => extra.OkBtn
+            : undefined
+        }
+        onOpenChange={(open) => {
+          if (!open) {
+            handleCancel();
+          }
+        }}
+      >
+        {content}
+      </InternalModal>
+    </AppContext.Provider>
+  );
+};
+
+// Add static useApp method to App component (like Ant Design)
+App.useApp = () => {
+  const context = React.useContext(AppContext);
+  if (!context) {
+    throw new Error("App.useApp() must be used within App component");
+  }
+  return context;
+};
+
+export default App;

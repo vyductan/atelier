@@ -38,6 +38,7 @@ export default defineConfig({
     dedupe: ["react", "react-dom"],
     alias: {
       "~": path.resolve(__dirname, "./src"),
+      "@acme/ui": path.resolve(__dirname, "../../@acme/ui/src"),
     },
   },
 

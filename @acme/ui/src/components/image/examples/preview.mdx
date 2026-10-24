@@ -1,0 +1,18 @@
+import { Meta } from "@storybook/addon-docs/blocks";
+
+import { ComponentSource } from "@acme/ui/components/mdx";
+
+import PreviewExample from "./preview";
+
+<Meta isTemplate />
+
+### Preview
+
+Previewing is on by default, as in Ant Design — clicking an image opens a
+viewer with a zoom / rotate / flip toolbar, and dragging pans once you are past
+1:1. Pass `preview={false}` to opt a decorative image out.
+
+The hover mask only dims; Ant Design 6 removed the default eye and label, so
+put content back with `preview={{ cover: … }}`.
+
+<ComponentSource src="image/examples/preview.tsx" __comp__={PreviewExample} />

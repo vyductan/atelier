@@ -1,0 +1,345 @@
+import "@testing-library/jest-dom/vitest";
+
+import type React from "react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { z } from "zod";
+
+import { Field } from "@acme/ui/components/field";
+
+import { Form } from "./form";
+import { useForm } from "./hooks/use-form";
+import { FormItem } from "./_components";
+
+// Characterization tests for the field VALUE-WIRING semantics shared by
+// Form.Item and Field. They pin the observable contract of the binding:
+//   - child's own onChange/onBlur run before the form commit
+//   - `undefined` events commit as `null` (react-hook-form can't hold undefined)
+//   - `normalize` runs on every commit; a normalize returning undefined → null
+//   - `valuePropName` renames the injected value prop
+//   - `getValueProps` output is spread onto the child
+// Any refactor of the wiring must keep every test here green.
+
+const schema = z.object({
+  amount: z.any(),
+});
+
+/**
+ * Probe child: renders its received props so tests can observe exactly what
+ * the wiring injected, and exposes buttons that emit arbitrary payloads
+ * through the injected onChange/onBlur.
+ */
+function Probe(props: {
+  value?: unknown;
+  checked?: unknown;
+  displayText?: unknown;
+  onChange?: (event: unknown) => void;
+  onBlur?: (event: unknown) => void;
+  [key: string]: unknown;
+}) {
+  return (
+    <div>
+      <div data-testid="value">{JSON.stringify(props.value ?? null)}</div>
+      <div data-testid="checked">{JSON.stringify(props.checked ?? null)}</div>
+      <div data-testid="display">{JSON.stringify(props.displayText ?? null)}</div>
+      <button type="button" onClick={() => props.onChange?.("typed")}>
+        emit-typed
+      </button>
+      <button type="button" onClick={() => props.onChange?.(undefined)}>
+        emit-undefined
+      </button>
+      <button type="button" onClick={() => props.onBlur?.("blur-event")}>
+        emit-blur
+      </button>
+    </div>
+  );
+}
+
+function Harness({
+  entry,
+  fieldProps,
+  childProps,
+}: {
+  entry: "form-item" | "field";
+  fieldProps?: Record<string, unknown>;
+  childProps?: Record<string, unknown>;
+}) {
+  const form = useForm({
+    schema,
+    defaultValues: { amount: "initial" },
+    onSubmit: () => {},
+  });
+
+  const child = <Probe {...childProps} />;
+
+  return (
+    <Form form={form} name={`wiring-${entry}`}>
+      {entry === "form-item" ? (
+        <FormItem name="amount" control={form.control} {...fieldProps}>
+          {child}
+        </FormItem>
+      ) : (
+        <Field name="amount" control={form.control} {...fieldProps}>
+          {child}
+        </Field>
+      )}
+    </Form>
+  );
+}
+
+afterEach(cleanup);
+
+for (const entry of ["form-item", "field"] as const) {
+  describe(`${entry} value wiring`, () => {
+    test("injects the committed value into the child's value prop", () => {
+      render(<Harness entry={entry} />);
+      expect(screen.getByTestId("value")).toHaveTextContent('"initial"');
+    });
+
+    test("commits emitted events and re-renders the child with them", () => {
+      render(<Harness entry={entry} />);
+      fireEvent.click(screen.getByRole("button", { name: "emit-typed" }));
+      expect(screen.getByTestId("value")).toHaveTextContent('"typed"');
+    });
+
+    test("commits undefined events as null", () => {
+      render(<Harness entry={entry} />);
+      fireEvent.click(screen.getByRole("button", { name: "emit-undefined" }));
+      expect(screen.getByTestId("value")).toHaveTextContent("null");
+    });
+
+    test("runs normalize on commit with (value, previousValue)", () => {
+      const normalize = vi.fn((value: unknown) => `normalized:${value}`);
+      render(<Harness entry={entry} fieldProps={{ normalize }} />);
+      fireEvent.click(screen.getByRole("button", { name: "emit-typed" }));
+      expect(normalize).toHaveBeenCalledWith("typed", "initial");
+      expect(screen.getByTestId("value")).toHaveTextContent(
+        '"normalized:typed"',
+      );
+    });
+
+    test("normalize returning undefined commits null", () => {
+      render(
+        <Harness entry={entry} fieldProps={{ normalize: () => undefined }} />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "emit-typed" }));
+      expect(screen.getByTestId("value")).toHaveTextContent("null");
+    });
+
+    test("valuePropName renames the injected value prop", () => {
+      render(<Harness entry={entry} fieldProps={{ valuePropName: "checked" }} />);
+      expect(screen.getByTestId("checked")).toHaveTextContent('"initial"');
+    });
+
+    test("getValueProps output is spread onto the child", () => {
+      render(
+        <Harness
+          entry={entry}
+          fieldProps={{
+            getValueProps: (value: unknown) => ({
+              displayText: `shown:${value}`,
+            }),
+          }}
+        />,
+      );
+      expect(screen.getByTestId("display")).toHaveTextContent(
+        '"shown:initial"',
+      );
+    });
+
+    test("child's own onChange runs before the commit; onBlur is chained", () => {
+      const childChange = vi.fn();
+      const childBlur = vi.fn();
+      render(
+        <Harness
+          entry={entry}
+          childProps={{ onChange: childChange, onBlur: childBlur }}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "emit-typed" }));
+      expect(childChange).toHaveBeenCalledWith("typed");
+      expect(screen.getByTestId("value")).toHaveTextContent('"typed"');
+
+      fireEvent.click(screen.getByRole("button", { name: "emit-blur" }));
+      expect(childBlur).toHaveBeenCalledWith("blur-event");
+    });
+
+    test("getValueFromEvent extracts the value before normalize runs", () => {
+      render(
+        <Harness
+          entry={entry}
+          fieldProps={{
+            getValueFromEvent: (raw: unknown) => `picked:${raw}`,
+            normalize: (value: unknown) => `norm:${value}`,
+          }}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "emit-typed" }));
+      expect(screen.getByTestId("value")).toHaveTextContent(
+        '"norm:picked:typed"',
+      );
+    });
+  });
+}
+
+// getValueFromEvent receives ALL of the child's onChange arguments, matching
+// AntD (e.g. DatePicker emits (date, dateString)).
+describe("getValueFromEvent multi-arg", () => {
+  // Captures the onChange that the binding injects, so the test can fire it
+  // with several arguments like a real multi-arg control would.
+  function Capture(props: { onChange?: (...args: unknown[]) => void }) {
+    (globalThis as any).__injectedOnChange = props.onChange;
+    return <div data-testid="pick-value">{JSON.stringify(props)}</div>;
+  }
+
+  function Harness2({ getValueFromEvent }: { getValueFromEvent: any }) {
+    const form = useForm({
+      schema: z.object({ pick: z.any() }),
+      defaultValues: { pick: "" },
+      onSubmit: () => {},
+    });
+    return (
+      <Form form={form} name="multi">
+        <Field
+          name="pick"
+          control={form.control}
+          getValueFromEvent={getValueFromEvent}
+        >
+          <Capture />
+        </Field>
+      </Form>
+    );
+  }
+
+  test("passes every onChange argument to getValueFromEvent", () => {
+    const spy = vi.fn((_date: unknown, _dateString: unknown) => "combined");
+    render(<Harness2 getValueFromEvent={spy} />);
+
+    const onChange = (globalThis as any).__injectedOnChange as (
+      ...args: unknown[]
+    ) => void;
+    onChange("2024-01-01", "extra-arg");
+
+    expect(spy).toHaveBeenCalledWith("2024-01-01", "extra-arg");
+  });
+});
+
+// Default extraction (no getValueFromEvent): events yield target[valuePropName]
+// so normalize sees a value, non-events pass through — matching AntD.
+describe("default value extraction", () => {
+  function Capture3(props: { onChange?: (...args: unknown[]) => void }) {
+    (globalThis as any).__onChange = props.onChange;
+    return <div />;
+  }
+
+  function DefaultHarness({
+    valuePropName,
+    normalize,
+  }: {
+    valuePropName?: string;
+    normalize?: (value: unknown) => unknown;
+  }) {
+    const form = useForm({
+      schema: z.object({ f: z.any() }),
+      defaultValues: { f: "" },
+      onSubmit: () => {},
+    });
+    (globalThis as any).__form = form;
+    return (
+      <Form form={form} name="def">
+        <Field
+          name="f"
+          control={form.control}
+          valuePropName={valuePropName}
+          normalize={normalize}
+        >
+          <Capture3 />
+        </Field>
+      </Form>
+    );
+  }
+
+  const fire = (arg: unknown) =>
+    act(() => {
+      ((globalThis as any).__onChange as (a: unknown) => void)(arg);
+    });
+  const committed = () => ((globalThis as any).__form).getValues().f;
+
+  test("extracts event.target.value so normalize receives the value", () => {
+    let seen: unknown = "UNSET";
+    render(
+      <DefaultHarness
+        normalize={(value) => {
+          seen = value;
+          return value;
+        }}
+      />,
+    );
+    fire({ target: { value: "hello" } });
+    expect(seen).toBe("hello");
+    expect(committed()).toBe("hello");
+  });
+
+  test("passes a non-event value straight through", () => {
+    render(<DefaultHarness />);
+    fire("raw-value");
+    expect(committed()).toBe("raw-value");
+  });
+
+  test("uses valuePropName to extract event.target.checked", () => {
+    render(<DefaultHarness valuePropName="checked" />);
+    fire({ target: { checked: true } });
+    expect(committed()).toBe(true);
+  });
+});
+
+// AntD-style `extra`: a persistent hint that stays put when a validation error
+// appears, and renders AFTER the error (not above it like `description`).
+describe("field extra prop", () => {
+  const requiredSchema = z.object({
+    name: z.string().min(1, { message: "Required" }),
+  });
+
+  function ExtraHarness() {
+    const form = useForm({
+      schema: requiredSchema,
+      defaultValues: { name: "" },
+      onSubmit: () => {},
+    });
+    return (
+      <Form form={form} name="extra">
+        <Field
+          name="name"
+          control={form.control}
+          label="Name"
+          extra="Persistent hint"
+        >
+          <input />
+        </Field>
+        <button type="submit">submit</button>
+      </Form>
+    );
+  }
+
+  test("renders the hint and keeps it below the error after validation", async () => {
+    render(<ExtraHarness />);
+
+    // Present before any error.
+    expect(screen.getByText("Persistent hint")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "submit" }));
+
+    // Error shows and the hint survives alongside it.
+    expect(await screen.findByText("Required")).toBeInTheDocument();
+    const error = screen.getByText("Required");
+    const extra = screen.getByText("Persistent hint");
+    expect(extra).toBeInTheDocument();
+
+    // DOM order: error precedes extra.
+    expect(
+      error.compareDocumentPosition(extra) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+});

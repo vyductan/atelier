@@ -1,0 +1,318 @@
+import type { ElementNode, LexicalEditor, TextNode } from "lexical";
+import * as React from "react";
+import { $createListItemNode, $createListNode } from "@lexical/list";
+import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
+import { $createHeadingNode } from "@lexical/rich-text";
+import { cleanup, render, waitFor } from "@testing-library/react";
+import {
+  $createParagraphNode,
+  $createTextNode,
+  $getRoot,
+  $isElementNode,
+} from "lexical";
+import { afterEach, expect, test } from "vitest";
+import { page, userEvent } from "vitest/browser";
+
+import { Editor } from "../editor";
+
+// Runs in the `browser` project: the highlight is computed style and the
+// handle's block comes from real layout under a real pointer.
+
+Object.assign(globalThis, { React });
+
+function EditorRefPlugin({
+  onReady,
+}: {
+  onReady: (editor: LexicalEditor) => void;
+}) {
+  const [editor] = useLexicalComposerContext();
+
+  React.useEffect(() => {
+    onReady(editor);
+  }, [editor, onReady]);
+
+  return null;
+}
+
+afterEach(() => {
+  cleanup();
+  document.body.replaceChildren();
+});
+
+async function renderEditor(build: () => void) {
+  let editor: LexicalEditor | null = null;
+
+  render(
+    <div style={{ width: 720, padding: 40 }}>
+      <Editor autoFocus={false}>
+        <EditorRefPlugin onReady={(next) => (editor = next)} />
+      </Editor>
+    </div>,
+  );
+
+  await waitFor(() => expect(editor).not.toBeNull());
+  const live = editor as unknown as LexicalEditor;
+  live.update(build, { discrete: true });
+  return live;
+}
+
+const handle = () =>
+  document.querySelector<HTMLElement>('[data-slot="draggable-block-menu"]')!;
+
+const grip = () =>
+  handle().querySelector<HTMLElement>('[data-slot="popover-trigger"]')!;
+
+/**
+ * Drag the hovered block's handle onto the upper or lower half of `target`.
+ *
+ * The hover that picks the block is real pointer input; the drag itself is
+ * dispatched. Playwright's dragAndDrop sends a single dragover, and whether
+ * Chrome then delivers the drop varied run to run — the same test passed and
+ * failed on identical code. The handlers under test are the plugin's own
+ * dragstart/dragover/drop, so dispatching reaches exactly the code in question.
+ */
+function dragBlockOnto(target: HTMLElement, half: "upper" | "lower") {
+  const dataTransfer = new DataTransfer();
+  const rect = target.getBoundingClientRect();
+  const init = {
+    bubbles: true,
+    cancelable: true,
+    dataTransfer,
+    clientX: rect.left + 20,
+    clientY: half === "upper" ? rect.top + 2 : rect.bottom - 2,
+  };
+  grip().dispatchEvent(new DragEvent("dragstart", init));
+  target.dispatchEvent(new DragEvent("dragover", init));
+  target.dispatchEvent(new DragEvent("drop", init));
+  grip().dispatchEvent(new DragEvent("dragend", init));
+}
+
+/** The element whose text is exactly `text` inside the editable. */
+function lineOf(text: string): HTMLElement {
+  const match = [
+    ...document.querySelectorAll<HTMLElement>('[contenteditable="true"] *'),
+  ].find(
+    (element) =>
+      element.textContent === text &&
+      [...element.children].every((child) => child.textContent !== text),
+  );
+  if (!match) throw new Error(`no element with text "${text}"`);
+  return match;
+}
+
+function build() {
+  $getRoot()
+    .clear()
+    .append(
+      $createParagraphNode().append($createTextNode("Intro")),
+      $createParagraphNode().append($createTextNode("Middle")),
+      $createHeadingNode("h2").append($createTextNode("TODO")),
+      $createListNode("check").append(
+        $createListItemNode(false).append($createTextNode("to do")),
+      ),
+    );
+}
+
+const FILLERS = [
+  "Filler 1",
+  "Filler 2",
+  "Filler 3",
+  "Filler 4",
+  "Filler 5",
+  "Filler 6",
+];
+
+/**
+ * `build` with six paragraphs between Middle and the TODO heading.
+ *
+ * A block selection opens the formatting toolbar (it carries "Turn into"),
+ * placed just above the selection when the editor's scroller has room and
+ * flipped just below it when not — up to ~114px tall once it wraps. A block
+ * right next to the selection is under it on one side or the other, and
+ * which side depends on font metrics and viewport: in `build`, Middle sat
+ * under it on CI (Linux fonts) and on a wide viewport here, but not on a Mac
+ * at vitest's default 414px. The real hover then timed out on "toolbar
+ * intercepts pointer events", every CI run, never locally. The fillers put
+ * the dragged block out of the toolbar's reach whichever way it goes.
+ */
+function buildWithGap() {
+  build();
+  const heading = $getRoot().getChildAtIndex<ElementNode>(2)!;
+  for (const text of FILLERS) {
+    heading.insertBefore($createParagraphNode().append($createTextNode(text)));
+  }
+}
+
+/** Select from the start of block `from` to the end of block `to`. */
+async function selectBlocks(editor: LexicalEditor, from: number, to: number) {
+  await userEvent.click(lineOf("Intro"));
+  editor.update(
+    () => {
+      const root = $getRoot();
+      const first = root.getChildAtIndex<ElementNode>(from)!;
+      const last = root.getChildAtIndex<ElementNode>(to)!;
+      const end = last.getLastDescendant()!;
+      const selection = first.selectStart();
+      if ($isElementNode(end)) selection.focus.set(end.getKey(), 0, "element");
+      else selection.focus.set(end.getKey(), end.getTextContentSize(), "text");
+    },
+    { discrete: true },
+  );
+}
+
+const selectedTexts = () =>
+  [
+    ...document.querySelectorAll<HTMLElement>(
+      '[contenteditable="true"] [data-block-selected]',
+    ),
+  ].map((element) => element.textContent);
+
+const topLevelTexts = (editor: LexicalEditor) =>
+  editor.getEditorState().read(() =>
+    $getRoot()
+      .getChildren()
+      .map((node) => node.getTextContent()),
+  );
+
+test("a selection running into a second block highlights every block it spans", async () => {
+  const editor = await renderEditor(build);
+  await selectBlocks(editor, 1, 3);
+
+  await waitFor(() =>
+    expect(selectedTexts()).toEqual(["Middle", "TODO", "to do"]),
+  );
+  const heading = lineOf("TODO").closest("h2")!;
+  expect(getComputedStyle(heading).backgroundColor).not.toBe(
+    "rgba(0, 0, 0, 0)",
+  );
+});
+
+test("a selection inside one block stays a text selection", async () => {
+  const editor = await renderEditor(build);
+  await userEvent.click(lineOf("Intro"));
+  editor.update(
+    () => {
+      $getRoot()
+        .getFirstChildOrThrow<ElementNode>()
+        .getFirstChildOrThrow<TextNode>()
+        .select(0, 3);
+    },
+    { discrete: true },
+  );
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(selectedTexts()).toEqual([]);
+});
+
+test("dragging the handle of a selected block moves the whole selection", async () => {
+  const editor = await renderEditor(build);
+  await selectBlocks(editor, 2, 3);
+  await waitFor(() => expect(selectedTexts()).toEqual(["TODO", "to do"]));
+
+  await userEvent.hover(lineOf("to do"));
+  await waitFor(() => expect(handle()).toBeTruthy());
+  grip().dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+  dragBlockOnto(lineOf("Intro"), "upper");
+
+  await waitFor(() =>
+    expect(topLevelTexts(editor)).toEqual(["TODO", "to do", "Intro", "Middle"]),
+  );
+});
+
+test("the handle of a block outside the selection drags only that block", async () => {
+  const editor = await renderEditor(buildWithGap);
+  await selectBlocks(editor, 8, 9);
+  await waitFor(() => expect(selectedTexts()).toEqual(["TODO", "to do"]));
+
+  await userEvent.hover(lineOf("Middle"));
+  await waitFor(() => expect(handle()).toBeTruthy());
+  grip().dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+  dragBlockOnto(lineOf("Intro"), "upper");
+
+  await waitFor(() =>
+    expect(topLevelTexts(editor)).toEqual([
+      "Middle",
+      "Intro",
+      ...FILLERS,
+      "TODO",
+      "to do",
+    ]),
+  );
+});
+
+/*
+ * The format toolbar opens on a block selection and can sit over the block
+ * next to it — that is what the drag test above had to route around. These
+ * two hold the reader's side of it: the neighbour stays grabbable.
+ *
+ * 1280px wide is the layout that puts the toolbar on top of Middle here (a
+ * 640px toolbar in a 720px editor), the same collision CI's fonts produced.
+ */
+const toolbar = () =>
+  [...document.querySelectorAll<HTMLElement>("div.z-50")].find((element) =>
+    element.querySelector('[aria-label="Toggle bold"]'),
+  )!;
+
+test("a block next to a selection can be grabbed by its handle", async () => {
+  await page.viewport(1280, 800);
+  const editor = await renderEditor(build);
+  await selectBlocks(editor, 2, 3);
+  await waitFor(() => expect(selectedTexts()).toEqual(["TODO", "to do"]));
+  await waitFor(() => expect(toolbar().style.opacity).toBe("1"));
+
+  // Real pointer input into the left gutter, level with Middle — where a
+  // reader reaches for a handle. Playwright refuses if anything covers it.
+  const editable = document.querySelector<HTMLElement>(
+    '[contenteditable="true"]',
+  )!;
+  const box = editable.getBoundingClientRect();
+  const line = lineOf("Middle").getBoundingClientRect();
+  const textStart =
+    box.left + Number.parseFloat(getComputedStyle(editable).paddingLeft);
+  await userEvent.hover(editable, {
+    position: {
+      x: textStart - box.left - 20,
+      y: line.top - box.top + line.height / 2,
+    },
+  });
+
+  await waitFor(() => {
+    const grab = grip().getBoundingClientRect();
+    expect(
+      Math.abs(grab.top + grab.height / 2 - (line.top + line.height / 2)),
+    ).toBeLessThan(line.height);
+  });
+  // And the grip itself is what the pointer would press, not the toolbar.
+  const grab = grip().getBoundingClientRect();
+  const hit = document.elementFromPoint(
+    grab.left + grab.width / 2,
+    grab.top + grab.height / 2,
+  );
+  expect(handle().contains(hit)).toBe(true);
+});
+
+test("the toolbar lets a block drag pass through it", async () => {
+  await page.viewport(1280, 800);
+  const editor = await renderEditor(build);
+  await selectBlocks(editor, 2, 3);
+  await waitFor(() => expect(toolbar().style.opacity).toBe("1"));
+  expect(getComputedStyle(toolbar()).pointerEvents).toBe("auto");
+
+  // A drop onto a block the toolbar covers would land on the toolbar, which
+  // is outside the editable, and be lost — so while any drag is in flight it
+  // must not take the pointer, and must take it back once the drag ends.
+  await userEvent.hover(lineOf("to do"));
+  await waitFor(() => expect(handle()).toBeTruthy());
+  const init = {
+    bubbles: true,
+    cancelable: true,
+    dataTransfer: new DataTransfer(),
+  };
+  grip().dispatchEvent(new DragEvent("dragstart", init));
+  await waitFor(() =>
+    expect(getComputedStyle(toolbar()).pointerEvents).toBe("none"),
+  );
+  grip().dispatchEvent(new DragEvent("dragend", init));
+  await waitFor(() =>
+    expect(getComputedStyle(toolbar()).pointerEvents).toBe("auto"),
+  );
+});

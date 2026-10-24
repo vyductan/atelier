@@ -1,0 +1,281 @@
+import type { LexicalEditor } from "lexical";
+import { useCallback, useEffect, useRef } from "react";
+import { $generateHtmlFromNodes } from "@lexical/html";
+import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
+import {
+  $createParagraphNode,
+  $createTextNode,
+  $getRoot,
+  $getSelection,
+  $isRangeSelection,
+  COMMAND_PRIORITY_HIGH,
+  KEY_ARROW_DOWN_COMMAND,
+  KEY_ARROW_UP_COMMAND,
+  KEY_ENTER_COMMAND,
+} from "lexical";
+
+import { normalizeHtmlOutput } from "../editor/plugins/normalize-html-output";
+import { getMarkdownFromEditor } from "../editor/utils/lexical-converter";
+
+export type ComposerFormat = "markdown" | "json" | "html";
+
+/**
+ * Reads the value straight out of the live editor rather than from the editor's
+ * `onChange`.
+ *
+ * That indirection mattered: `Editor` loads its markdown and html plugins with
+ * `lazy()`, while the rich-text plugin is eager. So the composer accepts typing
+ * before those chunks arrive, and an Enter in that window used to submit an empty
+ * string and clear the draft — a silently lost message, not just a flaky test.
+ */
+function readValue(editor: LexicalEditor, format: ComposerFormat): string {
+  if (format === "markdown") {
+    return getMarkdownFromEditor(editor);
+  }
+
+  if (format === "json") {
+    return JSON.stringify(editor.getEditorState().toJSON());
+  }
+
+  let html = "";
+  editor.getEditorState().read(() => {
+    html = $generateHtmlFromNodes(editor, null);
+  });
+
+  return normalizeHtmlOutput(html);
+}
+
+/**
+ * Empties the box down to one plain paragraph holding the caret, optionally
+ * with `text` in it. Call inside `editor.update`.
+ *
+ * `select()` reuses the live selection, so whatever format and style it carried
+ * — bold switched on with Cmd+B, say — rides into the next message. Lexical
+ * only re-derives them from the caret on a DOM selectionchange, and skips even
+ * that while the root is empty; a send from the button (the phone path) never
+ * triggers one at all. So both are reset by hand.
+ */
+function $resetContent(text = "") {
+  const root = $getRoot();
+  root.clear();
+
+  // clear() on its own leaves a root with no children, so the selection stays
+  // anchored on the root — a state every plugin that walks from the selection
+  // to its top-level element throws on, and one no caret can sit in. Hand back
+  // an empty paragraph instead.
+  const paragraph = $createParagraphNode();
+  if (text) paragraph.append($createTextNode(text));
+  root.append(paragraph);
+
+  const selection = paragraph.selectEnd();
+  if ($isRangeSelection(selection)) {
+    selection.format = 0;
+    selection.style = "";
+  }
+}
+
+function readPlainText(editor: LexicalEditor): string {
+  let text = "";
+  editor.getEditorState().read(() => {
+    text = $getRoot().getTextContent();
+  });
+
+  return text;
+}
+
+type ComposerSubmitPluginProperties = {
+  format: ComposerFormat;
+  onSubmit: (value: string) => void;
+  /**
+   * Hands the send routine back out, so the button and the Enter key run the
+   * identical path rather than two implementations that drift.
+   */
+  bindSubmit: (submit: () => void) => void;
+  /**
+   * Hands out a setter for the box's content, so a caller can put a draft back
+   * in — taking a sent message back for correction, say. The editor takes
+   * `value` as an initial state only, so there is no prop that could do this.
+   */
+  bindSetValue?: (setValue: (text: string) => void) => void;
+  /**
+   * Hands out an inserter that adds text at the caret without touching the
+   * rest of the draft — what dictation needs, where `bindSetValue` would
+   * throw away whatever was typed before the mic was switched on.
+   */
+  bindInsertText?: (insertText: (text: string) => void) => void;
+  disabled?: boolean;
+  /**
+   * Let an empty text box be sent. Set it when the message carries something
+   * other than text — an attached image, say — otherwise a picture-only
+   * message can be attached but never sent.
+   */
+  allowEmpty?: boolean;
+  /**
+   * Earlier messages, newest first. Arrow Up walks back through them the way a
+   * shell history does; empty disables the behaviour entirely.
+   */
+  history?: string[];
+};
+
+/**
+ * Lives inside the Lexical composer through `Editor`'s children slot — the only
+ * place a plugin can reach the editor instance, which is needed to intercept
+ * Enter, read the value, and clear afterwards.
+ *
+ * Clearing happens here rather than by resetting a `value` prop: the editor takes
+ * `value` as an initial state only, so assigning it again would empty nothing.
+ */
+export function ComposerSubmitPlugin({
+  format,
+  onSubmit,
+  bindSubmit,
+  bindSetValue,
+  bindInsertText,
+  disabled = false,
+  allowEmpty = false,
+  history = [],
+}: ComposerSubmitPluginProperties) {
+  const [editor] = useLexicalComposerContext();
+
+  // -1 means "composing something new"; 0 and up index into `history`.
+  const historyIndex = useRef(-1);
+
+  const replaceContent = useCallback(
+    (text: string) => {
+      editor.update(() => {
+        $resetContent(text);
+      });
+    },
+    [editor],
+  );
+
+  const insertText = useCallback(
+    (text: string) => {
+      editor.update(() => {
+        let selection = $getSelection();
+        // Focus may have left the editor for the mic button; without a range
+        // selection there is no caret, so the text goes on the end.
+        if (!$isRangeSelection(selection)) {
+          $getRoot().selectEnd();
+          selection = $getSelection();
+        }
+        if (!$isRangeSelection(selection)) return;
+
+        // Phrases arrive without their separating space. Add one unless the
+        // caret already sits after whitespace or at the start of a line.
+        const anchor = selection.anchor;
+        const before =
+          anchor.type === "text"
+            ? anchor.getNode().getTextContent().slice(0, anchor.offset)
+            : "";
+        const needsSpace = before !== "" && !/\s$/.test(before);
+        selection.insertText(needsSpace ? ` ${text}` : text);
+      });
+    },
+    [editor],
+  );
+
+  const submit = useCallback(() => {
+    if (disabled) {
+      return;
+    }
+
+    // Emptiness is decided on the text, not the serialized value: an empty
+    // document still serializes to a non-empty json envelope.
+    if (!allowEmpty && !readPlainText(editor).trim()) {
+      return;
+    }
+
+    const value = readValue(editor, format);
+
+    if (!allowEmpty && !value.trim()) {
+      return;
+    }
+
+    onSubmit(value);
+    historyIndex.current = -1;
+
+    editor.update(() => {
+      $resetContent();
+    });
+    editor.focus();
+  }, [allowEmpty, disabled, editor, format, onSubmit]);
+
+  useEffect(() => {
+    bindSubmit(submit);
+  }, [bindSubmit, submit]);
+
+  useEffect(() => {
+    bindSetValue?.(replaceContent);
+  }, [bindSetValue, replaceContent]);
+
+  useEffect(() => {
+    bindInsertText?.(insertText);
+  }, [bindInsertText, insertText]);
+
+  useEffect(() => {
+    if (history.length === 0) return;
+
+    // Only recall from an empty composer. Arrow Up inside a draft has to keep
+    // moving the caret, or multiline editing becomes impossible — which is the
+    // same rule a shell follows.
+    const unregisterUp = editor.registerCommand(
+      KEY_ARROW_UP_COMMAND,
+      (event) => {
+        if (historyIndex.current === -1 && readPlainText(editor).trim()) {
+          return false;
+        }
+        const next = Math.min(historyIndex.current + 1, history.length - 1);
+        const entry = history[next];
+        if (entry === undefined) return false;
+        event?.preventDefault();
+        historyIndex.current = next;
+        replaceContent(entry);
+        return true;
+      },
+      COMMAND_PRIORITY_HIGH,
+    );
+
+    const unregisterDown = editor.registerCommand(
+      KEY_ARROW_DOWN_COMMAND,
+      (event) => {
+        if (historyIndex.current < 0) return false;
+        event?.preventDefault();
+        const next = historyIndex.current - 1;
+        historyIndex.current = next;
+        replaceContent(next < 0 ? "" : (history[next] ?? ""));
+        return true;
+      },
+      COMMAND_PRIORITY_HIGH,
+    );
+
+    return () => {
+      unregisterUp();
+      unregisterDown();
+    };
+  }, [editor, history, replaceContent]);
+
+  useEffect(() => {
+    return editor.registerCommand(
+      KEY_ENTER_COMMAND,
+      (event) => {
+        // Shift+Enter is the multiline path, and also how a list gets its second
+        // item. Plain Enter sends, including from inside a list or code block: in
+        // a chat composer the send button should never be the only way out.
+        if (event?.shiftKey) {
+          return false;
+        }
+
+        event?.preventDefault();
+        submit();
+
+        // Claiming the command stops Lexical inserting a paragraph break that
+        // would survive into the next message.
+        return true;
+      },
+      COMMAND_PRIORITY_HIGH,
+    );
+  }, [editor, submit]);
+
+  return null;
+}

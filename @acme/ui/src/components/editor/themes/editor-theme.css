@@ -1,0 +1,569 @@
+/*
+ * Publish-safe rich-text styles: the CSS hooks that render-node.tsx and the
+ * Lexical theme share, so the editor and the published view agree.
+ *
+ * Wrapped in `@layer components` on purpose. Unlayered rules outrank every
+ * Tailwind utility, so while this file sat outside a layer it silently beat the
+ * classes in richTextSemanticContract — `tableCellHeader`'s `bg-muted` was dead
+ * code. Inside a layer, utilities win again and a consumer can override.
+ *
+ * Colors reference theme tokens rather than literals so published content
+ * follows the host's palette, light or dark, instead of carrying a baked-in
+ * light theme.
+ */
+
+@layer components {
+  .RichTextSemanticContract__code {
+    background-color: var(--muted);
+    color: var(--foreground);
+    font-family: "SFMono-Regular", Menlo, Consolas, Monaco, monospace;
+    display: block;
+    padding: 16px;
+    line-height: 1.5;
+    font-size: 14px;
+    margin: 4px 0;
+    overflow-x: auto;
+    border: none;
+    position: relative;
+    border-radius: 3px;
+    tab-size: 2;
+  }
+
+  .RichTextSemanticContract__table {
+    border-collapse: collapse;
+    border-spacing: 0;
+    overflow-y: auto;
+    overflow-x: auto;
+    /* Content decides the columns until the table has widths of its own. */
+    table-layout: auto;
+    width: 100%;
+    margin: 4px 0;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+  }
+
+  /*
+   * Lexical only renders a <colgroup> once a table has column widths, which is
+   * once someone has dragged a column; the published renderer does the same.
+   * From then on the widths are theirs, so the layout is fixed to them.
+   * Resizing starts from the measured layout, so the first drag picks up the
+   * widths the content produced rather than jumping.
+   */
+  .RichTextSemanticContract__table:has(> colgroup) {
+    table-layout: fixed;
+  }
+
+  /* Before then, a floor so an empty, freshly inserted table still has room to
+     type into — the 96px every column used to be fixed at. */
+  .RichTextSemanticContract__table:not(:has(> colgroup))
+    .RichTextSemanticContract__tableCell {
+    min-width: 6rem;
+  }
+
+  /*
+   * Callout (nodes/callout-node.ts): Notion's tinted box. The icon comes from
+   * data-icon, so it is not a node the caret can land in; data-color takes
+   * Notion's color names, "<name>_bg" tinting the box and "<name>" the text.
+   */
+  /* The picker's swatches (plugins/callout-picker-plugin.tsx) share the tints. */
+  .CalloutSwatch {
+    background-color: var(--muted);
+  }
+
+  .Callout {
+    position: relative;
+    margin: 4px 0;
+    padding: 12px 16px 12px 2.75rem;
+    border-radius: 4px;
+    background-color: var(--muted);
+  }
+
+  .Callout[data-icon=""] {
+    padding-left: 16px;
+  }
+
+  .Callout::before {
+    content: attr(data-icon);
+    cursor: pointer;
+    position: absolute;
+    top: 12px;
+    left: 14px;
+    line-height: inherit;
+  }
+
+  .Callout > :first-child {
+    margin-top: 0;
+  }
+
+  .Callout > :last-child {
+    margin-bottom: 0;
+  }
+
+  .Callout[data-color="gray_bg"],
+  .CalloutSwatch[data-color="gray_bg"] {
+    background-color: color-mix(in oklab, #787774 16%, transparent);
+  }
+  .Callout[data-color="gray"] {
+    color: #787774;
+  }
+
+  .Callout[data-color="brown_bg"],
+  .CalloutSwatch[data-color="brown_bg"] {
+    background-color: color-mix(in oklab, #9f6b53 16%, transparent);
+  }
+  .Callout[data-color="brown"] {
+    color: #9f6b53;
+  }
+
+  .Callout[data-color="orange_bg"],
+  .CalloutSwatch[data-color="orange_bg"] {
+    background-color: color-mix(in oklab, #d9730d 16%, transparent);
+  }
+  .Callout[data-color="orange"] {
+    color: #d9730d;
+  }
+
+  .Callout[data-color="yellow_bg"],
+  .CalloutSwatch[data-color="yellow_bg"] {
+    background-color: color-mix(in oklab, #cb912f 16%, transparent);
+  }
+  .Callout[data-color="yellow"] {
+    color: #cb912f;
+  }
+
+  .Callout[data-color="green_bg"],
+  .CalloutSwatch[data-color="green_bg"] {
+    background-color: color-mix(in oklab, #448361 16%, transparent);
+  }
+  .Callout[data-color="green"] {
+    color: #448361;
+  }
+
+  .Callout[data-color="blue_bg"],
+  .CalloutSwatch[data-color="blue_bg"] {
+    background-color: color-mix(in oklab, #337ea9 16%, transparent);
+  }
+  .Callout[data-color="blue"] {
+    color: #337ea9;
+  }
+
+  .Callout[data-color="purple_bg"],
+  .CalloutSwatch[data-color="purple_bg"] {
+    background-color: color-mix(in oklab, #9065b0 16%, transparent);
+  }
+  .Callout[data-color="purple"] {
+    color: #9065b0;
+  }
+
+  .Callout[data-color="pink_bg"],
+  .CalloutSwatch[data-color="pink_bg"] {
+    background-color: color-mix(in oklab, #c14c8a 16%, transparent);
+  }
+  .Callout[data-color="pink"] {
+    color: #c14c8a;
+  }
+
+  .Callout[data-color="red_bg"],
+  .CalloutSwatch[data-color="red_bg"] {
+    background-color: color-mix(in oklab, #d44c47 16%, transparent);
+  }
+  .Callout[data-color="red"] {
+    color: #d44c47;
+  }
+
+  /*
+   * Notion-flavored Markdown kept byte for byte (nodes/nfm-raw-node.tsx):
+   * read-only chips. A block chip names what it stands for; an inline chip
+   * shows its text — a mention with an @, a span in its color.
+   */
+  .NfmRaw {
+    user-select: none;
+    cursor: default;
+  }
+
+  .NfmRaw[data-selected] {
+    outline: 2px solid var(--editor-color-primary, #4766cb);
+    outline-offset: 1px;
+  }
+
+  .NfmRaw--block {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 4px 0;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--muted-foreground);
+    font-size: 0.9em;
+  }
+
+  .NfmRaw--block[data-tag="page"],
+  .NfmRaw--block[data-tag="database"] {
+    color: var(--foreground);
+    text-decoration: underline;
+    text-decoration-color: var(--border);
+    border-color: transparent;
+    padding-left: 2px;
+  }
+
+  /* Notion's blank line: room, not a box. */
+  .NfmRaw--block[data-tag="empty-block"] {
+    min-height: 1.5em;
+    border-color: transparent;
+  }
+
+  .NfmRaw--inline {
+    border-radius: 3px;
+  }
+
+  .NfmRaw--inline[data-tag^="mention-"] {
+    color: var(--muted-foreground);
+    font-weight: 500;
+  }
+
+  .NfmRaw--inline[data-underline="true"] {
+    text-decoration: underline;
+  }
+
+  .NfmRaw--inline[data-color="gray"] {
+    color: #787774;
+  }
+  .NfmRaw--inline[data-color="gray_bg"] {
+    background-color: color-mix(in oklab, #787774 18%, transparent);
+  }
+
+  .NfmRaw--inline[data-color="brown"] {
+    color: #9f6b53;
+  }
+  .NfmRaw--inline[data-color="brown_bg"] {
+    background-color: color-mix(in oklab, #9f6b53 18%, transparent);
+  }
+
+  .NfmRaw--inline[data-color="orange"] {
+    color: #d9730d;
+  }
+  .NfmRaw--inline[data-color="orange_bg"] {
+    background-color: color-mix(in oklab, #d9730d 18%, transparent);
+  }
+
+  .NfmRaw--inline[data-color="yellow"] {
+    color: #cb912f;
+  }
+  .NfmRaw--inline[data-color="yellow_bg"] {
+    background-color: color-mix(in oklab, #cb912f 18%, transparent);
+  }
+
+  .NfmRaw--inline[data-color="green"] {
+    color: #448361;
+  }
+  .NfmRaw--inline[data-color="green_bg"] {
+    background-color: color-mix(in oklab, #448361 18%, transparent);
+  }
+
+  .NfmRaw--inline[data-color="blue"] {
+    color: #337ea9;
+  }
+  .NfmRaw--inline[data-color="blue_bg"] {
+    background-color: color-mix(in oklab, #337ea9 18%, transparent);
+  }
+
+  .NfmRaw--inline[data-color="purple"] {
+    color: #9065b0;
+  }
+  .NfmRaw--inline[data-color="purple_bg"] {
+    background-color: color-mix(in oklab, #9065b0 18%, transparent);
+  }
+
+  .NfmRaw--inline[data-color="pink"] {
+    color: #c14c8a;
+  }
+  .NfmRaw--inline[data-color="pink_bg"] {
+    background-color: color-mix(in oklab, #c14c8a 18%, transparent);
+  }
+
+  .NfmRaw--inline[data-color="red"] {
+    color: #d44c47;
+  }
+  .NfmRaw--inline[data-color="red_bg"] {
+    background-color: color-mix(in oklab, #d44c47 18%, transparent);
+  }
+
+  /*
+   * Block colors (plugins/block-color-plugin.tsx): Notion's, by name, the
+   * values markdown-nfm-colors-transformer.ts reads a color into. A
+   * background gets a little room so the tint does not sit flush on the text.
+   */
+  [data-block-color$="_bg"] {
+    border-radius: 3px;
+    padding-inline: 2px;
+  }
+
+  [data-block-color="gray"] {
+    color: #6b7280;
+  }
+  [data-block-color="gray_bg"] {
+    background-color: rgba(107, 114, 128, 0.25);
+  }
+
+  [data-block-color="brown"] {
+    color: #b45309;
+  }
+  [data-block-color="brown_bg"] {
+    background-color: rgba(180, 83, 9, 0.25);
+  }
+
+  [data-block-color="orange"] {
+    color: #ea580c;
+  }
+  [data-block-color="orange_bg"] {
+    background-color: rgba(234, 88, 12, 0.25);
+  }
+
+  [data-block-color="yellow"] {
+    color: #ca8a04;
+  }
+  [data-block-color="yellow_bg"] {
+    background-color: rgba(202, 138, 4, 0.25);
+  }
+
+  [data-block-color="green"] {
+    color: #16a34a;
+  }
+  [data-block-color="green_bg"] {
+    background-color: rgba(22, 163, 74, 0.25);
+  }
+
+  [data-block-color="blue"] {
+    color: #2563eb;
+  }
+  [data-block-color="blue_bg"] {
+    background-color: rgba(37, 99, 235, 0.25);
+  }
+
+  [data-block-color="purple"] {
+    color: #9333ea;
+  }
+  [data-block-color="purple_bg"] {
+    background-color: rgba(147, 51, 234, 0.25);
+  }
+
+  [data-block-color="pink"] {
+    color: #db2777;
+  }
+  [data-block-color="pink_bg"] {
+    background-color: rgba(219, 39, 119, 0.25);
+  }
+
+  [data-block-color="red"] {
+    color: #dc2626;
+  }
+  [data-block-color="red_bg"] {
+    background-color: rgba(220, 38, 38, 0.25);
+  }
+
+  .RichTextSemanticContract__tableCell {
+    border: 1px solid var(--border);
+    padding: 8px 12px;
+    /* Matches MIN_COLUMN_WIDTH in plugins/table-column-resize-model.ts. */
+    min-width: 35px;
+  }
+
+  .RichTextSemanticContract__tableCellHeader {
+    font-weight: 600;
+    /* The header carries the same floor. Without it a column's real floor was
+       whichever row refused to shrink, so resizing behaved differently
+       depending on whether the table had a header. */
+    min-width: 35px;
+  }
+
+  /*
+   * Find: every match in a soft yellow, the current one stronger, as Notion
+   * marks them. Drawn with the CSS Custom Highlight API, so nothing is
+   * written into the document — see plugins/find-replace-plugin.tsx.
+   */
+  ::highlight(editor-find) {
+    background-color: rgb(255 212 0 / 0.35);
+  }
+
+  ::highlight(editor-find-current) {
+    background-color: rgb(255 150 0 / 0.6);
+  }
+
+  /*
+   * Inline code, in the red Notion marks it with. Same reasoning as the syntax
+   * palette below: a host's tokens describe surfaces and text, not "this is
+   * code", so there is nothing to inherit.
+   */
+  .RichTextSemanticContract__inlineCode {
+    color: #d44c47;
+  }
+
+  :is(.dark *).RichTextSemanticContract__inlineCode {
+    color: #ff7369;
+  }
+
+  /*
+   * Syntax colors are the one place a host cannot help: no CMS ships a
+   * highlighting palette, so both themes are defined here. Light values are
+   * Prism's defaults; dark values are lifted a step to hold contrast against a
+   * dark code background.
+   */
+  .RichTextSemanticContract__tokenComment {
+    color: slategray;
+  }
+
+  .RichTextSemanticContract__tokenPunctuation {
+    color: #999;
+  }
+
+  .RichTextSemanticContract__tokenProperty {
+    color: #905;
+  }
+
+  .RichTextSemanticContract__tokenSelector {
+    color: #690;
+  }
+
+  .RichTextSemanticContract__tokenOperator {
+    color: #9a6e3a;
+  }
+
+  .RichTextSemanticContract__tokenAttr {
+    color: #07a;
+  }
+
+  .RichTextSemanticContract__tokenVariable {
+    color: #e90;
+  }
+
+  .RichTextSemanticContract__tokenFunction {
+    color: #dd4a68;
+  }
+
+  :is(.dark *).RichTextSemanticContract__tokenComment {
+    color: #8b949e;
+  }
+
+  :is(.dark *).RichTextSemanticContract__tokenPunctuation {
+    color: #c9d1d9;
+  }
+
+  :is(.dark *).RichTextSemanticContract__tokenProperty {
+    color: #ff7b72;
+  }
+
+  :is(.dark *).RichTextSemanticContract__tokenSelector {
+    color: #7ee787;
+  }
+
+  :is(.dark *).RichTextSemanticContract__tokenOperator {
+    color: #d2a8ff;
+  }
+
+  :is(.dark *).RichTextSemanticContract__tokenAttr {
+    color: #79c0ff;
+  }
+
+  :is(.dark *).RichTextSemanticContract__tokenVariable {
+    color: #ffa657;
+  }
+
+  :is(.dark *).RichTextSemanticContract__tokenFunction {
+    color: #d2a8ff;
+  }
+
+  .RichTextSemanticContract__code ::selection {
+    background-color: var(--accent);
+  }
+
+  .RichTextSemanticContract__table tbody tr {
+    transition: background-color 0.1s ease;
+  }
+
+  .RichTextSemanticContract__table tbody tr:hover {
+    background-color: var(--muted);
+  }
+
+  .EditorTheme__tableCellActionMenuHandle {
+    transition:
+      transform 120ms ease,
+      background-color 120ms ease,
+      color 120ms ease,
+      border-color 120ms ease;
+  }
+
+  .EditorTheme__tableCellActionMenuHandle:hover,
+  .EditorTheme__tableCellActionMenuHandle[data-state="open"] {
+    transform: scale(1.05);
+  }
+
+  .EditorTheme__tableCellActionMenuHighlight {
+    transition: opacity 120ms ease;
+  }
+
+  .EditorTheme__tableCellActionMenuDropIndicator {
+    position: absolute;
+    z-index: 45;
+    background-color: var(--primary);
+    box-shadow: 0 0 0 1px color-mix(in oklab, var(--primary) 15%, transparent);
+  }
+
+  /* The row or column being dragged: a copy following the pointer, the
+     original faded where it is (plugins/table-cell-action-menu-plugin.tsx). */
+  /* Near-opaque, with a primary outline: on a dark page a shadow alone
+     barely shows, and the copy read as a faint smudge. */
+  .EditorTheme__tableDragPreview {
+    position: absolute;
+    z-index: 44;
+    pointer-events: none;
+    opacity: 0.96;
+    border-radius: 4px;
+    background-color: var(--background);
+    outline: 2px solid color-mix(in oklab, var(--primary) 70%, transparent);
+    box-shadow:
+      0 8px 24px rgb(0 0 0 / 0.35),
+      0 2px 6px rgb(0 0 0 / 0.2);
+  }
+
+  .EditorTheme__tableDragPreview > table {
+    margin: 0;
+    width: auto;
+    table-layout: fixed;
+  }
+
+  [data-table-drag-origin] {
+    opacity: 0.35;
+  }
+
+  /* The caret on the side of inline code's edge the browser does not draw
+     (plugins/inline-code-exit-plugin.tsx). */
+  .EditorTheme__drawnCaret {
+    position: fixed;
+    z-index: 1;
+    width: 1px;
+    pointer-events: none;
+    animation: EditorTheme__drawnCaretBlink 1.06s steps(1) infinite;
+  }
+
+  @keyframes EditorTheme__drawnCaretBlink {
+    50% {
+      opacity: 0;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .RichTextSemanticContract__code {
+      font-size: 13px;
+      padding: 12px;
+    }
+
+    .RichTextSemanticContract__table {
+      font-size: 14px;
+    }
+
+    .RichTextSemanticContract__tableCell {
+      padding: 6px 8px;
+    }
+  }
+}

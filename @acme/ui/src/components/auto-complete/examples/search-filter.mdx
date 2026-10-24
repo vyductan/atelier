@@ -1,0 +1,16 @@
+import { Meta } from "@storybook/addon-docs/blocks";
+
+import { ComponentSource } from "@acme/ui/components/mdx";
+
+import SearchFilterDemo from "./search-filter";
+
+<Meta isTemplate />
+
+### Search & Filter
+
+Provide custom filter logic when matching needs to account for accents or domain-specific rules.
+
+<ComponentSource
+  src="auto-complete/examples/search-filter.tsx"
+  __comp__={SearchFilterDemo}
+/>

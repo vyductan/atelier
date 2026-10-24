@@ -1,0 +1,337 @@
+import { useEffect, useRef, useState } from "react";
+import { AutoFocusPlugin } from "@lexical/react/LexicalAutoFocusPlugin";
+import { CheckListPlugin } from "@lexical/react/LexicalCheckListPlugin";
+import { ClickableLinkPlugin } from "@lexical/react/LexicalClickableLinkPlugin";
+import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
+import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
+import { HashtagPlugin } from "@lexical/react/LexicalHashtagPlugin";
+import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
+import { HorizontalRulePlugin } from "@lexical/react/LexicalHorizontalRulePlugin";
+import { ListPlugin } from "@lexical/react/LexicalListPlugin";
+import { MarkdownShortcutPlugin } from "@lexical/react/LexicalMarkdownShortcutPlugin";
+import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
+import { TabIndentationPlugin } from "@lexical/react/LexicalTabIndentationPlugin";
+import { TablePlugin } from "@lexical/react/LexicalTablePlugin";
+
+import { cn } from "@acme/ui/lib/utils";
+
+import type { SizeType } from "../../config-provider/size-context";
+import type { MentionData, SearchPageLinks } from "../plugins/mentions-plugin";
+import type { ResolvePageLinkPreview } from "../plugins/page-link-hover-card-plugin";
+import type { ResolvePasteLink } from "../plugins/paste-as-plugin";
+import type { ReadClipboardText } from "../plugins/paste-cleanup-plugin";
+import { ContentEditable } from "../editor-ui/content-editable";
+import { AutoLinkPlugin } from "../plugins/auto-link-plugin";
+import { BlockColorPlugin } from "../plugins/block-color-plugin";
+import { BlockCopyPastePlugin } from "../plugins/block-copy-paste-plugin";
+import { BlockPlaceholderPlugin } from "../plugins/block-placeholder-plugin";
+import { BlockSelectionPlugin } from "../plugins/block-selection-plugin";
+import { CalloutPickerPlugin } from "../plugins/callout-picker-plugin";
+import { CheckBlockPlugin } from "../plugins/check-block-plugin";
+import { CodeActionMenuPlugin } from "../plugins/code-action-menu-plugin";
+import { CodeHighlightPlugin } from "../plugins/code-highlight-plugin";
+import { CollapsiblePlugin } from "../plugins/collapsible-plugin";
+import { ComponentPickerMenuPlugin } from "../plugins/component-picker-plugin";
+import { ContextMenuPlugin } from "../plugins/context-menu-plugin";
+import { CopyHtmlCleanupPlugin } from "../plugins/copy-html-cleanup-plugin";
+import { DragDropPastePlugin } from "../plugins/drag-drop-paste-plugin";
+import { DraggableBlockPlugin } from "../plugins/draggable-block-plugin";
+import { AutoEmbedPlugin } from "../plugins/embeds/auto-embed-plugin";
+import { FigmaPlugin } from "../plugins/embeds/figma-plugin";
+import { InstagramPlugin } from "../plugins/embeds/instagram-plugin";
+import { TikTokPlugin } from "../plugins/embeds/tiktok-plugin";
+import { TwitterPlugin } from "../plugins/embeds/twitter-plugin";
+import { YouTubePlugin } from "../plugins/embeds/youtube-plugin";
+import { EmojiPickerPlugin } from "../plugins/emoji-picker-plugin";
+import { EmojisPlugin } from "../plugins/emojis-plugin";
+import { EquationsPlugin } from "../plugins/equations-plugin";
+import { ExcalidrawPlugin } from "../plugins/excalidraw-plugin";
+import { FileAttachmentPlugin } from "../plugins/file-attachment-plugin";
+import { FindReplacePlugin } from "../plugins/find-replace-plugin";
+import { FloatingLinkEditorPlugin } from "../plugins/floating-link-editor-plugin";
+import { FloatingTextFormatToolbarPlugin } from "../plugins/floating-text-format-toolbar-plugin";
+import { FormatShortcutsPlugin } from "../plugins/format-shortcuts-plugin";
+import { HistoryFlashPlugin } from "../plugins/history-flash-plugin";
+import { ImageLineClickPlugin } from "../plugins/image-line-click-plugin";
+import { ImagesPlugin } from "../plugins/images-plugin";
+import { InlineCodeExitPlugin } from "../plugins/inline-code-exit-plugin";
+import { KeyboardShortcutsHelpPlugin } from "../plugins/keyboard-shortcuts-help-plugin";
+import { KeywordsPlugin } from "../plugins/keywords-plugin";
+import { LayoutPlugin } from "../plugins/layout-plugin";
+import { LinkPlugin } from "../plugins/link-plugin";
+import { ListMarkerPlugin } from "../plugins/list-marker-plugin";
+import { ListMarkerShortcutPlugin } from "../plugins/list-marker-shortcut-plugin";
+import { ListMaxIndentLevelPlugin } from "../plugins/list-max-indent-level-plugin";
+import { MarkdownPastePlugin } from "../plugins/markdown-paste-plugin";
+import { MentionsPlugin } from "../plugins/mentions-plugin";
+import { PageBreakPlugin } from "../plugins/page-break-plugin";
+import { PageLinkHoverCardPlugin } from "../plugins/page-link-hover-card-plugin";
+import { PasteAsPlugin } from "../plugins/paste-as-plugin";
+import { PasteCleanupPlugin } from "../plugins/paste-cleanup-plugin";
+import { PlainTextLinebreakPastePlugin } from "../plugins/plain-text-linebreak-paste-plugin";
+import { PollPlugin } from "../plugins/poll-plugin";
+import { ResetFormatOnEnterPlugin } from "../plugins/reset-format-on-enter-plugin";
+import { SelectLineFirstPlugin } from "../plugins/select-line-first-plugin";
+import { TabFocusPlugin } from "../plugins/tab-focus-plugin";
+import { TableCellActionMenuPlugin } from "../plugins/table-cell-action-menu-plugin";
+import { TableColumnResizePlugin } from "../plugins/table-column-resize-plugin";
+import { TableHoverActionsPlugin } from "../plugins/table-hover-actions-plugin";
+import { TOCPlugin } from "../plugins/toc-plugin";
+import { VideoPlugin } from "../plugins/video-plugin";
+import { MARKDOWN_TRANSFORMERS } from "../transformers/markdown-transformers";
+// import { EditorDebugViewPlugin } from "./actions/editor-debug-view-plugin";
+
+import { FixedToolbarPlugin } from "./fixed-toolbar-plugin";
+
+// ...
+
+/**
+ * Text size by control size, as Input sizes its text: 14px at small and at
+ * the default middle — small only makes a control smaller, not its text —
+ * and 16px at large. Surfaces that are documents rather than fields (a note,
+ * a journal page) ask for large.
+ */
+const EDITOR_TEXT_BY_SIZE = {
+  small: "text-sm",
+  middle: "text-sm",
+  large: "text-base",
+} as const;
+
+export function Plugins({
+  placeholder = "Write, press ‘space’ for AI, ‘/’ for commands…",
+  onImageUpload,
+  editable = true,
+  variant = "default",
+  formatToolbar = true,
+  mentionsData,
+  searchPageLinks,
+  createMentionLabel,
+  resolvePageLinkPreview,
+  resolvePasteLink,
+  readClipboardText,
+  className,
+  classNames,
+  autoFocus,
+  size = "middle",
+}: {
+  placeholder?: string;
+  onImageUpload?: (file: File) => Promise<string>;
+  editable?: boolean;
+  variant?: "default" | "simple" | "minimal";
+  /** See Editor's `formatToolbar`. */
+  formatToolbar?: boolean;
+  mentionsData?: MentionData[];
+  searchPageLinks?: SearchPageLinks;
+  /** Offer "create" for an unknown @name, labelled by this. See MentionsPlugin. */
+  createMentionLabel?: (name: string) => string;
+  resolvePageLinkPreview?: ResolvePageLinkPreview;
+  resolvePasteLink?: ResolvePasteLink;
+  /** See Editor's `readClipboardText`. */
+  readClipboardText?: ReadClipboardText;
+  className?: string;
+  classNames?: {
+    content?: string;
+    placeholder?: string;
+  };
+  autoFocus?: boolean;
+  size?: SizeType;
+}) {
+  const [editor] = useLexicalComposerContext();
+  useEffect(() => {
+    editor.setEditable(editable);
+  }, [editor, editable]);
+
+  const [floatingAnchorElement, setFloatingAnchorElement] =
+    useState<HTMLDivElement | null>(null);
+  const containerReference = useRef<HTMLDivElement | null>(null);
+
+  const isSimple = variant === "simple" || variant === "minimal";
+
+  const onReference = (_floatingAnchorElement: HTMLDivElement) => {
+    if (_floatingAnchorElement !== null) {
+      setFloatingAnchorElement(_floatingAnchorElement);
+    }
+  };
+
+  return (
+    <div
+      ref={containerReference}
+      className={cn(
+        "editor-scroll-container relative transition-colors",
+        editable
+          ? "min-h-[300px] overflow-y-auto sm:min-h-[400px]"
+          : "min-h-0 overflow-visible",
+        className,
+      )}
+      style={{
+        scrollbarWidth: "thin",
+        scrollbarColor: "rgba(156, 163, 175, 0) transparent",
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.scrollbarColor =
+          "rgba(156, 163, 175, 0.5) transparent";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.scrollbarColor =
+          "rgba(156, 163, 175, 0) transparent";
+      }}
+    >
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+        .editor-scroll-container::-webkit-scrollbar {
+          width: 6px;
+        }
+        .editor-scroll-container::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .editor-scroll-container::-webkit-scrollbar-thumb {
+          background: rgba(156, 163, 175, 0);
+          border-radius: 3px;
+          transition: background 0.2s ease;
+        }
+        .editor-scroll-container:hover::-webkit-scrollbar-thumb {
+          background: rgba(156, 163, 175, 0.5);
+        }
+        .editor-scroll-container::-webkit-scrollbar-thumb:hover {
+          background: rgba(156, 163, 175, 0.7);
+        }
+      `,
+        }}
+      />
+      {variant === "simple" && (
+        <FixedToolbarPlugin containerRef={containerReference} />
+      )}
+
+      {autoFocus && editable && <AutoFocusPlugin />}
+      <RichTextPlugin
+        contentEditable={
+          <div className="group relative" ref={onReference}>
+            <ContentEditable
+              className={cn(classNames?.content, EDITOR_TEXT_BY_SIZE[size])}
+              placeholderClassName={classNames?.placeholder}
+              // className="py-[3px] px-0.5 text-sm wrap-break-word whitespace-break-spaces"
+              placeholder={editable ? placeholder : ""}
+              // placeholderClassName="text-gray-400 pointer-events-none absolute top-2.5 sm:top-3.5 left-2 sm:left-4 overflow-hidden leading-6 sm:leading-7 text-ellipsis select-none whitespace-nowrap transition-colors max-w-[calc(100%-3rem)] sm:max-w-[calc(100%-4rem)]"
+            />
+          </div>
+        }
+        ErrorBoundary={LexicalErrorBoundary}
+      />
+
+      <ClickableLinkPlugin />
+      <CheckListPlugin />
+      {editable && <BlockCopyPastePlugin />}
+      <CheckBlockPlugin />
+      <HorizontalRulePlugin />
+      <TablePlugin />
+      {editable && <ContextMenuPlugin />}
+      {editable && (
+        <TableCellActionMenuPlugin anchorElem={floatingAnchorElement} />
+      )}
+      {editable && (
+        <TableHoverActionsPlugin anchorElem={floatingAnchorElement} />
+      )}
+      {editable && (
+        <TableColumnResizePlugin anchorElem={floatingAnchorElement} />
+      )}
+      <TOCPlugin />
+      <ListPlugin />
+      <TabIndentationPlugin />
+      {!isSimple && <HashtagPlugin />}
+      <HistoryPlugin />
+      <ResetFormatOnEnterPlugin />
+      <FormatShortcutsPlugin />
+      <ImageLineClickPlugin />
+      <HistoryFlashPlugin />
+      <ListMarkerPlugin />
+      <ListMarkerShortcutPlugin />
+      {editable && placeholder && (
+        <BlockPlaceholderPlugin placeholder={placeholder} />
+      )}
+      {editable && <BlockSelectionPlugin />}
+
+      <MentionsPlugin
+        mentionsData={mentionsData}
+        searchPageLinks={editable ? searchPageLinks : undefined}
+        createMentionLabel={editable ? createMentionLabel : undefined}
+      />
+      {resolvePageLinkPreview && (
+        <PageLinkHoverCardPlugin
+          resolvePageLinkPreview={resolvePageLinkPreview}
+        />
+      )}
+      {!isSimple && <PageBreakPlugin />}
+      {!isSimple && editable && (
+        <DraggableBlockPlugin anchorElem={floatingAnchorElement} size={size} />
+      )}
+      {!isSimple && <KeywordsPlugin />}
+      <EmojisPlugin />
+      {variant !== "minimal" && <ImagesPlugin />}
+      {!isSimple && <VideoPlugin />}
+      {!isSimple && <FileAttachmentPlugin />}
+      {!isSimple && <ExcalidrawPlugin />}
+      {!isSimple && <PollPlugin />}
+      {!isSimple && <LayoutPlugin />}
+      {!isSimple && <EquationsPlugin />}
+      {!isSimple && <CollapsiblePlugin />}
+
+      {!isSimple && <AutoEmbedPlugin />}
+      {!isSimple && <FigmaPlugin />}
+      {!isSimple && <YouTubePlugin />}
+      {!isSimple && <TwitterPlugin />}
+      {!isSimple && <InstagramPlugin />}
+      {!isSimple && <TikTokPlugin />}
+
+      <CodeHighlightPlugin />
+      {/* Mounted read-only too: copying code is most wanted when viewing. */}
+      {!isSimple && <CodeActionMenuPlugin anchorElem={floatingAnchorElement} />}
+
+      {/* MarkdownShortcutPlugin enabled for checklist support (- [ ]) */}
+      <MarkdownShortcutPlugin transformers={MARKDOWN_TRANSFORMERS} />
+      {/* <TypingPerfPlugin /> */}
+      <TabFocusPlugin />
+      <AutoLinkPlugin />
+      <LinkPlugin />
+      <FindReplacePlugin />
+
+      {/* ComponentPickerMenuPlugin - Slash commands like Not ion */}
+      {!isSimple && editable && <ComponentPickerMenuPlugin />}
+      {!isSimple && editable && (
+        <DragDropPastePlugin
+          onImageUpload={onImageUpload}
+          anchorElem={floatingAnchorElement ?? undefined}
+        />
+      )}
+      <CopyHtmlCleanupPlugin />
+      {editable && <PasteCleanupPlugin readClipboardText={readClipboardText} />}
+      {editable && <MarkdownPastePlugin />}
+      {editable && <PlainTextLinebreakPastePlugin />}
+      {editable && resolvePasteLink && (
+        <PasteAsPlugin
+          anchorElem={floatingAnchorElement}
+          resolvePasteLink={resolvePasteLink}
+        />
+      )}
+      {editable && <EmojiPickerPlugin />}
+      {editable && <CalloutPickerPlugin />}
+      <BlockColorPlugin />
+      <SelectLineFirstPlugin />
+      <InlineCodeExitPlugin />
+
+      {editable && (
+        <FloatingLinkEditorPlugin anchorElem={floatingAnchorElement} />
+      )}
+      {editable && formatToolbar && variant !== "simple" && (
+        <FloatingTextFormatToolbarPlugin
+          anchorElem={floatingAnchorElement}
+          variant={isSimple ? "simple" : "default"}
+        />
+      )}
+
+      <KeyboardShortcutsHelpPlugin />
+      {editable && <ListMaxIndentLevelPlugin />}
+      {/* <EditorDebugViewPlugin /> */}
+    </div>
+  );
+}
