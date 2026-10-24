@@ -9,6 +9,7 @@ import {
   describeUsage,
   formatLastUsed,
   indexUsage,
+  sortGroups,
   sortSkills,
 } from "./skill-usage";
 
@@ -95,6 +96,7 @@ export function InstalledSkillsTable({
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SkillSort>("uses");
   const [unusedOnly, setUnusedOnly] = useState(false);
+  const [grouped, setGrouped] = useState(true);
   const usageIndex = useMemo(() => indexUsage(usage), [usage]);
   const now = Date.now();
 
@@ -126,12 +128,12 @@ export function InstalledSkillsTable({
       .filter(([, skills]) => skills.length > 0);
   }, [groups, query, unusedOnly, usageIndex]);
 
-  // Grouped by source when sorted by name; one flat ranked list otherwise,
-  // since "most used" across groups is the point of the other sorts.
+  // Grouped by source by default, with groups ranked by the same sort as
+  // their skills (most-used group first); ungrouped is one ranked list.
   const sections = useMemo<[string | null, InstalledSkill[]][]>(
     () =>
-      sort === "name"
-        ? filteredGroups
+      grouped
+        ? sortGroups(filteredGroups, sort, usageIndex)
         : [
             [
               null,
@@ -142,7 +144,7 @@ export function InstalledSkillsTable({
               ),
             ],
           ],
-    [filteredGroups, sort, usageIndex],
+    [filteredGroups, grouped, sort, usageIndex],
   );
   const neverUsed = usage
     ? groups.reduce(
@@ -159,7 +161,7 @@ export function InstalledSkillsTable({
   );
   const gridTemplateColumns = `minmax(0, 1fr) 3.5rem 5rem repeat(${agents.length}, 5.5rem) 2rem`;
 
-  const renderRow = (skill: InstalledSkill) => {
+  const renderRow = (skill: InstalledSkill, group: string | null) => {
     const isUninstalling = uninstallingSkillName === skill.name;
     const skillUsage = usageIndex.get(skill.name);
     // Dim only once usage has loaded, so a slow scan does not flash everything gray.
@@ -175,12 +177,15 @@ export function InstalledSkillsTable({
           title={formatDates(skill)}
         >
           <span className="truncate text-sm font-medium">{skill.name}</span>
-          <span
-            className={`truncate text-xs ${skill.source ? "text-muted-foreground font-mono" : "text-amber-600/90 dark:text-amber-500/90"}`}
-            title={skill.source ?? skill.path}
-          >
-            {sourceLabel(skill)}
-          </span>
+          {/* Under a group header that already names the source, repeating it is noise. */}
+          {group === sourceLabel(skill) ? null : (
+            <span
+              className={`truncate text-xs ${skill.source ? "text-muted-foreground font-mono" : "text-amber-600/90 dark:text-amber-500/90"}`}
+              title={skill.source ?? skill.path}
+            >
+              {sourceLabel(skill)}
+            </span>
+          )}
         </div>
 
         <span
@@ -299,6 +304,14 @@ export function InstalledSkillsTable({
             Unused only
           </button>
         ) : null}
+        <button
+          type="button"
+          aria-pressed={grouped}
+          onClick={() => setGrouped((value) => !value)}
+          className={`rounded-md border px-2 py-0.5 text-xs ${grouped ? "border-primary/40 bg-primary/10 text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+        >
+          Group by source
+        </button>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border">
@@ -333,7 +346,7 @@ export function InstalledSkillsTable({
                 </span>
               </h3>
             )}
-            {skills.map(renderRow)}
+            {skills.map((skill) => renderRow(skill, group))}
           </section>
         ))}
       </div>

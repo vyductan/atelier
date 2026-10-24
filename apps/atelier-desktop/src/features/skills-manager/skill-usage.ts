@@ -55,10 +55,59 @@ export function sortSkills(
   });
 }
 
+/**
+ * Orders groups by the same signal as their skills: total uses, most recent
+ * use, or name. Skills inside each group are sorted too. Never-used groups
+ * end up last, in name order.
+ */
+export function sortGroups(
+  groups: [string, InstalledSkill[]][],
+  sort: SkillSort,
+  usage: Map<string, SkillUsage>,
+): [string, InstalledSkill[]][] {
+  const groupUses = (skills: InstalledSkill[]) =>
+    skills.reduce((sum, skill) => sum + usesOf(usage, skill), 0);
+  const groupLastUsed = (skills: InstalledSkill[]) =>
+    Math.max(
+      0,
+      ...skills.map((skill) => {
+        const iso = usage.get(skill.name)?.lastUsed;
+        return iso ? Date.parse(iso) : 0;
+      }),
+    );
+
+  return groups
+    .map(
+      ([group, skills]) =>
+        [group, sortSkills(skills, sort, usage)] as [string, InstalledSkill[]],
+    )
+    .toSorted(([nameA, a], [nameB, b]) => {
+      const byName = nameA.localeCompare(nameB);
+      if (sort === "uses") {
+        return (
+          groupUses(b) - groupUses(a) ||
+          groupLastUsed(b) - groupLastUsed(a) ||
+          byName
+        );
+      }
+      if (sort === "last-used") {
+        return (
+          groupLastUsed(b) - groupLastUsed(a) ||
+          groupUses(b) - groupUses(a) ||
+          byName
+        );
+      }
+      return byName;
+    });
+}
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Compact relative date: "today", "3d", "5w", "4mo", "1y"; "never" when unused. */
-export function formatLastUsed(iso: string | null | undefined, now: number): string {
+export function formatLastUsed(
+  iso: string | null | undefined,
+  now: number,
+): string {
   if (!iso) return "never";
   const days = Math.floor((now - Date.parse(iso)) / DAY_MS);
   if (Number.isNaN(days)) return "never";
