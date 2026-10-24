@@ -33,8 +33,8 @@ export default defineConfig({
   },
 
   resolve: {
-    // @dnd-kit is hoisted to the workspace root next to an older React; without
-    // this it imports that copy and every hook call fails ("Invalid hook call").
+    // One React for the app and its UI libraries: a second copy (e.g. a stale
+    // hoisted one next to @dnd-kit) makes every hook call fail ("Invalid hook call").
     dedupe: ["react", "react-dom"],
     alias: {
       "~": path.resolve(__dirname, "./src"),
