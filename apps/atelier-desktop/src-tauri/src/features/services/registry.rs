@@ -40,6 +40,9 @@ pub struct ServiceDef {
     pub label: Option<String>,
     #[serde(default)]
     pub log: Option<String>,
+    /// Overrides the icon the UI infers from `kind`/`cmd` (e.g. `database`).
+    #[serde(default)]
+    pub icon: Option<String>,
     #[serde(default)]
     pub env: BTreeMap<String, String>,
     #[serde(default)]
@@ -56,6 +59,7 @@ const SEED: &str = r#"# Atelier services registry.
 # kind: process  -> Atelier runs `cmd` as a launchd agent (dev.atelier.svc.<id>), logs in ~/.atelier/logs/<id>.log
 # kind: launchd  -> existing launchd agent `label`
 # kind: remote   -> only `health` is probed
+# icon (optional): database | container | book-open | cloud | cog | globe | terminal | server | bot
 services:
   - id: vyductan-web
     name: vyductan.dev (local)

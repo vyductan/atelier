@@ -34,6 +34,7 @@ function makeStatus({
     url: null,
     label: kind === "launchd" ? "dev.example.agent" : null,
     log: null,
+    icon: null,
     env: {},
     keep_alive: false,
   };

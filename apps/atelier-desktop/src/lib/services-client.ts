@@ -18,6 +18,7 @@ export interface ServiceDef {
   url: string | null;
   label: string | null;
   log: string | null;
+  icon: string | null;
   env: Record<string, string>;
   keep_alive: boolean;
 }

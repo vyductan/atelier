@@ -18,6 +18,7 @@ import type { ServiceHealth } from "./service-health";
 import { servicesClient } from "../../lib/services-client";
 import { useToastStore } from "../../store/toast-store";
 import { deriveServiceHealth } from "./service-health";
+import { inferServiceIcon, SERVICE_ICONS } from "./service-icon";
 
 const SERVICES_QUERY_KEY = ["services"] as const;
 
@@ -65,6 +66,7 @@ function ServiceRow({
   const health = deriveServiceHealth(service);
   const style = HEALTH_STYLE[health];
   const { def } = service;
+  const Icon = SERVICE_ICONS[inferServiceIcon(def)];
   const pid = service.listener?.pid ?? service.launchd?.pid ?? null;
   const canControl = def.kind !== "remote";
   const isRunning = health !== "down" && health !== "crashed";
@@ -88,6 +90,10 @@ function ServiceRow({
       <span
         className={`size-2.5 shrink-0 rounded-full ${style.dot}`}
         title={style.label}
+      />
+      <Icon
+        className="text-muted-foreground size-4 shrink-0"
+        aria-hidden="true"
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
