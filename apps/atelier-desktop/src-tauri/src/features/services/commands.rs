@@ -150,10 +150,78 @@ pub async fn read_service_log(id: String, lines: Option<usize>) -> Result<String
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
 
-    let text = String::from_utf8_lossy(&bytes);
-    let all: Vec<&str> = text.lines().collect();
+    let text = strip_ansi(&String::from_utf8_lossy(&bytes));
+    // Spinners redraw with `\r`; only the last redraw of a line is what a terminal would show.
+    let all: Vec<&str> = text
+        .lines()
+        .map(|line| line.rsplit('\r').next().unwrap_or(line))
+        .collect();
     let keep = lines.unwrap_or(300);
     Ok(all[all.len().saturating_sub(keep)..].join("\n"))
+}
+
+/// Removes terminal escape sequences: CSI (`ESC [ … final`), OSC
+/// (`ESC ] … BEL` or `ESC ] … ESC \`) and two-byte `ESC x` sequences.
+fn strip_ansi(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c != '\u{1b}' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('[') => {
+                // Parameter and intermediate bytes, then one final byte in @..~.
+                for c in chars.by_ref() {
+                    if ('@'..='~').contains(&c) {
+                        break;
+                    }
+                }
+            }
+            Some(']') => {
+                while let Some(c) = chars.next() {
+                    if c == '\u{7}' {
+                        break;
+                    }
+                    if c == '\u{1b}' && chars.peek() == Some(&'\\') {
+                        chars.next();
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_ansi;
+
+    #[test]
+    fn strips_csi_colors_and_keeps_text() {
+        assert_eq!(
+            strip_ansi("\u{1b}[38;2;255;71;133m│\u{1b}[39m ready \u{1b}[1mok\u{1b}[0m"),
+            "│ ready ok"
+        );
+    }
+
+    #[test]
+    fn strips_osc_hyperlinks() {
+        assert_eq!(
+            strip_ansi("\u{1b}]8;;https://x.dev\u{7}link\u{1b}]8;;\u{1b}\\ done"),
+            "link done"
+        );
+    }
+
+    #[test]
+    fn strips_cursor_moves_and_unicode_survives() {
+        assert_eq!(strip_ansi("\u{1b}[2K\u{1b}[1G● 1.02 s"), "● 1.02 s");
+    }
 }
 
 #[tauri::command]
