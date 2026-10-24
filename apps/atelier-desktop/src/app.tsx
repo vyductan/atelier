@@ -34,6 +34,7 @@ function App() {
         chatsWorkspace={<ConversationView />}
         syncView={<AcmeSync />}
         configView={({ onOptimizeRules }) => <ClaudeGlobalConfig onOptimizeRules={onOptimizeRules} />}
+        hiddenViews={["chats", "sync"]}
       />
       <Toaster />
     </>
