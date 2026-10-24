@@ -29,10 +29,12 @@ pub struct ServicesSnapshot {
 }
 
 /// Probe target: explicit `health`, else the root of the local port.
+/// `localhost` rather than 127.0.0.1: Vite binds only [::1] by default, and
+/// the connector tries every address `localhost` resolves to.
 fn health_url(def: &ServiceDef) -> Option<String> {
     def.health
         .clone()
-        .or_else(|| def.port.map(|port| format!("http://127.0.0.1:{}/", port)))
+        .or_else(|| def.port.map(|port| format!("http://localhost:{}/", port)))
 }
 
 #[tauri::command]

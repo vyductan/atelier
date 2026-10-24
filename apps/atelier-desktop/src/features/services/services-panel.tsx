@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { open } from "@tauri-apps/plugin-shell";
 import {
@@ -20,6 +20,9 @@ import { useToastStore } from "../../store/toast-store";
 import { deriveServiceHealth } from "./service-health";
 
 const SERVICES_QUERY_KEY = ["services"] as const;
+
+/** How close to the bottom (px) still counts as "following" the log. */
+const FOLLOW_THRESHOLD = 24;
 
 const HEALTH_STYLE: Record<ServiceHealth, { dot: string; label: string }> = {
   up: { dot: "bg-emerald-500", label: "Up" },
@@ -164,13 +167,33 @@ function LogPane({ serviceId }: { serviceId: string }) {
     queryFn: () => servicesClient.readLog(serviceId, 300),
     refetchInterval: 2000,
   });
+  const scrollRef = useRef<HTMLPreElement>(null);
+  // Follow the tail like `tail -f` until the user scrolls up to read; resume
+  // once they scroll back to the bottom.
+  const followRef = useRef(true);
+
+  useLayoutEffect(() => {
+    const element = scrollRef.current;
+    if (element && followRef.current) {
+      element.scrollTop = element.scrollHeight;
+    }
+  }, [log.data, log.error]);
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col border-l">
+    <section className="flex min-h-0 w-1/2 shrink-0 flex-col border-l">
       <header className="text-muted-foreground border-b px-4 py-2 text-xs">
         Logs · {serviceId}
       </header>
-      <pre className="min-h-0 flex-1 overflow-auto px-4 py-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap">
+      <pre
+        ref={scrollRef}
+        onScroll={(event) => {
+          const element = event.currentTarget;
+          followRef.current =
+            element.scrollHeight - element.scrollTop - element.clientHeight <
+            FOLLOW_THRESHOLD;
+        }}
+        className="min-h-0 flex-1 overflow-auto px-4 py-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]"
+      >
         {log.error
           ? String(log.error)
           : log.data?.trim()
@@ -219,7 +242,7 @@ export function ServicesPanel() {
 
   return (
     <div className="flex min-h-0 flex-1">
-      <section className="flex min-h-0 flex-1 flex-col overflow-auto px-6 py-5">
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto px-6 py-5">
         <header className="mb-4 flex items-center gap-2">
           <h2 className="text-sm font-semibold">Services</h2>
           <span className="text-muted-foreground truncate text-xs">
@@ -279,7 +302,7 @@ export function ServicesPanel() {
         <UnregisteredListeners listeners={snapshot.data?.unregistered ?? []} />
       </section>
 
-      {selectedId ? <LogPane serviceId={selectedId} /> : null}
+      {selectedId ? <LogPane key={selectedId} serviceId={selectedId} /> : null}
     </div>
   );
 }
