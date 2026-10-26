@@ -31,6 +31,26 @@ export interface Listener {
   address: string;
   port: number;
   cwd: string | null;
+  /** Executable path, when ps reports one. */
+  exe: string | null;
+  /** App bundle the process ships in, or its parent's. */
+  app: string | null;
+  /** Executable ships with macOS. */
+  system: boolean;
+  launchdLabel: string | null;
+  launchdPlist: string | null;
+}
+
+/** `known:` entry in services.yaml: a note on a port no service claims. */
+export interface KnownListener {
+  match: {
+    command?: string | null;
+    port?: number | null;
+    label?: string | null;
+  };
+  note?: string | null;
+  group?: string | null;
+  hide?: boolean | null;
 }
 
 export interface LaunchdState {
@@ -62,6 +82,7 @@ export interface ServicesSnapshot {
   configError: string | null;
   services: ServiceStatus[];
   unregistered: Listener[];
+  known: KnownListener[];
 }
 
 export const servicesClient = {

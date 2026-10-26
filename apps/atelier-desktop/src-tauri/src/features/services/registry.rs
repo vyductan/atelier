@@ -49,10 +49,39 @@ pub struct ServiceDef {
     pub keep_alive: bool,
 }
 
+/// Which listening sockets a `known` entry describes; every field given must match.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct KnownMatch {
+    /// lsof's command name (often cut to 9 chars) or the executable's file name.
+    #[serde(default)]
+    pub command: Option<String>,
+    #[serde(default)]
+    pub port: Option<u16>,
+    /// launchd job label.
+    #[serde(default)]
+    pub label: Option<String>,
+}
+
+/// A note on a port nobody registered as a service: what it is, which group
+/// it belongs to, whether to fold it away.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnownListener {
+    #[serde(rename = "match")]
+    pub matcher: KnownMatch,
+    #[serde(default)]
+    pub note: Option<String>,
+    #[serde(default)]
+    pub group: Option<String>,
+    #[serde(default)]
+    pub hide: Option<bool>,
+}
+
 #[derive(Debug, Deserialize)]
 struct RegistryFile {
     #[serde(default)]
     services: Vec<ServiceDef>,
+    #[serde(default)]
+    known: Vec<KnownListener>,
 }
 
 const SEED: &str = r#"# Atelier services registry.
@@ -60,6 +89,11 @@ const SEED: &str = r#"# Atelier services registry.
 # kind: launchd  -> existing launchd agent `label`
 # kind: remote   -> only `health` is probed
 # icon (optional): database | container | book-open | cloud | cog | globe | terminal | server | bot
+# known: notes on ports no service claims, e.g.
+#   - match: { command: socat1, port: 8045 }   # also: label (launchd job)
+#     note: what it is
+#     group: Antigravity Tools
+#     hide: true                              # fold into the hidden list
 services:
   - id: vyductan-web
     name: vyductan.dev (local)
@@ -125,6 +159,15 @@ pub fn expand_home(path: &str) -> PathBuf {
 
 /// Reads the registry, writing the seed file on first run.
 pub fn load() -> Result<Vec<ServiceDef>, String> {
+    load_file().map(|file| file.services)
+}
+
+/// Notes on unregistered ports (`known:` in services.yaml).
+pub fn load_known() -> Result<Vec<KnownListener>, String> {
+    load_file().map(|file| file.known)
+}
+
+fn load_file() -> Result<RegistryFile, String> {
     let path = config_path();
     if !path.exists() {
         std::fs::create_dir_all(atelier_dir()).map_err(|e| e.to_string())?;
@@ -154,7 +197,7 @@ pub fn load() -> Result<Vec<ServiceDef>, String> {
         }
     }
 
-    Ok(file.services)
+    Ok(file)
 }
 
 pub fn find(id: &str) -> Result<ServiceDef, String> {

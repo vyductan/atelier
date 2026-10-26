@@ -30,12 +30,18 @@ import {
 
 import { Button } from "@acme/ui/components/button";
 
-import type { Listener, ServiceStatus } from "../../lib/services-client";
+import type {
+  KnownListener,
+  Listener,
+  ServiceStatus,
+} from "../../lib/services-client";
+import type { DescribedListener, ListenerGroup } from "./listener-info";
 import type { ServiceHealth } from "./service-health";
 import type { ServiceAction, Transition } from "./service-transition";
 import type { OrderedGroup, ServicesOrder } from "./services-order";
 import { servicesClient } from "../../lib/services-client";
 import { useToastStore } from "../../store/toast-store";
+import { groupListeners } from "./listener-info";
 import { deriveServiceHealth } from "./service-health";
 import { resolveServiceIcon, SERVICE_ICONS } from "./service-icon";
 import { TRANSITION_LABEL, transitionStatus } from "./service-transition";
@@ -473,25 +479,83 @@ function LogPane({ serviceId }: { serviceId: string }) {
   );
 }
 
-function UnregisteredListeners({ listeners }: { listeners: Listener[] }) {
-  if (listeners.length === 0) return null;
+const NO_KNOWN: KnownListener[] = [];
+
+function ListenerRow({ item }: { item: DescribedListener }) {
+  const { listener, note } = item;
+  // Everything known about the process, one hover away.
+  const detail = [
+    `pid ${listener.pid}`,
+    listener.exe,
+    listener.launchdPlist,
+    listener.cwd ? `cwd ${listener.cwd}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
   return (
-    <details className="mt-6">
+    <div
+      className="flex gap-3 text-xs whitespace-nowrap text-muted-foreground"
+      title={detail}
+    >
+      <span className="w-14 shrink-0 text-right font-mono tabular-nums">
+        :{listener.port}
+      </span>
+      <span className="w-28 shrink-0 truncate font-mono text-foreground/80">
+        {listener.command}
+      </span>
+      <span className="truncate">{note}</span>
+    </div>
+  );
+}
+
+function ListenerGroups({ groups }: { groups: ListenerGroup[] }) {
+  return (
+    <div className="flex flex-col gap-3">
+      {groups.map((group) => (
+        <div key={group.name} className="flex flex-col gap-1">
+          <span className="text-xs font-medium">{group.name}</span>
+          {group.listeners.map((item) => (
+            <ListenerRow
+              key={`${item.listener.pid}:${item.listener.port}`}
+              item={item}
+            />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function UnregisteredListeners({
+  listeners,
+  known,
+}: {
+  listeners: Listener[];
+  known: KnownListener[];
+}) {
+  const { visible, hidden } = useMemo(
+    () => groupListeners(listeners, known),
+    [listeners, known],
+  );
+  if (listeners.length === 0) return null;
+  const hiddenCount = hidden.reduce((n, g) => n + g.listeners.length, 0);
+  return (
+    <details className="mt-6" open>
       <summary className="cursor-pointer text-xs font-medium tracking-wide text-muted-foreground uppercase">
         Other listening ports ({listeners.length})
       </summary>
-      <div className="mt-2 flex flex-col gap-1">
-        {listeners.map((listener) => (
-          <div
-            key={`${listener.pid}:${listener.port}`}
-            className="flex gap-3 font-mono text-xs whitespace-nowrap text-muted-foreground"
-          >
-            <span className="w-14 text-right">:{listener.port}</span>
-            <span className="w-28 truncate">{listener.command}</span>
-            <span className="w-20">pid {listener.pid}</span>
-            <span className="truncate">{listener.cwd}</span>
-          </div>
-        ))}
+      <div className="mt-3 flex flex-col gap-3">
+        <ListenerGroups groups={visible} />
+        {hiddenCount === 0 ? null : (
+          <details>
+            <summary className="cursor-pointer text-xs text-muted-foreground">
+              macOS and hidden ({hiddenCount})
+            </summary>
+            <div className="mt-2">
+              <ListenerGroups groups={hidden} />
+            </div>
+          </details>
+        )}
       </div>
     </details>
   );
@@ -699,7 +763,10 @@ export function ServicesPanel() {
           </SortableContext>
         </DndContext>
 
-        <UnregisteredListeners listeners={snapshot.data?.unregistered ?? []} />
+        <UnregisteredListeners
+          listeners={snapshot.data?.unregistered ?? []}
+          known={snapshot.data?.known ?? NO_KNOWN}
+        />
       </section>
 
       {logServiceId ? (

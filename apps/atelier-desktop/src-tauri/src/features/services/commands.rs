@@ -8,7 +8,7 @@ use super::favicon;
 use super::health::{self, HealthResult};
 use super::launchd::{self, LaunchdState};
 use super::order;
-use super::registry::{self, ServiceDef, ServiceKind};
+use super::registry::{self, KnownListener, ServiceDef, ServiceKind};
 use super::unmanaged;
 
 #[derive(Debug, Serialize)]
@@ -31,6 +31,8 @@ pub struct ServicesSnapshot {
     pub services: Vec<ServiceStatus>,
     /// Listening sockets no registered service claims.
     pub unregistered: Vec<Listener>,
+    /// Notes on unregistered ports from services.yaml.
+    pub known: Vec<KnownListener>,
 }
 
 /// Probe target: explicit `health`, else the root of the local port.
@@ -120,6 +122,8 @@ pub async fn list_services() -> Result<ServicesSnapshot, String> {
         config_error,
         services,
         unregistered,
+        // A broken file already shows as config_error; notes just go missing.
+        known: registry::load_known().unwrap_or_default(),
     })
 }
 

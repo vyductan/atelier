@@ -12,6 +12,14 @@ pub struct Listener {
     pub address: String,
     pub port: u16,
     pub cwd: Option<String>,
+    /// Executable path, when ps reports one (see identify.rs).
+    pub exe: Option<String>,
+    /// App bundle the process ships in, or its parent's.
+    pub app: Option<String>,
+    /// Executable ships with macOS.
+    pub system: bool,
+    pub launchd_label: Option<String>,
+    pub launchd_plist: Option<String>,
 }
 
 /// `lsof -F` emits one field per line: `p<pid>` opens a process block,
@@ -42,6 +50,11 @@ fn parse_listeners(output: &str) -> Vec<Listener> {
                         address: address.to_string(),
                         port,
                         cwd: None,
+                        exe: None,
+                        app: None,
+                        system: false,
+                        launchd_label: None,
+                        launchd_plist: None,
                     });
                 }
             }
@@ -95,6 +108,7 @@ pub fn listeners() -> Result<Vec<Listener>, String> {
         }
     }
 
+    super::identify::annotate(&mut listeners);
     listeners.sort_by_key(|l| l.port);
     Ok(listeners)
 }
