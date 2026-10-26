@@ -12,11 +12,13 @@ import { deriveServiceHealth, SLOW_PROBE_MS } from "./service-health";
 
 function makeStatus({
   kind = "process",
+  port = kind === "remote" ? null : 3000,
   launchd = null,
   listener = null,
   health = null,
 }: {
   kind?: ServiceKind;
+  port?: number | null;
   launchd?: Partial<LaunchdState> | null;
   listener?: Partial<Listener> | null;
   health?: Partial<HealthResult> | null;
@@ -29,7 +31,7 @@ function makeStatus({
     cwd: null,
     cmd: kind === "process" ? "pnpm dev" : null,
     stop_cmd: null,
-    port: kind === "remote" ? null : 3000,
+    port,
     health: null,
     url: null,
     label: kind === "launchd" ? "dev.example.agent" : null,
@@ -240,6 +242,25 @@ describe("deriveServiceHealth", () => {
           }),
         ),
       ).toBe("down");
+    });
+
+    it("is up while a job with no port and no probe has a process", () => {
+      expect(
+        deriveServiceHealth(makeStatus({ port: null, launchd: managed })),
+      ).toBe("up");
+      expect(
+        deriveServiceHealth(
+          makeStatus({ port: null, launchd: { loaded: true, pid: null } }),
+        ),
+      ).toBe("down");
+      expect(
+        deriveServiceHealth(
+          makeStatus({
+            port: null,
+            launchd: { loaded: true, pid: null, lastExitCode: 1 },
+          }),
+        ),
+      ).toBe("crashed");
     });
 
     it("is down when the job is not loaded and nothing answers", () => {

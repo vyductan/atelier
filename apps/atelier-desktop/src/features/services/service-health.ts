@@ -4,6 +4,8 @@ import type { ServiceStatus } from "../../lib/services-client";
  * - up:        answers in time
  * - degraded:  something answers, but not well (5xx, slow, port open but silent)
  * - starting:  launchd job alive but nothing listens yet
+ *              (a job with no port and no probe, like `stripe listen`, is up
+ *              while its process lives: there is nothing else to wait for)
  * - crashed:   launchd job loaded but its process exited with an error
  * - down:      not running
  * - unmanaged: answers, but Atelier's launchd job is not what runs it, so
@@ -49,7 +51,9 @@ export function deriveServiceHealth(status: ServiceStatus): ServiceHealth {
   }
   // Port open but the probe timed out or was refused: a hung server.
   if (listener) return "degraded";
-  if (launchd?.pid) return "starting";
+  if (launchd?.pid) {
+    return def.port === null && def.health === null ? "up" : "starting";
+  }
   if (launchd?.loaded && launchd.lastExitCode) return "crashed";
   return "down";
 }
