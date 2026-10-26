@@ -73,14 +73,22 @@ pub async fn list_services() -> Result<ServicesSnapshot, String> {
     let client = health::client();
     let favicon_client = favicon::client();
     let mut probes = tokio::task::JoinSet::new();
+    let mut icons = tokio::task::JoinSet::new();
     for (index, def) in defs.iter().enumerate() {
+        let own_favicon = favicon::icon_site(def).is_none();
+        if !own_favicon {
+            // A chosen site's icon does not depend on the service answering.
+            let favicon_client = favicon_client.clone();
+            let def = def.clone();
+            icons.spawn(async move { favicon::refresh(&favicon_client, &def).await });
+        }
         if let Some(url) = health_url(def) {
             let client = client.clone();
             let favicon_client = favicon_client.clone();
             let def = def.clone();
             probes.spawn(async move {
                 let result = health::probe(&client, url).await;
-                if result.status_code.is_some_and(|code| code < 500) {
+                if own_favicon && result.status_code.is_some_and(|code| code < 500) {
                     favicon::refresh(&favicon_client, &def).await;
                 }
                 (index, result)
@@ -88,6 +96,7 @@ pub async fn list_services() -> Result<ServicesSnapshot, String> {
         }
     }
     let mut health_results: Vec<Option<HealthResult>> = vec![None; defs.len()];
+    while icons.join_next().await.is_some() {}
     while let Some(result) = probes.join_next().await {
         if let Ok((index, result)) = result {
             health_results[index] = Some(result);
@@ -109,7 +118,7 @@ pub async fn list_services() -> Result<ServicesSnapshot, String> {
             listener: def
                 .port
                 .and_then(|port| listeners.iter().find(|l| l.port == port).cloned()),
-            favicon: favicon::cached(&def.id),
+            favicon: favicon::cached(&def),
             def,
             launchd,
             health,

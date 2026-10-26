@@ -116,6 +116,22 @@ describe("resolveServiceIcon", () => {
     });
   });
 
+  it("draws the fetched icon of an icon: site", () => {
+    const stripe = makeDef({
+      cmd: "stripe listen",
+      icon: "https://stripe.com",
+    });
+    expect(resolveServiceIcon(stripe, favicon)).toEqual({
+      type: "image",
+      src: favicon,
+    });
+    // Not fetched yet (or the site has none): the inferred icon.
+    expect(resolveServiceIcon(stripe, null)).toEqual({
+      type: "icon",
+      name: "terminal",
+    });
+  });
+
   it("uses the favicon when the explicit icon is unknown", () => {
     expect(
       resolveServiceIcon(makeDef({ cmd: "pnpm dev", icon: "rocket" }), favicon),

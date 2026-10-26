@@ -43,7 +43,8 @@ export type ServiceIconSource =
 
 /**
  * What to draw for a service: an explicit `icon:` from services.yaml, else
- * the site's own favicon, else the icon inferred from kind/cmd.
+ * the favicon the backend fetched (from the service's page, or from the site
+ * given as `icon: https://…`), else the icon inferred from kind/cmd.
  */
 export function resolveServiceIcon(
   def: ServiceDef,

@@ -20,6 +20,29 @@ pub fn page_url(def: &ServiceDef) -> Option<String> {
         .or_else(|| def.port.map(|port| format!("http://localhost:{}/", port)))
 }
 
+/// `icon:` given as a site (`https://stripe.com`): draw that site's favicon,
+/// for services with no page of their own (`stripe listen`).
+pub fn icon_site(def: &ServiceDef) -> Option<&str> {
+    def.icon
+        .as_deref()
+        .map(str::trim)
+        .filter(|icon| icon.starts_with("https://") || icon.starts_with("http://"))
+}
+
+/// Cache file name: the id, plus a hash of the chosen site so editing
+/// `icon:` fetches the new one instead of waiting out the old cache.
+fn cache_key(def: &ServiceDef) -> String {
+    use std::hash::{Hash, Hasher};
+    match icon_site(def) {
+        Some(site) => {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            site.hash(&mut hasher);
+            format!("{}-{:x}", def.id, hasher.finish())
+        }
+        None => def.id.clone(),
+    }
+}
+
 fn cache_path(id: &str) -> PathBuf {
     let safe: String = id
         .chars()
@@ -32,8 +55,8 @@ fn cache_path(id: &str) -> PathBuf {
 }
 
 /// The cached data URL. An empty cache file records "this service has no favicon".
-pub fn cached(id: &str) -> Option<String> {
-    let contents = std::fs::read_to_string(cache_path(id)).ok()?;
+pub fn cached(def: &ServiceDef) -> Option<String> {
+    let contents = std::fs::read_to_string(cache_path(&cache_key(def))).ok()?;
     let contents = contents.trim();
     (!contents.is_empty()).then(|| contents.to_string())
 }
@@ -225,17 +248,19 @@ async fn discover(client: &reqwest::Client, page: &str) -> Option<String> {
     fetch_image(client, base.join("/favicon.ico").ok()?).await
 }
 
-/// Refetches the favicon into the cache when it is stale. Call only while the
-/// service answers, so a stopped service keeps its last known icon.
+/// Refetches the favicon into the cache when it is stale. For the service's
+/// own page, call only while it answers, so a stopped service keeps its last
+/// known icon; an `icon:` site can be fetched any time.
 pub async fn refresh(client: &reqwest::Client, def: &ServiceDef) {
-    if !is_stale(&def.id) {
+    let key = cache_key(def);
+    if !is_stale(&key) {
         return;
     }
-    let Some(page) = page_url(def) else {
+    let Some(page) = icon_site(def).map(str::to_string).or_else(|| page_url(def)) else {
         return;
     };
     let found = discover(client, &page).await;
-    write_cache(&def.id, found.as_deref());
+    write_cache(&key, found.as_deref());
 }
 
 pub fn client() -> reqwest::Client {
@@ -318,6 +343,31 @@ mod tests {
     fn rejects_html_served_as_favicon() {
         assert_eq!(image_mime(Some("text/html; charset=UTF-8"), b"<html>"), None);
         assert_eq!(image_mime(None, b"<!doctype html><html>"), None);
+    }
+
+    fn def_with_icon(icon: Option<&str>) -> ServiceDef {
+        serde_yaml::from_str(&format!(
+            "id: stripe\nkind: process\ncmd: stripe listen\n{}",
+            icon.map(|i| format!("icon: {}\n", i)).unwrap_or_default()
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn takes_only_urls_as_icon_sites() {
+        assert_eq!(icon_site(&def_with_icon(Some("https://stripe.com"))), Some("https://stripe.com"));
+        assert_eq!(icon_site(&def_with_icon(Some("database"))), None);
+        assert_eq!(icon_site(&def_with_icon(None)), None);
+    }
+
+    #[test]
+    fn keys_the_cache_by_icon_site() {
+        let plain = cache_key(&def_with_icon(None));
+        let stripe = cache_key(&def_with_icon(Some("https://stripe.com")));
+        let other = cache_key(&def_with_icon(Some("https://example.com")));
+        assert_eq!(plain, "stripe");
+        assert!(stripe.starts_with("stripe-"));
+        assert_ne!(stripe, other);
     }
 
     #[test]

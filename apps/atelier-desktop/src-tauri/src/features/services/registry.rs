@@ -88,7 +88,8 @@ const SEED: &str = r#"# Atelier services registry.
 # kind: process  -> Atelier runs `cmd` as a launchd agent (dev.atelier.svc.<id>), logs in ~/.atelier/logs/<id>.log
 # kind: launchd  -> existing launchd agent `label`
 # kind: remote   -> only `health` is probed
-# icon (optional): database | container | book-open | cloud | cog | globe | terminal | server | bot
+# icon (optional): database | container | book-open | cloud | cog | globe | terminal | server | bot,
+#   or a site whose favicon to use, e.g. https://stripe.com
 # known: notes on ports no service claims, e.g.
 #   - match: { command: socat1, port: 8045 }   # also: label (launchd job)
 #     note: what it is
