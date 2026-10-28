@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::process::Command;
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
@@ -193,9 +194,19 @@ fn run_shell(script: &str, cwd: Option<&str>) -> Result<(), String> {
     run(&mut cmd)
 }
 
+/// How long to wait for a booted-out job to leave launchd. `launchctl bootout`
+/// returns while a slow-exiting job (turbo flushing its cache) is still
+/// being removed, and a bootstrap in that window fails with
+/// "Bootstrap failed: 5: Input/output error".
+const UNLOAD_TIMEOUT: Duration = Duration::from_secs(20);
+
 fn bootout(label: &str) {
     // Fails when the job is not loaded, which is the state we want anyway.
     let _ = run(Command::new("launchctl").args(["bootout", &format!("{}/{}", domain(), label)]));
+    let started = Instant::now();
+    while state(label).loaded && started.elapsed() < UNLOAD_TIMEOUT {
+        std::thread::sleep(Duration::from_millis(250));
+    }
 }
 
 pub fn start(def: &ServiceDef) -> Result<(), String> {
