@@ -412,6 +412,30 @@ export async function disableSkillForAgent(skillName: string, agentName: string)
   return await invoke<void>("disable_skill_for_agent", { skillName, agentName });
 }
 
+export async function disableSkill(skillName: string): Promise<void> {
+  ensureTauri();
+  return await invoke<void>("disable_skill", { skillName });
+}
+
+export async function enableSkill(skillName: string): Promise<void> {
+  ensureTauri();
+  return await invoke<void>("enable_skill", { skillName });
+}
+
+/** Mirrors `DisabledSkill` in src-tauri/src/features/skills/disable.rs. */
+export interface DisabledSkill {
+  name: string;
+  path: string;
+  source: string | null;
+  installedAt: string | null;
+  updatedAt: string | null;
+}
+
+export async function listDisabledSkills(): Promise<DisabledSkill[]> {
+  ensureTauri();
+  return await invoke<DisabledSkill[]>("list_disabled_skills");
+}
+
 export async function getDetectedAgents(): Promise<string[]> {
   ensureTauri();
   return await invoke<string[]>("get_detected_agents");

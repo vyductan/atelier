@@ -13,22 +13,6 @@ import {
   sortSkills,
 } from "./skill-usage";
 
-const SUPPORTED_AGENTS = [
-  { id: "claude-code", name: "Claude Code" },
-  { id: "antigravity", name: "Antigravity" },
-  { id: "cursor", name: "Cursor" },
-  { id: "windsurf", name: "Windsurf" },
-  { id: "cline", name: "Cline" },
-];
-
-/** Agents that always load every installed skill; their toggle is informational. */
-const UNIVERSAL_AGENTS = new Set([
-  "antigravity",
-  "cursor",
-  "windsurf",
-  "cline",
-]);
-
 const getLocalSkillToolName = (path: string) => {
   const p = path.toLowerCase();
   if (p.includes(".gemini") || p.includes("antigravity"))
@@ -38,13 +22,6 @@ const getLocalSkillToolName = (path: string) => {
   if (p.includes(".agents")) return "Global CLI Skill";
   return "Workspace Local Skill";
 };
-
-function hasAgent(skill: InstalledSkill, agentId: string): boolean {
-  return skill.agents.some(
-    (agent) =>
-      agent.toLowerCase().replaceAll(/\s+/g, "-") === agentId.toLowerCase(),
-  );
-}
 
 function sourceLabel(skill: InstalledSkill): string {
   return skill.source ?? getLocalSkillToolName(skill.path);
@@ -58,17 +35,36 @@ function formatDates(skill: InstalledSkill): string | undefined {
     : installed;
 }
 
+function Spinner() {
+  return (
+    <span className="block size-3.5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+  );
+}
+
+/** Track + knob; `mixed` parks the knob mid-track for a partly enabled group. */
+function SwitchTrack({ on, mixed = false }: { on: boolean; mixed?: boolean }) {
+  return (
+    <span
+      className={`relative inline-flex h-3.5 w-6 items-center rounded-full transition-colors ${on ? "bg-primary" : mixed ? "bg-primary/45" : "bg-muted-foreground/30"}`}
+    >
+      <span
+        className={`inline-block size-2.5 rounded-full bg-background shadow-sm transition ${on ? "translate-x-3" : mixed ? "translate-x-[7px]" : "translate-x-[2px]"}`}
+      />
+    </span>
+  );
+}
+
 interface InstalledSkillsTableProps {
   groups: [string, InstalledSkill[]][];
-  detectedAgents: string[];
-  togglingAgentId: string | null;
-  uninstallingSkillName: string | null;
-  onToggleAgent: (
-    skillPath: string,
-    skillName: string,
-    agentId: string,
-    isEnabled: boolean,
+  togglingSkillName: string | null;
+  /** The group name while its whole-group toggle runs. */
+  togglingGroupKey: string | null;
+  onSetEnabled: (
+    skillNames: string[],
+    enabled: boolean,
+    groupKey: string | null,
   ) => void;
+  uninstallingSkillName: string | null;
   onUninstall: (skillName: string) => void;
   /** Null while the history scan runs (or if it failed). */
   usage: SkillUsageReport | null;
@@ -86,10 +82,10 @@ const SORT_LABELS: Record<SkillSort, string> = {
  */
 export function InstalledSkillsTable({
   groups,
-  detectedAgents,
-  togglingAgentId,
+  togglingSkillName,
+  togglingGroupKey,
+  onSetEnabled,
   uninstallingSkillName,
-  onToggleAgent,
   onUninstall,
   usage,
 }: InstalledSkillsTableProps) {
@@ -99,14 +95,6 @@ export function InstalledSkillsTable({
   const [grouped, setGrouped] = useState(true);
   const usageIndex = useMemo(() => indexUsage(usage), [usage]);
   const now = Date.now();
-
-  // Columns follow what is installed on this machine, not what skills claim:
-  // the skills CLI keeps reporting an agent while its skills folder lingers
-  // after the app is gone (e.g. ~/.codeium/windsurf/skills).
-  const agents = useMemo(
-    () => SUPPORTED_AGENTS.filter((agent) => detectedAgents.includes(agent.id)),
-    [detectedAgents],
-  );
 
   const filteredGroups = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -159,28 +147,29 @@ export function InstalledSkillsTable({
     (sum, [, skills]) => sum + skills.length,
     0,
   );
-  const gridTemplateColumns = `minmax(0, 1fr) 3.5rem 5rem repeat(${agents.length}, 5.5rem) 2rem`;
+  const gridTemplateColumns = `minmax(0, 1fr) 3.5rem 5rem 5rem 2rem`;
 
   const renderRow = (skill: InstalledSkill, group: string | null) => {
     const isUninstalling = uninstallingSkillName === skill.name;
     const skillUsage = usageIndex.get(skill.name);
     // Dim only once usage has loaded, so a slow scan does not flash everything gray.
     const isUnused = usage !== null && !skillUsage;
+    const isEnabled = !skill.disabled;
     return (
       <div
         key={skill.path}
-        className="group hover:bg-muted/40 grid items-center border-b px-3 py-0.5 last:border-b-0"
+        className="group grid items-center border-b px-3 py-0.5 last:border-b-0 hover:bg-muted/40"
         style={{ gridTemplateColumns }}
       >
         <div
-          className={`flex min-w-0 items-baseline gap-2 ${isUnused ? "opacity-50" : ""}`}
+          className={`flex min-w-0 items-baseline gap-2 ${isUnused || !isEnabled ? "opacity-50" : ""} ${isEnabled ? "" : "line-through decoration-muted-foreground/50"}`}
           title={formatDates(skill)}
         >
           <span className="truncate text-sm font-medium">{skill.name}</span>
           {/* Under a group header that already names the source, repeating it is noise. */}
           {group === sourceLabel(skill) ? null : (
             <span
-              className={`truncate text-xs ${skill.source ? "text-muted-foreground font-mono" : "text-amber-600/90 dark:text-amber-500/90"}`}
+              className={`truncate text-xs ${skill.source ? "font-mono text-muted-foreground" : "text-amber-600/90 dark:text-amber-500/90"}`}
               title={skill.source ?? skill.path}
             >
               {sourceLabel(skill)}
@@ -195,7 +184,7 @@ export function InstalledSkillsTable({
           {usage ? (skillUsage?.total ?? 0) : "–"}
         </span>
         <span
-          className="text-muted-foreground pl-3 text-xs tabular-nums"
+          className="pl-3 text-xs text-muted-foreground tabular-nums"
           title={
             skillUsage?.lastUsed
               ? new Date(skillUsage.lastUsed).toLocaleString()
@@ -205,59 +194,94 @@ export function InstalledSkillsTable({
           {usage ? formatLastUsed(skillUsage?.lastUsed, now) : "–"}
         </span>
 
-        {agents.map((agent) => {
-          const isUniversal = UNIVERSAL_AGENTS.has(agent.id);
-          const isEnabled = isUniversal || hasAgent(skill, agent.id);
-          const isToggling = togglingAgentId === `${skill.name}-${agent.id}`;
-          return (
-            <div key={agent.id} className="flex justify-center">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={isEnabled}
-                aria-label={`${skill.name} for ${agent.name}`}
-                onClick={() =>
-                  onToggleAgent(skill.path, skill.name, agent.id, isEnabled)
-                }
-                disabled={togglingAgentId !== null || isUniversal}
-                title={
-                  isUniversal
-                    ? `${agent.name} always includes all installed skills.`
-                    : `${isEnabled ? "Disable" : "Enable"} for ${agent.name}`
-                }
-                className="rounded-full p-0.5 disabled:cursor-default disabled:opacity-50"
-              >
-                {isToggling ? (
-                  <span className="border-primary block size-3.5 animate-spin rounded-full border-2 border-t-transparent" />
-                ) : (
-                  <span
-                    className={`relative inline-flex h-3.5 w-6 items-center rounded-full transition-colors ${isEnabled ? "bg-primary" : "bg-muted-foreground/30"}`}
-                  >
-                    <span
-                      className={`bg-background inline-block size-2.5 rounded-full shadow-sm transition ${isEnabled ? "translate-x-3" : "translate-x-[2px]"}`}
-                    />
-                  </span>
-                )}
-              </button>
-            </div>
-          );
-        })}
+        <div className="flex justify-center">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isEnabled}
+            aria-label={`${skill.name} enabled`}
+            onClick={() => onSetEnabled([skill.name], !isEnabled, null)}
+            disabled={togglingSkillName !== null}
+            title={
+              isEnabled
+                ? "Disable for every agent (moves it to ~/.agents/skills-disabled)"
+                : "Enable for every agent"
+            }
+            className="rounded-full p-0.5 disabled:cursor-default disabled:opacity-50"
+          >
+            {togglingSkillName === skill.name ? (
+              <Spinner />
+            ) : (
+              <SwitchTrack on={isEnabled} />
+            )}
+          </button>
+        </div>
 
-        <button
-          type="button"
-          onClick={() => onUninstall(skill.name)}
-          disabled={isUninstalling}
-          aria-label={`Uninstall ${skill.name}`}
-          title="Uninstall"
-          className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 flex size-6 items-center justify-center justify-self-end rounded-md opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-100"
-        >
-          {isUninstalling ? (
-            <span className="border-destructive block size-3.5 animate-spin rounded-full border-2 border-t-transparent" />
-          ) : (
-            <Trash2 className="size-3.5" />
-          )}
-        </button>
+        {/* `skills rm` cannot see a disabled skill; enable it first. */}
+        {skill.disabled ? (
+          <span />
+        ) : (
+          <button
+            type="button"
+            onClick={() => onUninstall(skill.name)}
+            disabled={isUninstalling}
+            aria-label={`Uninstall ${skill.name}`}
+            title="Uninstall"
+            className="flex size-6 items-center justify-center justify-self-end rounded-md text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 disabled:opacity-100"
+          >
+            {isUninstalling ? (
+              <span className="block size-3.5 animate-spin rounded-full border-2 border-destructive border-t-transparent" />
+            ) : (
+              <Trash2 className="size-3.5" />
+            )}
+          </button>
+        )}
       </div>
+    );
+  };
+
+  // Acts on the skills the section shows, so a filter narrows what it flips.
+  // Fully on → turn all off; off or mixed → turn the rest on.
+  const renderGroupHeader = (group: string, skills: InstalledSkill[]) => {
+    const enabledCount = skills.filter((skill) => !skill.disabled).length;
+    const allOn = enabledCount === skills.length;
+    const mixed = enabledCount > 0 && !allOn;
+    const targets = skills
+      .filter((skill) => (allOn ? true : skill.disabled))
+      .map((skill) => skill.name);
+    return (
+      <h3
+        className="grid items-center border-b bg-background px-3 pt-2.5 pb-1 text-xs font-medium text-muted-foreground"
+        style={{ gridTemplateColumns }}
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="truncate">{group}</span>
+          <span className="text-muted-foreground/70">
+            {allOn ? skills.length : `${enabledCount}/${skills.length}`}
+          </span>
+        </span>
+        <span />
+        <span />
+        <div className="flex justify-center">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={allOn ? true : mixed ? "mixed" : false}
+            aria-label={`All ${group} skills enabled`}
+            onClick={() => onSetEnabled(targets, !allOn, group)}
+            disabled={togglingSkillName !== null}
+            title={`${allOn ? "Disable" : "Enable"} ${targets.length} skills for every agent`}
+            className="rounded-full p-0.5 disabled:cursor-default disabled:opacity-50"
+          >
+            {togglingGroupKey === group ? (
+              <Spinner />
+            ) : (
+              <SwitchTrack on={allOn} mixed={mixed} />
+            )}
+          </button>
+        </div>
+        <span />
+      </h3>
     );
   };
 
@@ -266,7 +290,7 @@ export function InstalledSkillsTable({
       type="button"
       onClick={() => setSort(key)}
       aria-pressed={sort === key}
-      className={`hover:text-foreground uppercase ${sort === key ? "text-foreground" : ""} ${className}`}
+      className={`uppercase hover:text-foreground ${sort === key ? "text-foreground" : ""} ${className}`}
     >
       {SORT_LABELS[key]}
       {sort === key ? (key === "name" ? " ↑" : " ↓") : ""}
@@ -277,7 +301,7 @@ export function InstalledSkillsTable({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="mb-3 flex items-center gap-3">
         <div className="relative w-72">
-          <Search className="text-muted-foreground absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
+          <Search className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Filter skills…"
             value={query}
@@ -287,7 +311,7 @@ export function InstalledSkillsTable({
             className="h-8 pl-8 text-sm"
           />
         </div>
-        <span className="text-muted-foreground text-xs">
+        <span className="text-xs text-muted-foreground">
           {shown === total ? `${total} skills` : `${shown} of ${total} skills`}
           {neverUsed === null ? null : ` · ${neverUsed} never used`}
           {usage?.since
@@ -316,36 +340,25 @@ export function InstalledSkillsTable({
 
       <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border">
         <div
-          className="bg-muted/60 text-muted-foreground sticky top-0 z-10 grid items-center border-b px-3 py-1.5 text-[11px] font-medium tracking-wide uppercase backdrop-blur"
+          className="sticky top-0 z-10 grid items-center border-b bg-muted/60 px-3 py-1.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase backdrop-blur"
           style={{ gridTemplateColumns }}
         >
           {sortHeader("name", "text-left")}
           {sortHeader("uses", "text-right")}
           {sortHeader("last-used", "pl-3 text-left")}
-          {agents.map((agent) => (
-            <span key={agent.id} className="text-center">
-              {agent.name}
-            </span>
-          ))}
+          <span className="text-center">Enabled</span>
           <span />
         </div>
 
         {shown === 0 ? (
-          <p className="text-muted-foreground px-3 py-6 text-center text-sm">
+          <p className="px-3 py-6 text-center text-sm text-muted-foreground">
             {query ? `No skills match “${query}”.` : "No skills to show."}
           </p>
         ) : null}
 
         {sections.map(([group, skills]) => (
           <section key={group ?? "all"}>
-            {group === null ? null : (
-              <h3 className="bg-background text-muted-foreground flex items-center gap-2 border-b px-3 pt-2.5 pb-1 text-xs font-medium">
-                {group}
-                <span className="text-muted-foreground/70">
-                  {skills.length}
-                </span>
-              </h3>
-            )}
+            {group === null ? null : renderGroupHeader(group, skills)}
             {skills.map((skill) => renderRow(skill, group))}
           </section>
         ))}

@@ -40,17 +40,12 @@ export function SkillsManagerPanel() {
   const [uninstallingSkillName, setUninstallingSkillName] = useState<
     string | null
   >(null);
-  const [togglingAgentId, setTogglingAgentId] = useState<string | null>(null);
-  const [detectedAgents, setDetectedAgents] = useState<string[]>([]);
+  const [togglingSkillName, setTogglingSkillName] = useState<string | null>(
+    null,
+  );
+  const [togglingGroupKey, setTogglingGroupKey] = useState<string | null>(null);
 
   const { addToast } = useToastStore();
-  useEffect(() => {
-    skillsClient
-      .getDetectedAgents()
-      .then(setDetectedAgents)
-      .catch(console.error);
-  }, []);
-
   useEffect(() => {
     let cancelled = false;
     const loadSkills = async () => {
@@ -145,32 +140,50 @@ export function SkillsManagerPanel() {
     }
   };
 
-  const handleToggleAgent = async (
-    skillSource: string,
-    skillName: string,
-    agentId: string,
-    currentlyEnabled: boolean,
+  // Disabling moves the skill out of ~/.agents/skills, so it is off for every
+  // agent at once. Runs one skill at a time: each move rewrites the shared
+  // lock file, and parallel writes would drop entries. Rows spin in turn.
+  const handleSetEnabled = async (
+    skillNames: string[],
+    enabled: boolean,
+    groupKey: string | null,
   ) => {
-    const toggleKey = `${skillName}-${agentId}`;
-    if (togglingAgentId) return;
-    setTogglingAgentId(toggleKey);
-    try {
-      if (currentlyEnabled) {
-        await skillsClient.disableSkillForAgent(skillName, agentId);
-        addToast(`Disabled ${skillName} for ${agentId}`, "success");
-      } else {
-        await skillsClient.enableSkillForAgent(skillSource, skillName, agentId);
-        addToast(`Enabled ${skillName} for ${agentId}`, "success");
+    if (togglingSkillName || skillNames.length === 0) return;
+    setTogglingGroupKey(groupKey);
+    const failed: string[] = [];
+    for (const name of skillNames) {
+      setTogglingSkillName(name);
+      try {
+        await skillsClient.setSkillEnabled(name, enabled);
+      } catch (error_: unknown) {
+        console.error(error_);
+        failed.push(
+          error_ instanceof Error && skillNames.length === 1
+            ? error_.message
+            : name,
+        );
       }
-      fetchInstalledSkills();
-    } catch (error_: unknown) {
+    }
+    setTogglingSkillName(null);
+    setTogglingGroupKey(null);
+    const verb = enabled ? "Enabled" : "Disabled";
+    const done = skillNames.length - failed.length;
+    if (failed.length === 0) {
       addToast(
-        error_ instanceof Error ? error_.message : "Failed to toggle agent",
+        skillNames.length === 1
+          ? `${verb} ${skillNames[0]}`
+          : `${verb} ${done} skills`,
+        "success",
+      );
+    } else {
+      addToast(
+        skillNames.length === 1
+          ? (failed[0] ?? "Failed")
+          : `${verb} ${done} of ${skillNames.length}; failed: ${failed.join(", ")}`,
         "error",
       );
-    } finally {
-      setTogglingAgentId(null);
     }
+    fetchInstalledSkills();
   };
 
   const groupedInstalledSkills = useMemo(() => {
@@ -383,17 +396,12 @@ export function SkillsManagerPanel() {
             ) : (
               <InstalledSkillsTable
                 groups={groupedInstalledSkills}
-                detectedAgents={detectedAgents}
-                togglingAgentId={togglingAgentId}
-                uninstallingSkillName={uninstallingSkillName}
-                onToggleAgent={(skillPath, skillName, agentId, isEnabled) =>
-                  void handleToggleAgent(
-                    skillPath,
-                    skillName,
-                    agentId,
-                    isEnabled,
-                  )
+                togglingSkillName={togglingSkillName}
+                togglingGroupKey={togglingGroupKey}
+                onSetEnabled={(skillNames, enabled, groupKey) =>
+                  void handleSetEnabled(skillNames, enabled, groupKey)
                 }
+                uninstallingSkillName={uninstallingSkillName}
                 onUninstall={(skillName) => void handleUninstall(skillName)}
                 usage={skillUsage}
               />

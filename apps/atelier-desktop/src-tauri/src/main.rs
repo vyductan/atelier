@@ -28,6 +28,7 @@ use features::skills::commands::{
     get_installed_skills, install_skill, search_skills, uninstall_skill, enable_skill_for_agent, disable_skill_for_agent,
     get_detected_agents, get_skill_usage,
 };
+use features::skills::disable::{disable_skill, enable_skill, list_disabled_skills};
 use features::services::commands::{
     get_services_order, list_services, open_services_config, read_service_log, restart_service,
     save_services_order, start_service, stop_service,
@@ -90,6 +91,9 @@ fn main() {
             disable_skill_for_agent,
             get_detected_agents,
             get_skill_usage,
+            disable_skill,
+            enable_skill,
+            list_disabled_skills,
             list_services,
             start_service,
             stop_service,

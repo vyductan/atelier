@@ -6,6 +6,9 @@ import {
   disableSkillForAgent as disableSkillForAgentTauri,
   getDetectedAgents as getDetectedAgentsTauri,
   getSkillUsage as getSkillUsageTauri,
+  disableSkill as disableSkillTauri,
+  enableSkill as enableSkillTauri,
+  listDisabledSkills as listDisabledSkillsTauri,
 } from "./tauri";
 
 export interface Skill {
@@ -50,6 +53,8 @@ export interface InstalledSkill {
   source?: string;
   installedAt?: string;
   updatedAt?: string;
+  /** Moved to ~/.agents/skills-disabled: hidden from every agent. */
+  disabled?: boolean;
 }
 
 export const skillsClient = {
@@ -76,9 +81,25 @@ export const skillsClient = {
 
   async getInstalledSkills(): Promise<InstalledSkill[]> {
     try {
-      const resultString = await getInstalledSkillsTauri();
-      if (!resultString) return [];
-      return JSON.parse(resultString) as InstalledSkill[];
+      const [resultString, disabled] = await Promise.all([
+        getInstalledSkillsTauri(),
+        listDisabledSkillsTauri(),
+      ]);
+      const installed = resultString ? (JSON.parse(resultString) as InstalledSkill[]) : [];
+      // `skills ls` no longer sees disabled skills, so they come from disk.
+      return [
+        ...installed,
+        ...disabled.map((skill) => ({
+          name: skill.name,
+          path: skill.path,
+          scope: "global",
+          agents: [],
+          source: skill.source ?? undefined,
+          installedAt: skill.installedAt ?? undefined,
+          updatedAt: skill.updatedAt ?? undefined,
+          disabled: true,
+        })),
+      ];
     } catch (error) {
       throw new Error(`Failed to get installed skills: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
@@ -105,6 +126,14 @@ export const skillsClient = {
       await disableSkillForAgentTauri(skillName, agentName);
     } catch (error) {
       throw new Error(`Failed to disable skill for agent: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    }
+  },
+
+  async setSkillEnabled(skillName: string, enabled: boolean): Promise<void> {
+    try {
+      await (enabled ? enableSkillTauri(skillName) : disableSkillTauri(skillName));
+    } catch (error) {
+      throw new Error(`Failed to ${enabled ? "enable" : "disable"} ${skillName}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
   },
 
