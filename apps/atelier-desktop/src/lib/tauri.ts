@@ -436,6 +436,24 @@ export async function listDisabledSkills(): Promise<DisabledSkill[]> {
   return await invoke<DisabledSkill[]>("list_disabled_skills");
 }
 
+/** Mirrors `AgentStates` in src-tauri/src/features/skills/agent_toggle.rs. */
+export interface SkillAgentStates {
+  agents: { id: string; name: string }[];
+  /** skill → agent id → state; a missing agent has no entry for the skill. */
+  skills: Record<string, Record<string, "on" | "off">>;
+  parked: { name: string; path: string }[];
+}
+
+export async function getSkillAgentStates(): Promise<SkillAgentStates> {
+  ensureTauri();
+  return await invoke<SkillAgentStates>("get_skill_agent_states");
+}
+
+export async function setSkillForAgent(skillName: string, agentId: string, enabled: boolean): Promise<void> {
+  ensureTauri();
+  return await invoke<void>("set_skill_for_agent", { skillName, agentId, enabled });
+}
+
 export async function getDetectedAgents(): Promise<string[]> {
   ensureTauri();
   return await invoke<string[]>("get_detected_agents");

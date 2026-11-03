@@ -26,7 +26,7 @@ fn agents_dir() -> Result<PathBuf, String> {
 }
 
 /// The name becomes a path segment, so it must be exactly one.
-fn check_name(name: &str) -> Result<(), String> {
+pub(super) fn check_name(name: &str) -> Result<(), String> {
     if name.is_empty()
         || name.starts_with('.')
         || name.contains('/')
@@ -280,9 +280,9 @@ mod tests {
         assert!(check_name("grill-with-docs").is_ok());
     }
 
-    /// The only test that touches HOME, so it cannot race another test.
     #[test]
     fn disable_then_enable_round_trips_folder_lock_and_links() {
+        let _home_guard = crate::features::skills::TEST_HOME.lock().unwrap();
         use std::os::unix::fs::symlink;
         let home = std::env::temp_dir().join(format!("atelier-disable-{}", std::process::id()));
         let _ = fs::remove_dir_all(&home);

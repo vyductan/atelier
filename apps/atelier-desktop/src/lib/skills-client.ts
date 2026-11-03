@@ -9,6 +9,8 @@ import {
   disableSkill as disableSkillTauri,
   enableSkill as enableSkillTauri,
   listDisabledSkills as listDisabledSkillsTauri,
+  getSkillAgentStates,
+  setSkillForAgent as setSkillForAgentTauri,
 } from "./tauri";
 
 export interface Skill {
@@ -55,6 +57,16 @@ export interface InstalledSkill {
   updatedAt?: string;
   /** Moved to ~/.agents/skills-disabled: hidden from every agent. */
   disabled?: boolean;
+  /** Lives in skills.sh's store, so the all-agents switch applies to it. */
+  inStore: boolean;
+  /** agent id → "on" | "off"; a missing agent has no entry for this skill. */
+  agentStates: Record<string, "on" | "off">;
+}
+
+export interface InstalledSkillsResult {
+  skills: InstalledSkill[];
+  /** Agents installed on this machine, one table column each. */
+  agents: { id: string; name: string }[];
 }
 
 export const skillsClient = {
@@ -79,15 +91,24 @@ export const skillsClient = {
     return await getSkillUsageTauri();
   },
 
-  async getInstalledSkills(): Promise<InstalledSkill[]> {
+  async getInstalledSkills(): Promise<InstalledSkillsResult> {
     try {
-      const [resultString, disabled] = await Promise.all([
+      const [resultString, disabled, states] = await Promise.all([
         getInstalledSkillsTauri(),
         listDisabledSkillsTauri(),
+        getSkillAgentStates(),
       ]);
-      const installed = resultString ? (JSON.parse(resultString) as InstalledSkill[]) : [];
-      // `skills ls` no longer sees disabled skills, so they come from disk.
-      return [
+      const installed = resultString
+        ? (JSON.parse(resultString) as Omit<InstalledSkill, "inStore" | "agentStates">[])
+        : [];
+      const withStates = (skill: Omit<InstalledSkill, "inStore" | "agentStates">): InstalledSkill => ({
+        ...skill,
+        inStore: skill.path.includes("/.agents/skills/") || skill.disabled === true,
+        agentStates: states.skills[skill.name] ?? {},
+      });
+      // `skills ls` no longer sees disabled or parked skills, so they come from disk.
+      const listed = new Set([...installed.map((s) => s.name), ...disabled.map((s) => s.name)]);
+      const skills = [
         ...installed,
         ...disabled.map((skill) => ({
           name: skill.name,
@@ -99,7 +120,11 @@ export const skillsClient = {
           updatedAt: skill.updatedAt ?? undefined,
           disabled: true,
         })),
-      ];
+        ...states.parked
+          .filter((skill) => !listed.has(skill.name))
+          .map((skill) => ({ name: skill.name, path: skill.path, scope: "global", agents: [] })),
+      ].map(withStates);
+      return { skills, agents: states.agents };
     } catch (error) {
       throw new Error(`Failed to get installed skills: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
@@ -134,6 +159,14 @@ export const skillsClient = {
       await (enabled ? enableSkillTauri(skillName) : disableSkillTauri(skillName));
     } catch (error) {
       throw new Error(`Failed to ${enabled ? "enable" : "disable"} ${skillName}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    }
+  },
+
+  async setSkillForAgent(skillName: string, agentId: string, enabled: boolean): Promise<void> {
+    try {
+      await setSkillForAgentTauri(skillName, agentId, enabled);
+    } catch (error) {
+      throw new Error(`Failed to ${enabled ? "enable" : "disable"} ${skillName} for ${agentId}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
   },
 

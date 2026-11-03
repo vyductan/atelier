@@ -54,13 +54,39 @@ function SwitchTrack({ on, mixed = false }: { on: boolean; mixed?: boolean }) {
   );
 }
 
+/** The switch column that turns a skill off for every agent at once. */
+const ALL = "all";
+
+/**
+ * A skill's switch in one column, or null when that column does not apply:
+ * "all" only moves skills that live in skills.sh's store, and an agent
+ * column only parks an entry the agent actually has (and not while the
+ * skill is off for everyone).
+ */
+function cellState(skill: InstalledSkill, column: string): boolean | null {
+  if (column === ALL) return skill.inStore ? !skill.disabled : null;
+  if (skill.disabled) return null;
+  const state = skill.agentStates[column];
+  return state === undefined ? null : state === "on";
+}
+
+function cellUnavailableReason(skill: InstalledSkill, column: string): string {
+  if (column === ALL)
+    return "Not managed by skills.sh: turn it off in its agent's column.";
+  if (skill.disabled) return "Off for every agent.";
+  return "This agent has no entry for this skill.";
+}
+
 interface InstalledSkillsTableProps {
   groups: [string, InstalledSkill[]][];
+  agents: { id: string; name: string }[];
+  /** `${skill}:${column}` while that cell's toggle runs. */
   togglingSkillName: string | null;
-  /** The group name while its whole-group toggle runs. */
+  /** `${group}:${column}` while a whole-group toggle runs. */
   togglingGroupKey: string | null;
   onSetEnabled: (
     skillNames: string[],
+    column: string,
     enabled: boolean,
     groupKey: string | null,
   ) => void;
@@ -82,6 +108,7 @@ const SORT_LABELS: Record<SkillSort, string> = {
  */
 export function InstalledSkillsTable({
   groups,
+  agents,
   togglingSkillName,
   togglingGroupKey,
   onSetEnabled,
@@ -147,7 +174,52 @@ export function InstalledSkillsTable({
     (sum, [, skills]) => sum + skills.length,
     0,
   );
-  const gridTemplateColumns = `minmax(0, 1fr) 3.5rem 5rem 5rem 2rem`;
+  const columns = [
+    ...agents.map((agent) => ({ id: agent.id, name: agent.name })),
+    { id: ALL, name: "All agents" },
+  ];
+  const gridTemplateColumns = `minmax(0, 1fr) 3.5rem 5rem repeat(${columns.length}, 6rem) 2rem`;
+
+  const renderSwitch = ({
+    on,
+    mixed = false,
+    spinning,
+    label,
+    title,
+    onToggle,
+  }: {
+    on: boolean;
+    mixed?: boolean;
+    spinning: boolean;
+    label: string;
+    title: string;
+    onToggle: () => void;
+  }) => (
+    <div className="flex justify-center">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on ? true : mixed ? "mixed" : false}
+        aria-label={label}
+        onClick={onToggle}
+        disabled={togglingSkillName !== null}
+        title={title}
+        className="rounded-full p-0.5 disabled:cursor-default disabled:opacity-50"
+      >
+        {spinning ? <Spinner /> : <SwitchTrack on={on} mixed={mixed} />}
+      </button>
+    </div>
+  );
+
+  const renderUnavailable = (key: string, title: string) => (
+    <span
+      key={key}
+      className="text-center text-xs text-muted-foreground/50"
+      title={title}
+    >
+      –
+    </span>
+  );
 
   const renderRow = (skill: InstalledSkill, group: string | null) => {
     const isUninstalling = uninstallingSkillName === skill.name;
@@ -155,6 +227,10 @@ export function InstalledSkillsTable({
     // Dim only once usage has loaded, so a slow scan does not flash everything gray.
     const isUnused = usage !== null && !skillUsage;
     const isEnabled = !skill.disabled;
+    const reachesNoAgent =
+      !isEnabled ||
+      (Object.keys(skill.agentStates).length > 0 &&
+        Object.values(skill.agentStates).every((state) => state === "off"));
     return (
       <div
         key={skill.path}
@@ -162,7 +238,7 @@ export function InstalledSkillsTable({
         style={{ gridTemplateColumns }}
       >
         <div
-          className={`flex min-w-0 items-baseline gap-2 ${isUnused || !isEnabled ? "opacity-50" : ""} ${isEnabled ? "" : "line-through decoration-muted-foreground/50"}`}
+          className={`flex min-w-0 items-baseline gap-2 ${isUnused || reachesNoAgent ? "opacity-50" : ""} ${isEnabled ? "" : "line-through decoration-muted-foreground/50"}`}
           title={formatDates(skill)}
         >
           <span className="truncate text-sm font-medium">{skill.name}</span>
@@ -194,31 +270,33 @@ export function InstalledSkillsTable({
           {usage ? formatLastUsed(skillUsage?.lastUsed, now) : "–"}
         </span>
 
-        <div className="flex justify-center">
-          <button
-            type="button"
-            role="switch"
-            aria-checked={isEnabled}
-            aria-label={`${skill.name} enabled`}
-            onClick={() => onSetEnabled([skill.name], !isEnabled, null)}
-            disabled={togglingSkillName !== null}
-            title={
-              isEnabled
-                ? "Disable for every agent (moves it to ~/.agents/skills-disabled)"
-                : "Enable for every agent"
-            }
-            className="rounded-full p-0.5 disabled:cursor-default disabled:opacity-50"
-          >
-            {togglingSkillName === skill.name ? (
-              <Spinner />
-            ) : (
-              <SwitchTrack on={isEnabled} />
-            )}
-          </button>
-        </div>
+        {columns.map((column) => {
+          const on = cellState(skill, column.id);
+          if (on === null)
+            return renderUnavailable(
+              column.id,
+              cellUnavailableReason(skill, column.id),
+            );
+          return (
+            <div key={column.id}>
+              {renderSwitch({
+                on,
+                spinning: togglingSkillName === `${skill.name}:${column.id}`,
+                label: `${skill.name} for ${column.name}`,
+                title:
+                  column.id === ALL
+                    ? on
+                      ? "Turn off for every agent (moves it to ~/.agents/skills-disabled)"
+                      : "Turn on for every agent"
+                    : `${on ? "Turn off" : "Turn on"} for ${column.name} only`,
+                onToggle: () => onSetEnabled([skill.name], column.id, !on, null),
+              })}
+            </div>
+          );
+        })}
 
-        {/* `skills rm` cannot see a disabled skill; enable it first. */}
-        {skill.disabled ? (
+        {/* `skills rm` cannot see a skill no agent can reach; turn it on first. */}
+        {reachesNoAgent ? (
           <span />
         ) : (
           <button
@@ -242,48 +320,47 @@ export function InstalledSkillsTable({
 
   // Acts on the skills the section shows, so a filter narrows what it flips.
   // Fully on → turn all off; off or mixed → turn the rest on.
-  const renderGroupHeader = (group: string, skills: InstalledSkill[]) => {
-    const enabledCount = skills.filter((skill) => !skill.disabled).length;
-    const allOn = enabledCount === skills.length;
-    const mixed = enabledCount > 0 && !allOn;
-    const targets = skills
-      .filter((skill) => (allOn ? true : skill.disabled))
-      .map((skill) => skill.name);
-    return (
-      <h3
-        className="grid items-center border-b bg-background px-3 pt-2.5 pb-1 text-xs font-medium text-muted-foreground"
-        style={{ gridTemplateColumns }}
-      >
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="truncate">{group}</span>
-          <span className="text-muted-foreground/70">
-            {allOn ? skills.length : `${enabledCount}/${skills.length}`}
-          </span>
-        </span>
-        <span />
-        <span />
-        <div className="flex justify-center">
-          <button
-            type="button"
-            role="switch"
-            aria-checked={allOn ? true : mixed ? "mixed" : false}
-            aria-label={`All ${group} skills enabled`}
-            onClick={() => onSetEnabled(targets, !allOn, group)}
-            disabled={togglingSkillName !== null}
-            title={`${allOn ? "Disable" : "Enable"} ${targets.length} skills for every agent`}
-            className="rounded-full p-0.5 disabled:cursor-default disabled:opacity-50"
-          >
-            {togglingGroupKey === group ? (
-              <Spinner />
-            ) : (
-              <SwitchTrack on={allOn} mixed={mixed} />
-            )}
-          </button>
-        </div>
-        <span />
-      </h3>
-    );
-  };
+  const renderGroupHeader = (group: string, skills: InstalledSkill[]) => (
+    <h3
+      className="grid items-center border-b bg-background px-3 pt-2.5 pb-1 text-xs font-medium text-muted-foreground"
+      style={{ gridTemplateColumns }}
+    >
+      <span className="flex min-w-0 items-center gap-2">
+        <span className="truncate">{group}</span>
+        <span className="text-muted-foreground/70">{skills.length}</span>
+      </span>
+      <span />
+      <span />
+      {columns.map((column) => {
+        const applicable = skills.filter(
+          (skill) => cellState(skill, column.id) !== null,
+        );
+        if (applicable.length === 0) return <span key={column.id} />;
+        const onCount = applicable.filter((skill) =>
+          cellState(skill, column.id),
+        ).length;
+        const allOn = onCount === applicable.length;
+        const targets = applicable
+          .filter((skill) => allOn || !cellState(skill, column.id))
+          .map((skill) => skill.name);
+        const groupKey = `${group}:${column.id}`;
+        return (
+          <div key={column.id}>
+            {renderSwitch({
+              on: allOn,
+              mixed: onCount > 0 && !allOn,
+              spinning: togglingGroupKey === groupKey,
+              label: `All ${group} skills for ${column.name}`,
+              title: `${allOn ? "Turn off" : "Turn on"} ${targets.length} for ${column.name} (${onCount}/${applicable.length} on)`,
+              onToggle: () =>
+                onSetEnabled(targets, column.id, !allOn, groupKey),
+            })}
+          </div>
+        );
+      })}
+      <span />
+    </h3>
+  );
 
   const sortHeader = (key: SkillSort, className = "") => (
     <button
@@ -346,7 +423,11 @@ export function InstalledSkillsTable({
           {sortHeader("name", "text-left")}
           {sortHeader("uses", "text-right")}
           {sortHeader("last-used", "pl-3 text-left")}
-          <span className="text-center">Enabled</span>
+          {columns.map((column) => (
+            <span key={column.id} className="text-center">
+              {column.name}
+            </span>
+          ))}
           <span />
         </div>
 

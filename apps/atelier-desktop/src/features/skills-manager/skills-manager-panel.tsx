@@ -34,6 +34,9 @@ export function SkillsManagerPanel() {
 
   // Installed state
   const [installedSkills, setInstalledSkills] = useState<InstalledSkill[]>([]);
+  const [skillAgents, setSkillAgents] = useState<{ id: string; name: string }[]>(
+    [],
+  );
   const [skillUsage, setSkillUsage] = useState<SkillUsageReport | null>(null);
   const [isLoadingInstalled, setIsLoadingInstalled] = useState(false);
   const [installedError, setInstalledError] = useState<string | null>(null);
@@ -87,8 +90,9 @@ export function SkillsManagerPanel() {
         console.error("Failed to count skill usage:", error);
       });
     try {
-      const fetchedSkills = await skillsClient.getInstalledSkills();
-      setInstalledSkills(fetchedSkills);
+      const fetched = await skillsClient.getInstalledSkills();
+      setInstalledSkills(fetched.skills);
+      setSkillAgents(fetched.agents);
     } catch (error_) {
       setInstalledError("Failed to load installed skills.");
       console.error(error_);
@@ -140,11 +144,13 @@ export function SkillsManagerPanel() {
     }
   };
 
-  // Disabling moves the skill out of ~/.agents/skills, so it is off for every
-  // agent at once. Runs one skill at a time: each move rewrites the shared
-  // lock file, and parallel writes would drop entries. Rows spin in turn.
+  // column "all" moves the skill out of ~/.agents/skills (off for every
+  // agent); an agent id parks only that agent's entry. Runs one skill at a
+  // time: an all-agents move rewrites the shared lock file, and parallel
+  // writes would drop entries. Cells spin in turn, keyed `${name}:${column}`.
   const handleSetEnabled = async (
     skillNames: string[],
+    column: string,
     enabled: boolean,
     groupKey: string | null,
   ) => {
@@ -152,9 +158,11 @@ export function SkillsManagerPanel() {
     setTogglingGroupKey(groupKey);
     const failed: string[] = [];
     for (const name of skillNames) {
-      setTogglingSkillName(name);
+      setTogglingSkillName(`${name}:${column}`);
       try {
-        await skillsClient.setSkillEnabled(name, enabled);
+        await (column === "all"
+          ? skillsClient.setSkillEnabled(name, enabled)
+          : skillsClient.setSkillForAgent(name, column, enabled));
       } catch (error_: unknown) {
         console.error(error_);
         failed.push(
@@ -166,7 +174,8 @@ export function SkillsManagerPanel() {
     }
     setTogglingSkillName(null);
     setTogglingGroupKey(null);
-    const verb = enabled ? "Enabled" : "Disabled";
+    const agentName = skillAgents.find((agent) => agent.id === column)?.name;
+    const verb = `${enabled ? "Enabled" : "Disabled"}${agentName ? ` for ${agentName}:` : ""}`;
     const done = skillNames.length - failed.length;
     if (failed.length === 0) {
       addToast(
@@ -396,10 +405,11 @@ export function SkillsManagerPanel() {
             ) : (
               <InstalledSkillsTable
                 groups={groupedInstalledSkills}
+                agents={skillAgents}
                 togglingSkillName={togglingSkillName}
                 togglingGroupKey={togglingGroupKey}
-                onSetEnabled={(skillNames, enabled, groupKey) =>
-                  void handleSetEnabled(skillNames, enabled, groupKey)
+                onSetEnabled={(skillNames, column, enabled, groupKey) =>
+                  void handleSetEnabled(skillNames, column, enabled, groupKey)
                 }
                 uninstallingSkillName={uninstallingSkillName}
                 onUninstall={(skillName) => void handleUninstall(skillName)}
