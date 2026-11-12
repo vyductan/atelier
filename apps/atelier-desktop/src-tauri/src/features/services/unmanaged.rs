@@ -8,6 +8,28 @@ use std::time::{Duration, Instant};
 const GRACE: Duration = Duration::from_secs(5);
 const AFTER_KILL: Duration = Duration::from_secs(2);
 
+/// Container runtimes that forward container ports to the Mac. The process
+/// listening on such a port is the runtime itself, not the service: signalling
+/// it stops the runtime and every container in it.
+const CONTAINER_RUNTIMES: &[(&str, &str)] = &[
+    ("/OrbStack.app/", "OrbStack"),
+    ("/Docker.app/", "Docker Desktop"),
+    ("com.docker.", "Docker Desktop"),
+    ("vpnkit", "Docker Desktop"),
+    ("colima", "Colima"),
+    ("limactl", "Lima"),
+    ("/Podman Desktop.app/", "Podman"),
+    ("gvproxy", "Podman"),
+];
+
+/// Names the container runtime an executable belongs to, if any.
+pub fn container_runtime(exe: &str) -> Option<&'static str> {
+    CONTAINER_RUNTIMES
+        .iter()
+        .find(|(needle, _)| exe.contains(needle))
+        .map(|(_, name)| *name)
+}
+
 /// Process group leaders that must never be signalled as a group: signalling
 /// a shell's group would take the user's terminal session (or more) with it.
 const PROTECTED_LEADERS: &[&str] = &[
@@ -92,6 +114,13 @@ pub fn is_listening(port: u16) -> bool {
 /// and fail if the port is still taken.
 pub fn stop(port: u16) -> Result<(), String> {
     let pid = listener_pid(port).ok_or_else(|| format!("nothing is listening on port {}", port))?;
+    if let Some(runtime) = ps_field(pid, "comm").as_deref().and_then(container_runtime) {
+        return Err(format!(
+            "port {} is forwarded by {} from a container; stopping it would stop {} and every container. \
+             Stop the service with its own command (add `stop_cmd` in services.yaml) instead",
+            port, runtime, runtime
+        ));
+    }
     let pgid: u32 = ps_field(pid, "pgid")
         .and_then(|value| value.parse().ok())
         .unwrap_or(0);
@@ -129,6 +158,21 @@ mod tests {
         assert_eq!(choose_target(42, 40, 500, Some("/opt/homebrew/bin/fish")), KillTarget::Process(42));
         assert_eq!(choose_target(42, 1, 500, Some("launchd")), KillTarget::Process(42));
         assert_eq!(choose_target(42, 0, 500, None), KillTarget::Process(42));
+    }
+
+    #[test]
+    fn recognises_container_runtime_port_forwarders() {
+        assert_eq!(
+            container_runtime("/Applications/OrbStack.app/Contents/Frameworks/OrbStack Helper.app/Contents/MacOS/OrbStack Helper"),
+            Some("OrbStack")
+        );
+        assert_eq!(
+            container_runtime("/Applications/Docker.app/Contents/MacOS/com.docker.backend"),
+            Some("Docker Desktop")
+        );
+        assert_eq!(container_runtime("/opt/homebrew/bin/limactl"), Some("Lima"));
+        assert_eq!(container_runtime("/opt/homebrew/bin/node"), None);
+        assert_eq!(container_runtime("/usr/libexec/rapportd"), None);
     }
 
     #[test]

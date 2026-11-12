@@ -259,11 +259,16 @@ function ServiceRow({
     // Stopping something Atelier did not start signals a process the user
     // launched elsewhere (often a terminal), so ask first.
     if (health === "unmanaged" && kind !== "start") {
+      // With a stop_cmd the backend runs it instead of signalling the port's
+      // holder (often a container runtime), so say which command will run.
+      const how = def.stop_cmd
+        ? `Run \`${def.stop_cmd}\``
+        : "Stop that process";
       const confirmed = await ask(
         `${def.name ?? def.id} is running outside Atelier (pid ${pid ?? "?"}). ` +
           (kind === "stop"
-            ? "Stop that process?"
-            : "Stop it and restart it under Atelier?"),
+            ? `${how}?`
+            : `${how} and restart it under Atelier?`),
         {
           title: kind === "stop" ? "Stop process" : "Restart under Atelier",
           kind: "warning",

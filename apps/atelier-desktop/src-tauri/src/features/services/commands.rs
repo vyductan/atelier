@@ -163,8 +163,14 @@ fn unmanaged_port(def: &ServiceDef) -> Option<u16> {
 
 /// Stops the service however it runs: Atelier's own job is booted out, a
 /// process outside Atelier is signalled through its process group.
+///
+/// A `stop_cmd` wins even when the service runs outside Atelier: services
+/// that have one (`supabase stop`) start detached work, usually containers,
+/// and the process holding their port is then the container runtime's port
+/// forwarder. Signalling it stopped OrbStack and every container with it.
 fn stop_any(def: &ServiceDef) -> Result<(), String> {
     match unmanaged_port(def) {
+        Some(_) if def.stop_cmd.is_some() => launchd::stop(def),
         Some(port) => unmanaged::stop(port),
         None => launchd::stop(def),
     }
