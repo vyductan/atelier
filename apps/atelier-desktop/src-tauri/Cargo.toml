@@ -38,6 +38,7 @@ fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs", version 
 reqwest = { version = "0.12", features = ["json"] }
 serde_yaml = "0.9"
 base64 = "0.22"
+tauri-plugin-window-state = "2"
 
 [features]
 # This feature is used for production builds or when `devPath` points to the filesystem
