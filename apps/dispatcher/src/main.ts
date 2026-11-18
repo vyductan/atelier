@@ -30,12 +30,34 @@ interface FileConfig extends Config {
   ombCli: string;
   ombPort: number;
   intervalSeconds: number;
+  /** Phone notifications. The topic is a secret (anyone who knows it can read), so it lives in a file. */
+  ntfy?: { server: string; topicFile: string; clickUrl?: string };
 }
+
+const expand = (p: string) => p.replace(/^~(?=\/)/, homedir());
 
 function loadConfig(): FileConfig {
   const c = JSON.parse(readFileSync(join(DIR, "config.json"), "utf8"));
-  const expand = (p: string) => p.replace(/^~(?=\/)/, homedir());
-  return { ...c, tokenFile: expand(c.tokenFile), ombCli: expand(c.ombCli) };
+  return {
+    ...c,
+    tokenFile: expand(c.tokenFile),
+    ombCli: expand(c.ombCli),
+    ...(c.ntfy ? { ntfy: { ...c.ntfy, topicFile: expand(c.ntfy.topicFile) } } : {}),
+  };
+}
+
+/** ntfy JSON publish (UTF-8 safe, unlike headers). */
+function ntfyNotifier(ntfy: NonNullable<FileConfig["ntfy"]>) {
+  const topic = readFileSync(ntfy.topicFile, "utf8").trim();
+  return async (title: string, message: string) => {
+    const res = await fetch(ntfy.server.replace(/\/$/, ""), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ topic, title, message, tags: ["robot"], ...(ntfy.clickUrl ? { click: ntfy.clickUrl } : {}) }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) throw new Error(`ntfy: HTTP ${res.status}`);
+  };
 }
 
 function loadState(): State {
@@ -79,6 +101,7 @@ function deps(config: FileConfig): Deps {
     workspace: gitWorkspace,
     now: () => new Date(),
     log,
+    ...(config.ntfy ? { notify: ntfyNotifier(config.ntfy) } : {}),
   };
 }
 

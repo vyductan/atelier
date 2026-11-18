@@ -10,5 +10,9 @@
     "CoS": { "ombName": "CoS" }
   },
   "maxRunsPerDay": 5,
-  "approvalNudgeMinutes": 30
+  "approvalNudgeMinutes": 30,
+  "ntfy": {
+    "server": "https://ntfy.sh",
+    "topicFile": "~/.atelier/openmausbot/secrets/ntfy-topic"
+  }
 }

@@ -136,18 +136,49 @@ describe("tick", () => {
     assert.equal(state.paused?.reason, "rate limit");
   });
 
-  it("notes a long wait for approval once, and never approves", async () => {
+  it("pings the phone once per wait, notes a long wait once, and never approves", async () => {
     const w = world([task("bb", "Bot: Dev\none")]);
+    const pings: string[] = [];
+    w.deps.notify = async (title, message) => void pings.push(`${title}|${message}`);
     const state: State = { runs: [] };
     await tick(w.deps, state);
     w.setJob({ status: "running", outcome: null, needsInput: true, result: null });
     await tick(w.deps, state);
+    await tick(w.deps, state);
+    assert.deepEqual(pings, ["Dev chờ duyệt|Task bb"]);
     w.setNow(new Date("2026-11-18T10:31:00Z"));
     await tick(w.deps, state);
     await tick(w.deps, state);
     const nudges = w.store.get("bb")!.description!.match(/đang chờ duyệt/g) ?? [];
     assert.equal(nudges.length, 1);
     assert.equal(w.sent.length, 1);
+    // A new wait after the card was answered pings again.
+    w.setJob({ status: "running", outcome: null, needsInput: false, result: null });
+    await tick(w.deps, state);
+    w.setJob({ status: "running", outcome: null, needsInput: true, result: null });
+    await tick(w.deps, state);
+    assert.equal(pings.length, 2);
+  });
+
+  it("pings when a run finishes, and a failing notifier never breaks the tick", async () => {
+    const w = world([task("bb", "Bot: Dev\none")]);
+    w.deps.notify = async () => {
+      throw new Error("ntfy down");
+    };
+    const state: State = { runs: [] };
+    await tick(w.deps, state);
+    w.setJob({ status: "completed", outcome: "done", needsInput: false, result: null });
+    await tick(w.deps, state);
+    assert.equal(state.runs[0]!.status, "done");
+    const pings: string[] = [];
+    w.deps.notify = async (title) => void pings.push(title);
+    const w2 = world([task("cc", "Bot: Dev\ntwo")]);
+    w2.deps.notify = w.deps.notify;
+    const s2: State = { runs: [] };
+    await tick(w2.deps, s2);
+    w2.setJob({ status: "failed", outcome: "provider_error", needsInput: false, result: null });
+    await tick(w2.deps, s2);
+    assert.deepEqual(pings, ["Dev bị chặn"]);
   });
 
   it("does nothing while paused, past the daily budget, or with a dirty worktree", async () => {

@@ -39,6 +39,8 @@ export interface Run {
   finishedAt?: string;
   waitingSince?: string;
   nudged?: boolean;
+  /** The task title, for notifications. */
+  title?: string;
 }
 
 export interface State {
@@ -58,6 +60,19 @@ export interface Deps {
   workspace: Workspace;
   now: () => Date;
   log: (event: string, data?: Record<string, unknown>) => void;
+  /**
+   * A phone notification (ntfy). Carries only the bot and the task title.
+   * Best effort: a failed notification never fails the tick.
+   */
+  notify?: (title: string, message: string) => Promise<void>;
+}
+
+async function ping(deps: Deps, title: string, message: string): Promise<void> {
+  try {
+    await deps.notify?.(title, message);
+  } catch (error) {
+    deps.log("notify-failed", { message: error instanceof Error ? error.message : String(error) });
+  }
 }
 
 const FINISHED = new Set(["completed", "failed", "cancelled"]);
@@ -102,6 +117,7 @@ export async function settle(deps: Deps, state: State): Promise<void> {
     // OpenMausBot never delivers twice, to recover the thread id.
     const ombName = deps.config.bots[run.bot]?.ombName ?? run.bot;
     const task = await deps.tasks.get(run.taskId);
+    run.title ??= task.title;
     run.threadId = await deps.bots.send(ombName, briefFor(task, run.bot), run.sendId);
     await markSent(deps, run);
     deps.log("recovered", { taskId: run.taskId, threadId: run.threadId });
@@ -113,7 +129,11 @@ export async function settle(deps: Deps, state: State): Promise<void> {
 
   if (!FINISHED.has(job.status)) {
     if (job.needsInput) {
-      run.waitingSince ??= now.toISOString();
+      if (!run.waitingSince) {
+        // Once per wait: the person has to open OpenMausBot to answer it.
+        run.waitingSince = now.toISOString();
+        await ping(deps, `${run.bot} chờ duyệt`, run.title ?? run.taskId);
+      }
       const waited = now.getTime() - new Date(run.waitingSince).getTime();
       if (!run.nudged && waited >= deps.config.approvalNudgeMinutes * 60_000) {
         await comment(deps, run.taskId, `${run.bot} đang chờ duyệt trong OpenMausBot (thread \`${run.threadId}\`) hơn ${deps.config.approvalNudgeMinutes} phút.`);
@@ -141,6 +161,7 @@ export async function settle(deps: Deps, state: State): Promise<void> {
   run.status = ok ? "done" : "failed";
   run.finishedAt = now.toISOString();
   deps.log("finished", { taskId: run.taskId, status: job.status, outcome: job.outcome });
+  await ping(deps, ok ? `${run.bot} xong, chờ review` : `${run.bot} bị chặn`, run.title ?? run.taskId);
 
   if (!ok && RATE_LIMIT.test(`${job.outcome ?? ""} ${reply}`)) {
     state.paused = { reason: "rate limit", at: now.toISOString() };
@@ -181,6 +202,7 @@ export async function tick(deps: Deps, state: State): Promise<void> {
     sendId: `vdt-${next.task.id}-${attempt}`,
     status: "sending",
     startedAt: now.toISOString(),
+    title: next.task.title,
   };
   state.runs.push(run);
   run.threadId = await deps.bots.send(bot.ombName, briefFor(next.task, next.bot), run.sendId);

@@ -19,6 +19,16 @@ this **bridge** hands tasks to them and writes the results back. Spec: the
 Rules: one run at a time (any bot), at most `maxRunsPerDay` runs, only configured
 projects and bots, tasks carrying a `Triage:` line are left alone.
 
+**Only list projects that you alone can write to.** Whoever can write a task in a
+configured project can put `Bot: Dev` on it and have the bot act on its text. Today
+`vyductan` has no member but the owner (checked 2026-11-18); re-check before adding
+a member to it or a project to `projects`.
+
+Phone notifications (optional `ntfy` in config): a ping when a run starts waiting
+on an approval card, when it finishes, and when it is blocked. Only the bot and the
+task title are sent. The topic is read from `topicFile` (it is a secret: anyone who
+knows it can read the stream).
+
 ## Run
 
 No dependencies and no build: Node 26 runs the TypeScript directly.
