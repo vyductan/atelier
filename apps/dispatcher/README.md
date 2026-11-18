@@ -52,6 +52,13 @@ As a service: `atelier-dispatcher` in `~/.atelier/services.yaml`, log
   token (`vdt-bot:dispatcher-bridge`), from `pnpm -F web bot-session create` in
   vyductan.dev. Revoke with `bot-session revoke <id>`.
 - `team/`: the OpenMausBot team (`openmausbot team apply team/team.yaml --port 28799`).
+- `team/settings/<bot>.json`: each bot's hard limits, installed into the bot's cwd as
+  `.claude/settings.json` by `team/install-settings.sh` (OpenMausBot runs claude with
+  `--setting-sources project`, so these deny rules hold whatever the approval level).
+  Edit and review them here, never in place. Path anchors: `~/x` home, `//x` filesystem
+  root, and `/x` is relative to the settings file, so a single-slash absolute path
+  silently matches nothing. Every bot denies Web, `vm_exec` and credential paths
+  (`~/.ssh`, `~/.config`, `~/.claude`, `~/.atelier`, `~/Library`, `.env*`, keys).
 
 Typecheck (borrowing the monorepo's tsc):
 

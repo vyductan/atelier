@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "additionalDirectories": [
+      "~/Developer/g-bots"
+    ],
+    "allow": [
+      "Read(~/Developer/g-bots/**)",
+      "Glob",
+      "Grep"
+    ],
+    "deny": [
+      "Bash",
+      "Edit",
+      "Write",
+      "NotebookEdit",
+      "WebFetch",
+      "WebSearch",
+      "mcp__agents__vm_exec",
+      "mcp__plugin_vercel_vercel",
+      "mcp__plugin_supabase_supabase",
+      "mcp__vyductan-tasks",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.gnupg/**)",
+      "Read(~/.netrc)",
+      "Read(~/.config/**)",
+      "Read(~/.claude/**)",
+      "Read(~/.atelier/**)",
+      "Read(~/.cloudflared/**)",
+      "Read(~/Library/**)",
+      "Read(//Library/Application Support/com.cloudflare.cloudflared/**)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Read(**/id_rsa*)",
+      "Read(**/id_ed25519*)"
+    ]
+  }
+}
