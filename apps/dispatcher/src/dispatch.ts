@@ -10,12 +10,16 @@
 //   no `Triage:` line (that marks human work), in a configured project.
 // - The bridge never approves anything. A run waiting on an approval card is
 //   noted on the task once, then left for the person.
+// - A CoS split plan runs only after the person writes `Plan: approved` and
+//   the plan passes validatePlan; it becomes child tasks, never a direct send.
+//   A child waits until every task on its `Depends:` line is completed.
 
 import { createHash } from "node:crypto";
 
 import type { Bots } from "./omb.ts";
 import type { TaskStore } from "./mcp.ts";
-import { appendComment, botOf, briefFor, hasTriage, localDate, quote, setTriage, type Task } from "./tasks.ts";
+import { childDescription, planBlock, planMark, setPlanMark, validatePlan, type Piece } from "./plan.ts";
+import { appendComment, botOf, briefFor, dependsOn, hasTriage, localDate, quote, setTriage, type Task } from "./tasks.ts";
 
 export interface BotConfig {
   /** The bot's name in OpenMausBot. */
@@ -83,6 +87,8 @@ export interface State {
   runs: Run[];
   /** Routine name → the local date it last ran (or failed to collect). */
   routinesDone?: Record<string, string>;
+  /** Parent task id → plan piece key → child task id, written as each child is created. */
+  plans?: Record<string, Record<string, string>>;
 }
 
 export interface Workspace {
@@ -150,15 +156,103 @@ export function runsToday(state: State, now: Date): number {
   return state.runs.filter((r) => localDate(new Date(r.startedAt)) === today).length;
 }
 
-/** The oldest task the bridge may hand out, with its bot. */
-export function pick(tasks: Task[], config: Config, state: State): { task: Task; bot: string } | null {
-  const eligible = tasks
-    .filter((t) => t.status_code === "todo" && !hasTriage(t.description))
+/** The tasks the bridge may hand out, oldest first, with their bots. */
+export function candidates(tasks: Task[], config: Config, state: State): { task: Task; bot: string }[] {
+  return tasks
+    // A task carrying a plan is the plan's parent: its work happens in the children.
+    .filter((t) => t.status_code === "todo" && !hasTriage(t.description) && planMark(t.description) === null)
     .map((t) => ({ task: t, bot: botOf(t.description) }))
     .filter((c): c is { task: Task; bot: string } => c.bot !== null && c.bot in config.bots)
     .filter((c) => !state.runs.some((r) => r.taskId === c.task.id && (r.status === "sending" || r.status === "sent")))
     .sort((a, b) => a.task.created_at.localeCompare(b.task.created_at));
-  return eligible[0] ?? null;
+}
+
+/** The oldest task the bridge may hand out, ignoring `Depends:` (see readyToRun). */
+export function pick(tasks: Task[], config: Config, state: State): { task: Task; bot: string } | null {
+  return candidates(tasks, config, state)[0] ?? null;
+}
+
+/** True when every task on the `Depends:` line is completed. A missing task counts as not done. */
+async function readyToRun(deps: Deps, task: Task): Promise<boolean> {
+  for (const id of dependsOn(task.description)) {
+    try {
+      if ((await deps.tasks.get(id)).status_code !== "completed") return false;
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Pieces in an order where every dependency comes first (the plan is already known acyclic). */
+function inDependencyOrder(pieces: Piece[]): Piece[] {
+  const out: Piece[] = [];
+  const placed = new Set<string>();
+  while (out.length < pieces.length) {
+    for (const p of pieces) {
+      if (!placed.has(p.key) && p.depends_on.every((d) => placed.has(d))) {
+        out.push(p);
+        placed.add(p.key);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Turns approved plans into child tasks. No model call, so it does not count
+ * against the daily budget. Idempotent per piece: a child already recorded in
+ * state, or already in the todo list for this parent and key, is not created twice.
+ */
+export async function materializePlans(deps: Deps, state: State, todo: Task[]): Promise<void> {
+  for (const parent of todo) {
+    if (planMark(parent.description) !== "approved") continue;
+    if (!parent.project_slug || !deps.config.projects.includes(parent.project_slug)) continue;
+    const date = localDate(deps.now());
+    let description = parent.description ?? "";
+    const raw = planBlock(description);
+    const result = raw === null ? { ok: false as const, errors: ["no ```json block under a \"## Plan\" heading"] } : validatePlan(raw, deps.config);
+
+    if (!result.ok) {
+      description = appendComment(setPlanMark(description, "invalid"), date, `Kế hoạch không hợp lệ, chưa tạo task con nào:\n\n${result.errors.map((e) => `- ${e}`).join("\n")}`);
+      await deps.tasks.update(parent.id, { description });
+      deps.log("plan-invalid", { taskId: parent.id, errors: result.errors.length });
+      await ping(deps, "Kế hoạch CoS không hợp lệ", parent.title);
+      continue;
+    }
+
+    const plan = result.plan;
+    if (plan.verdict !== "split") {
+      const closing = plan.verdict === "close";
+      description = appendComment(setPlanMark(description, "created"), date, `${closing ? "Đóng" : "Cần thêm thông tin"} theo kế hoạch đã duyệt: ${plan.reason}`);
+      if (!closing) description = setTriage(description, "needs-info");
+      await deps.tasks.update(parent.id, { description, status: closing ? "archived" : "blocked" });
+      deps.log("plan-verdict", { taskId: parent.id, verdict: plan.verdict });
+      continue;
+    }
+
+    const made = (state.plans ??= {})[parent.id] ??= {};
+    for (const piece of inDependencyOrder(plan.pieces)) {
+      if (made[piece.key]) continue;
+      const marker = `Part of plan in task ${parent.id} (piece \`${piece.key}\``;
+      const existing = todo.find((t) => t.description?.includes(marker));
+      made[piece.key] =
+        existing?.id ??
+        (await deps.tasks.create({
+          title: piece.title,
+          description: childDescription(piece, parent.id, piece.depends_on.map((d) => made[d]!)),
+          projectSlug: piece.project,
+          parentTaskId: parent.id,
+          status: "todo",
+          type: piece.type ?? "feat",
+        }));
+    }
+    const list = plan.pieces.map((p) => `- \`${p.key}\` → ${made[p.key]} (${p.kind === "human" ? "bạn" : p.bot})`).join("\n");
+    description = appendComment(setPlanMark(description, "created"), date, `Đã tạo ${plan.pieces.length} task con từ kế hoạch:\n\n${list}`);
+    await deps.tasks.update(parent.id, { description, status: "in-progress" });
+    delete state.plans![parent.id];
+    deps.log("plan-created", { taskId: parent.id, pieces: plan.pieces.length });
+  }
 }
 
 async function comment(deps: Deps, taskId: string, text: string, extra: { status?: string; triage?: string } = {}) {
@@ -255,6 +349,10 @@ export async function tick(deps: Deps, state: State): Promise<void> {
   await settle(deps, state);
   if (active(state) || state.paused) return;
 
+  const todo: Task[] = [];
+  for (const project of deps.config.projects) todo.push(...(await deps.tasks.listTodo(project)));
+  await materializePlans(deps, state, todo);
+
   const now = deps.now();
   if (runsToday(state, now) >= deps.config.maxRunsPerDay) {
     deps.log("budget", { runsToday: runsToday(state, now) });
@@ -268,9 +366,13 @@ export async function tick(deps: Deps, state: State): Promise<void> {
     return;
   }
 
-  const todo: Task[] = [];
-  for (const project of deps.config.projects) todo.push(...(await deps.tasks.listTodo(project)));
-  const next = pick(todo, deps.config, state);
+  let next: { task: Task; bot: string } | null = null;
+  for (const c of candidates(todo, deps.config, state)) {
+    if (await readyToRun(deps, c.task)) {
+      next = c;
+      break;
+    }
+  }
   if (!next) return;
 
   const bot = deps.config.bots[next.bot]!;

@@ -20,6 +20,14 @@ export function botOf(description: string | null): string | null {
   return description?.match(BOT_LINE)?.[1] ?? null;
 }
 
+const DEPENDS_LINE = /^Depends:\s*(.+)$/m;
+
+/** Task ids from a `Depends: <id>, <id>` line (written by the bridge for plan pieces). */
+export function dependsOn(description: string | null): string[] {
+  const line = description?.match(DEPENDS_LINE)?.[1];
+  return line ? line.split(",").map((s) => s.trim()).filter(Boolean) : [];
+}
+
 export function hasTriage(description: string | null): boolean {
   return TRIAGE_LINE.test(description ?? "");
 }

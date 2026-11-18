@@ -8,6 +8,17 @@ export interface TaskStore {
   listTodo(projectSlug: string): Promise<Task[]>;
   get(taskId: string): Promise<Task>;
   update(taskId: string, patch: { status?: string; description?: string }): Promise<void>;
+  /** Creates a task and returns its id. */
+  create(input: NewTask): Promise<string>;
+}
+
+export interface NewTask {
+  title: string;
+  description: string;
+  projectSlug: string;
+  parentTaskId: string;
+  status: string;
+  type: string;
 }
 
 let nextId = 1;
@@ -49,6 +60,12 @@ export function mcpTaskStore(url: string, token: string): TaskStore {
     },
     async update(taskId, patch) {
       await callTool(url, token, "update_task", { taskId, ...patch });
+    },
+    async create(input) {
+      const out = (await callTool(url, token, "create_task", { ...input })) as { task?: { id?: string }; id?: string };
+      const id = out.task?.id ?? out.id;
+      if (!id) throw new Error("MCP create_task: no id in reply");
+      return id;
     },
   };
 }

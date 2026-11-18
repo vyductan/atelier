@@ -35,6 +35,11 @@ function world(tasks: Task[], opts: { job?: JobStatus | null; prepare?: string |
     tasks: {
       listTodo: async () => [...store.values()].filter((t) => t.status_code === "todo"),
       get: async (id) => ({ ...store.get(id)! }),
+      create: async (input) => {
+        const id = `child-${store.size}`;
+        store.set(id, { id, title: input.title, description: input.description, status_code: input.status, project_slug: input.projectSlug, created_at: "2026-11-19T00:00:00Z" });
+        return id;
+      },
       update: async (id, patch) => {
         updates.push({ id, patch });
         const t = store.get(id)!;

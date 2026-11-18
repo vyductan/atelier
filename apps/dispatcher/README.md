@@ -24,6 +24,25 @@ configured project can put `Bot: Dev` on it and have the bot act on its text. To
 `vyductan` has no member but the owner (checked 2026-11-18); re-check before adding
 a member to it or a project to `projects`.
 
+### Split plans (CoS)
+
+For bigger work CoS writes a plan into the parent task (`Plan: proposed`,
+`Triage: ready-for-human`, and a ```json block under `## Plan`; format in
+`team/souls/cos.md`, rules in `src/plan.ts`). Nothing runs until the line says
+`Plan: approved`: you edit it yourself, or CoS sets it after you say yes, which
+goes through an approval card, since CoS can only *read* tasks without one. Then on
+the next tick the bridge validates the plan (`validatePlan`) and:
+
+- invalid → `Plan: invalid` and a comment listing every problem, nothing created;
+- `close` → task archived; `needs-info` → `blocked` + `Triage: needs-info`;
+- `split` → one child task per piece, in dependency order: `Bot: <bot>` (or
+  `Triage: ready-for-human` for `human` pieces) plus `Depends: <child ids>`; the
+  parent becomes `Plan: created`, `in-progress`, with the key → task id list.
+
+A child with a `Depends:` line waits until every task on it is `completed`. A task
+carrying any `Plan:` line is never handed to a bot itself. Kind ↔ bot is checked:
+`code` needs a bot with a worktree (Dev), `investigate` one without.
+
 Phone notifications (optional `ntfy` in config): a ping when a run starts waiting
 on an approval card, when it finishes, and when it is blocked. Only the bot and the
 task title are sent. The topic is read from `topicFile` (it is a secret: anyone who
