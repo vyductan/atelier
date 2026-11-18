@@ -30,8 +30,8 @@ For bigger work CoS writes a plan into the parent task (`Plan: proposed`,
 `Triage: ready-for-human`, and a ```json block under `## Plan`; format in
 `team/souls/cos.md`, rules in `src/plan.ts`). Nothing runs until the line says
 `Plan: approved`: you edit it yourself, or CoS sets it after you say yes, which
-goes through an approval card (CoS reads tasks freely, cannot create them, and every
-update is a card). An approval counts only for a plan the bridge already saw,
+goes through an approval card (CoS cannot create tasks, and every update is a card;
+so is every *read*, see below). An approval counts only for a plan the bridge already saw,
 unchanged, as `Plan: proposed` on an earlier tick (hash in state), so a plan can
 never be proposed and approved in one write. Then the bridge validates it
 (`validatePlan`) and:
@@ -47,6 +47,14 @@ blockquote, titles and file paths must be one line, and a task carrying the
 bridge's "Part of plan in task" marker is never read as a plan. A child with a `Depends:` line waits until every task on it is `completed`. A task
 carrying any `Plan:` line is never handed to a bot itself. Kind ↔ bot is checked:
 `code` needs a bot with a worktree (Dev), `investigate` one without.
+
+**Allow rules for MCP tools are inert under OpenMausBot.** It runs claude with its
+own `--permission-prompt-tool` broker, so the `allow` list in `team/settings/*.json`
+does not skip cards (deny rules still bind). Its own "Always allow" only remembers
+read tools of MCP servers registered in OpenMausBot's config, not a workspace
+`.mcp.json`; CoS's `vyductan-tasks` lives in `.mcp.json`, so each read asks.
+Kept that way on purpose (2026-11-18): moving the server into OpenMausBot's
+config would need a `toolScope` on every other bot to keep it CoS-only.
 
 Phone notifications (optional `ntfy` in config): a ping when a run starts waiting
 on an approval card, when it finishes, and when it is blocked. Only the bot and the
