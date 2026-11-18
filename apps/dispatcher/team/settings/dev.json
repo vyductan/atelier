@@ -39,9 +39,6 @@
       "Read(~/.aws/**)",
       "Read(~/.gnupg/**)",
       "Read(~/.netrc)",
-      "Read(~/.config/gh/**)",
-      "Read(~/.config/gcloud/**)",
-      "Read(~/.config/op/**)",
       "Read(~/.claude/**)",
       "Read(~/.atelier/**)",
       "Read(~/.cloudflared/**)",
@@ -51,10 +48,12 @@
       "Read(**/*.key)",
       "Read(**/id_rsa*)",
       "Read(**/id_ed25519*)",
-      "Read(.env.local)",
       "Read(~/Developer/**/.env)",
-      "Read(~/Developer/**/.env.local)",
-      "Read(~/Developer/**/.env.production)"
+      "Read(~/.config/**)",
+      "Read(~/Developer/**/.env.*)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/.mcp.json)"
     ]
   },
   "sandbox": {
@@ -79,9 +78,10 @@
         "~/.cloudflared",
         "~/Library",
         "~/.claude",
-        "~/.config/gh",
-        "~/.config/gcloud",
-        "~/.config/op"
+        "~/.config"
+      ],
+      "allowRead": [
+        "~/.config/git"
       ]
     },
     "network": {
