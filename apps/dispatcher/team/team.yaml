@@ -54,3 +54,17 @@ bots:
     computer: off
     cwd: /Users/vyductan/.atelier/openmausbot/workspaces/ops
     soul: { file: souls/ops.md }
+
+  # Read-only investigator. Its own cwd (NOT ~/Developer/g-bots, where the
+  # owner runs Claude Code sessions that a deny file there would cripple)
+  # denies Bash/Edit/Write and reaches the repo via additionalDirectories.
+  # `auto`, not `ask`: under ask OpenMausBot raises a card for every Read/Glob
+  # outside the bot's cwd. The cwd deny rules hold in every mode but bypass.
+  - name: g-bots
+    team: Workers
+    title: g-bots (điều tra, chỉ đọc)
+    model: claude/claude-sonnet-5-5
+    approval: auto
+    computer: off
+    cwd: /Users/vyductan/.atelier/openmausbot/workspaces/g-bots
+    soul: { file: souls/g-bots.md }
