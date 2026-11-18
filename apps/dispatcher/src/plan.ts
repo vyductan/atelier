@@ -43,6 +43,7 @@ export type PlanMark = "proposed" | "approved" | "created" | "invalid";
 
 /** The word on a `Plan:` line, or null. */
 export function planMark(description: string | null): PlanMark | null {
+  if (description?.includes(CHILD_MARKER)) return null;
   return (description?.match(PLAN_LINE)?.[1] as PlanMark | undefined) ?? null;
 }
 
@@ -57,6 +58,19 @@ export function planBlock(description: string | null): string | null {
 }
 
 const str = (v: unknown, max: number): v is string => typeof v === "string" && v.trim().length > 0 && v.length <= max;
+/** One line of text: no line breaks, so it can never start a marker line of its own. */
+const line = (v: unknown, max: number): v is string => str(v, max) && !/[\r\n]/.test(v);
+
+/** The marker the bridge writes on every child; a task carrying it is never read as a plan. */
+export const CHILD_MARKER = "Part of plan in task ";
+
+/** Free text as a blockquote: no line of it can start with `Bot:`, `Plan:`, `## Plan`… */
+const quoted = (text: string) =>
+  text
+    .trim()
+    .split(/\r?\n/)
+    .map((l) => `> ${l}`)
+    .join("\n");
 
 /**
  * Checks a plan against the shape agreed in the spec and against what this
@@ -98,10 +112,10 @@ export function validatePlan(raw: string, config: Config): PlanResult {
     else if (keys.has(t.key)) errors.push(`${name}: duplicate key`);
     else keys.add(t.key);
 
-    if (!str(t.title, 120)) errors.push(`${name}.title: 1-120 characters`);
+    if (!line(t.title, 120)) errors.push(`${name}.title: 1-120 characters`);
     if (!str(t.scope, 2000)) errors.push(`${name}.scope is required`);
     if (!str(t.acceptance, 1000)) errors.push(`${name}.acceptance is required (something checkable)`);
-    if (!Array.isArray(t.files) || !t.files.every((f) => str(f, 300))) errors.push(`${name}.files must be an array of paths (may be empty)`);
+    if (!Array.isArray(t.files) || !t.files.every((f) => line(f, 300) && !f.includes("`"))) errors.push(`${name}.files must be an array of paths (may be empty)`);
     if (!Array.isArray(t.depends_on) || !t.depends_on.every((d) => typeof d === "string")) errors.push(`${name}.depends_on must be an array of keys (may be empty)`);
     if (t.type !== undefined && !(typeof t.type === "string" && TYPES.has(t.type))) errors.push(`${name}.type must be one of ${[...TYPES].join(", ")}`);
     if (typeof t.project !== "string" || !config.projects.includes(t.project)) errors.push(`${name}.project must be one of ${config.projects.join(", ")}`);
@@ -172,11 +186,11 @@ export function childDescription(piece: Piece, parentId: string, dependsOn: stri
   return [
     ...head,
     "",
-    `Part of plan in task ${parentId} (piece \`${piece.key}\`, ${piece.kind}).`,
+    `${CHILD_MARKER}${parentId} (piece \`${piece.key}\`, ${piece.kind}).`,
     "",
     "## Scope",
     "",
-    piece.scope.trim(),
+    quoted(piece.scope),
     "",
     "## Likely files",
     "",
@@ -184,7 +198,7 @@ export function childDescription(piece: Piece, parentId: string, dependsOn: stri
     "",
     "## Acceptance",
     "",
-    piece.acceptance.trim(),
+    quoted(piece.acceptance),
     "",
   ].join("\n");
 }

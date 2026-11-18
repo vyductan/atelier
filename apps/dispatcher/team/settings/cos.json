@@ -19,6 +19,7 @@
       "mcp__agents__vm_exec",
       "mcp__plugin_vercel_vercel",
       "mcp__plugin_supabase_supabase",
+      "mcp__vyductan-tasks__create_task",
       "mcp__vyductan-tasks__delete_task",
       "Read(~/.ssh/**)",
       "Read(~/.aws/**)",

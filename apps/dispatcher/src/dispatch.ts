@@ -89,6 +89,12 @@ export interface State {
   routinesDone?: Record<string, string>;
   /** Parent task id → plan piece key → child task id, written as each child is created. */
   plans?: Record<string, Record<string, string>>;
+  /**
+   * Parent task id → hash of the plan JSON last seen under `Plan: proposed`.
+   * An approval counts only for that exact plan, so it always takes a second,
+   * separate write after the proposal (CoS cannot propose and approve at once).
+   */
+  proposed?: Record<string, string>;
 }
 
 export interface Workspace {
@@ -199,23 +205,37 @@ function inDependencyOrder(pieces: Piece[]): Piece[] {
   return out;
 }
 
+const planHash = (raw: string) => createHash("sha256").update(raw.trim()).digest("hex");
+
 /**
  * Turns approved plans into child tasks. No model call, so it does not count
- * against the daily budget. Idempotent per piece: a child already recorded in
- * state, or already in the todo list for this parent and key, is not created twice.
+ * against the daily budget. Idempotent per piece through the ids recorded in
+ * state (never by searching task text, which anyone writing a task controls).
  */
 export async function materializePlans(deps: Deps, state: State, todo: Task[]): Promise<void> {
   for (const parent of todo) {
-    if (planMark(parent.description) !== "approved") continue;
+    const mark = planMark(parent.description);
     if (!parent.project_slug || !deps.config.projects.includes(parent.project_slug)) continue;
+    const raw = planBlock(parent.description);
+    if (mark === "proposed") {
+      if (raw !== null) (state.proposed ??= {})[parent.id] = planHash(raw);
+      continue;
+    }
+    if (mark !== "approved") continue;
     const date = localDate(deps.now());
     let description = parent.description ?? "";
-    const raw = planBlock(description);
-    const result = raw === null ? { ok: false as const, errors: ["no ```json block under a \"## Plan\" heading"] } : validatePlan(raw, deps.config);
+    const seen = state.proposed?.[parent.id];
+    const result =
+      raw === null
+        ? { ok: false as const, errors: ["no ```json block under a \"## Plan\" heading"] }
+        : seen !== planHash(raw) && !state.plans?.[parent.id]
+          ? { ok: false as const, errors: ["this exact plan was never seen as `Plan: proposed`: save it as proposed first, then approve it in a separate edit"] }
+          : validatePlan(raw, deps.config);
 
     if (!result.ok) {
       description = appendComment(setPlanMark(description, "invalid"), date, `Kế hoạch không hợp lệ, chưa tạo task con nào:\n\n${result.errors.map((e) => `- ${e}`).join("\n")}`);
       await deps.tasks.update(parent.id, { description });
+      delete state.proposed?.[parent.id];
       deps.log("plan-invalid", { taskId: parent.id, errors: result.errors.length });
       await ping(deps, "Kế hoạch CoS không hợp lệ", parent.title);
       continue;
@@ -227,6 +247,7 @@ export async function materializePlans(deps: Deps, state: State, todo: Task[]): 
       description = appendComment(setPlanMark(description, "created"), date, `${closing ? "Đóng" : "Cần thêm thông tin"} theo kế hoạch đã duyệt: ${plan.reason}`);
       if (!closing) description = setTriage(description, "needs-info");
       await deps.tasks.update(parent.id, { description, status: closing ? "archived" : "blocked" });
+      delete state.proposed?.[parent.id];
       deps.log("plan-verdict", { taskId: parent.id, verdict: plan.verdict });
       continue;
     }
@@ -234,23 +255,20 @@ export async function materializePlans(deps: Deps, state: State, todo: Task[]): 
     const made = (state.plans ??= {})[parent.id] ??= {};
     for (const piece of inDependencyOrder(plan.pieces)) {
       if (made[piece.key]) continue;
-      const marker = `Part of plan in task ${parent.id} (piece \`${piece.key}\``;
-      const existing = todo.find((t) => t.description?.includes(marker));
-      made[piece.key] =
-        existing?.id ??
-        (await deps.tasks.create({
+      made[piece.key] = await deps.tasks.create({
           title: piece.title,
           description: childDescription(piece, parent.id, piece.depends_on.map((d) => made[d]!)),
           projectSlug: piece.project,
           parentTaskId: parent.id,
           status: "todo",
           type: piece.type ?? "feat",
-        }));
+        });
     }
     const list = plan.pieces.map((p) => `- \`${p.key}\` → ${made[p.key]} (${p.kind === "human" ? "bạn" : p.bot})`).join("\n");
     description = appendComment(setPlanMark(description, "created"), date, `Đã tạo ${plan.pieces.length} task con từ kế hoạch:\n\n${list}`);
     await deps.tasks.update(parent.id, { description, status: "in-progress" });
     delete state.plans![parent.id];
+    delete state.proposed?.[parent.id];
     deps.log("plan-created", { taskId: parent.id, pieces: plan.pieces.length });
   }
 }
@@ -347,11 +365,14 @@ export async function settle(deps: Deps, state: State): Promise<void> {
 export async function tick(deps: Deps, state: State): Promise<void> {
   if (state.paused) return;
   await settle(deps, state);
-  if (active(state) || state.paused) return;
+  if (state.paused) return;
 
+  // Every tick, even with a run in flight: a plan must be seen as proposed
+  // before its approval counts, and creating children calls no model.
   const todo: Task[] = [];
   for (const project of deps.config.projects) todo.push(...(await deps.tasks.listTodo(project)));
   await materializePlans(deps, state, todo);
+  if (active(state)) return;
 
   const now = deps.now();
   if (runsToday(state, now) >= deps.config.maxRunsPerDay) {

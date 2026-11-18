@@ -30,8 +30,11 @@ For bigger work CoS writes a plan into the parent task (`Plan: proposed`,
 `Triage: ready-for-human`, and a ```json block under `## Plan`; format in
 `team/souls/cos.md`, rules in `src/plan.ts`). Nothing runs until the line says
 `Plan: approved`: you edit it yourself, or CoS sets it after you say yes, which
-goes through an approval card, since CoS can only *read* tasks without one. Then on
-the next tick the bridge validates the plan (`validatePlan`) and:
+goes through an approval card (CoS reads tasks freely, cannot create them, and every
+update is a card). An approval counts only for a plan the bridge already saw,
+unchanged, as `Plan: proposed` on an earlier tick (hash in state), so a plan can
+never be proposed and approved in one write. Then the bridge validates it
+(`validatePlan`) and:
 
 - invalid → `Plan: invalid` and a comment listing every problem, nothing created;
 - `close` → task archived; `needs-info` → `blocked` + `Triage: needs-info`;
@@ -39,7 +42,9 @@ the next tick the bridge validates the plan (`validatePlan`) and:
   `Triage: ready-for-human` for `human` pieces) plus `Depends: <child ids>`; the
   parent becomes `Plan: created`, `in-progress`, with the key → task id list.
 
-A child with a `Depends:` line waits until every task on it is `completed`. A task
+Plan text is data: `scope` / `acceptance` are copied into children as a
+blockquote, titles and file paths must be one line, and a task carrying the
+bridge's "Part of plan in task" marker is never read as a plan. A child with a `Depends:` line waits until every task on it is `completed`. A task
 carrying any `Plan:` line is never handed to a bot itself. Kind ↔ bot is checked:
 `code` needs a bot with a worktree (Dev), `investigate` one without.
 
