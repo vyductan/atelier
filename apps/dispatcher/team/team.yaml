@@ -1,0 +1,45 @@
+# Atelier Dispatcher: the bot team on OpenMausBot.
+# Apply:  ~/.atelier/openmausbot/bin/node_modules/.bin/openmausbot team apply team.yaml --port 28799
+# Check:  ... team apply team.yaml --port 28799 --check   (exit 6 = server drifted from this file)
+#
+# Rules (spec "Atelier Dispatcher" on vyductan.dev tasks):
+# - No bot is ever `full`: a Chief's level is passed down to the bots it hands work to.
+# - Workers sit in a team WITHOUT a Chief. OpenMausBot only auto-retries a failed run and
+#   sends incident turns to a Chief when the bot has one; with no Chief, a failure becomes a
+#   notification to the person instead of extra model turns (server/host/chief-notices.ts).
+#   CoS can still hand work to them with coordinate_bots.
+# - Hard limits live in each bot's cwd `.claude/settings.json` (deny), not in `tools`:
+#   for Claude, `tools` only filters MCP tools.
+# - computer: off everywhere (local needs the desktop app; headless runs fail with it).
+version: 1
+
+teams:
+  - name: Office
+    brief: The Chief of Staff's desk. Routes work to the Workers team; never edits code.
+  - name: Workers
+    brief: Bots that do the work. No Chief on purpose (no automatic retries or incident turns).
+
+bots:
+  - name: MausBot
+    chief: false
+    approval: ask
+    computer: off
+
+  - name: CoS
+    team: Office
+    chief: true
+    title: Chief of Staff
+    model: claude/claude-sonnet-5-5
+    approval: ask
+    computer: off
+    cwd: /Users/vyductan/.atelier/openmausbot/workspaces/cos
+    soul: { file: souls/cos.md }
+
+  - name: Dev
+    team: Workers
+    title: Dev vyductan
+    model: claude/claude-sonnet-5-5
+    approval: edits
+    computer: off
+    cwd: /Users/vyductan/Developer/vyductan-agent
+    soul: { file: souls/dev.md }

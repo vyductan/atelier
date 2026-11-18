@@ -1,0 +1,14 @@
+{
+  "mcpUrl": "https://www.vyductan.dev/api/mcp",
+  "tokenFile": "~/.atelier/openmausbot/secrets/dispatcher-mcp-token",
+  "ombCli": "~/.atelier/openmausbot/bin/node_modules/.bin/openmausbot",
+  "ombPort": 28799,
+  "intervalSeconds": 60,
+  "projects": ["vyductan"],
+  "bots": {
+    "Dev": { "ombName": "Dev", "worktree": "/Users/vyductan/Developer/vyductan-agent" },
+    "CoS": { "ombName": "CoS" }
+  },
+  "maxRunsPerDay": 5,
+  "approvalNudgeMinutes": 30
+}
