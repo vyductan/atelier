@@ -15,7 +15,9 @@
       "Read(~/.aws/**)",
       "Read(~/.gnupg/**)",
       "Read(~/.netrc)",
-      "Read(~/.config/**)",
+      "Read(~/.config/gh/**)",
+      "Read(~/.config/gcloud/**)",
+      "Read(~/.config/op/**)",
       "Read(~/.claude/**)",
       "Read(~/.atelier/**)",
       "Read(~/.cloudflared/**)",
@@ -26,7 +28,8 @@
       "Read(**/*.pem)",
       "Read(**/*.key)",
       "Read(**/id_rsa*)",
-      "Read(**/id_ed25519*)"
+      "Read(**/id_ed25519*)",
+      "Read(**/.mcp.json)"
     ]
   }
 }

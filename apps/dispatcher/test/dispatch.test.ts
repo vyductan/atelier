@@ -243,6 +243,25 @@ describe("tick", () => {
     assert.equal(w.sent.length, 2);
   });
 
+  it("pauses instead of sending when a bot's installed settings drifted from the template", async () => {
+    const w = world([task("bb", "Bot: Dev\none")]);
+    w.deps.config = { ...config, bots: { ...config.bots, Dev: { ombName: "Dev", worktree: "/wt", settings: { template: "t", installed: "i" } } } };
+    let same = false;
+    w.deps.sameFile = async () => same;
+    const pings: string[] = [];
+    w.deps.notify = async (title) => void pings.push(title);
+    const state: State = { runs: [] };
+    await tick(w.deps, state);
+    assert.equal(w.sent.length, 0);
+    assert.equal(state.paused?.reason, "settings drift: Dev");
+    assert.deepEqual(pings, ["Atelier Dispatcher tạm dừng"]);
+    // Reinstalled and resumed: work flows again.
+    same = true;
+    delete state.paused;
+    await tick(w.deps, state);
+    assert.equal(w.sent.length, 1);
+  });
+
   it("makes a valid OpenMausBot send id from any routine name", async () => {
     const w = world([]);
     w.deps.config = {

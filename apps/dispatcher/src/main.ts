@@ -102,6 +102,13 @@ function deps(config: FileConfig): Deps {
     now: () => new Date(),
     log,
     ...(config.ntfy ? { notify: ntfyNotifier(config.ntfy) } : {}),
+    sameFile: async (a, b) => {
+      try {
+        return readFileSync(expand(a)).equals(readFileSync(expand(b)));
+      } catch {
+        return false;
+      }
+    },
     collect: async (collector) => {
       // execFile: no shell; the command and its arguments come from config.json.
       const { stdout } = await exec(collector.cmd, collector.args, {

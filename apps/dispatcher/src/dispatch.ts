@@ -22,6 +22,13 @@ export interface BotConfig {
   ombName: string;
   /** A code bot's git worktree, refreshed to origin/main before each task. */
   worktree?: string;
+  /**
+   * The bot's hard limits: `installed` (its cwd .claude/settings.json) must
+   * equal `template` (the reviewed copy in team/settings/) before every send.
+   * A bot with Bash could rewrite its own settings; a mismatch pauses the
+   * bridge instead of handing it more work.
+   */
+  settings?: { template: string; installed: string };
 }
 
 /** A command that prints the data a routine bot works on (no model involved). */
@@ -97,6 +104,23 @@ export interface Deps {
   notify?: (title: string, message: string) => Promise<void>;
   /** Runs a routine's collector and returns what it printed. */
   collect?: (collector: Collector) => Promise<string>;
+  /** Whether two files have identical contents (false if either is missing). */
+  sameFile?: (a: string, b: string) => Promise<boolean>;
+}
+
+/**
+ * Refuses to hand work to a bot whose installed settings drifted from the
+ * reviewed template: pauses the bridge and pings. True when it is safe to send.
+ */
+async function settingsIntact(deps: Deps, state: State, bot: string): Promise<boolean> {
+  const s = deps.config.bots[bot]?.settings;
+  if (!s || !deps.sameFile) return true;
+  if (await deps.sameFile(s.template, s.installed)) return true;
+  const now = deps.now();
+  state.paused = { reason: `settings drift: ${bot}`, at: now.toISOString() };
+  deps.log("paused", { reason: "settings drift", bot });
+  await ping(deps, `Atelier Dispatcher tạm dừng`, `Settings của ${bot} khác bản trong repo. Kiểm tra rồi chạy install-settings.sh và resume.`);
+  return false;
 }
 
 /** A routine due now: its time has come today and it has not run today. */
@@ -239,6 +263,7 @@ export async function tick(deps: Deps, state: State): Promise<void> {
 
   const routine = dueRoutine(deps.config, state, now);
   if (routine) {
+    if (!(await settingsIntact(deps, state, routine.bot))) return;
     await startRoutine(deps, state, routine, now);
     return;
   }
@@ -249,6 +274,7 @@ export async function tick(deps: Deps, state: State): Promise<void> {
   if (!next) return;
 
   const bot = deps.config.bots[next.bot]!;
+  if (!(await settingsIntact(deps, state, next.bot))) return;
   if (bot.worktree) {
     const why = await deps.workspace.prepare(bot.worktree);
     if (why) {

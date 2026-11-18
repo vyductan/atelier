@@ -30,7 +30,6 @@
       "Edit(.claude/**)",
       "Write(.claude/**)",
       "Read(.env)",
-      "Read(.env.*)",
       "WebFetch",
       "WebSearch",
       "mcp__agents__vm_exec",
@@ -40,18 +39,56 @@
       "Read(~/.aws/**)",
       "Read(~/.gnupg/**)",
       "Read(~/.netrc)",
-      "Read(~/.config/**)",
+      "Read(~/.config/gh/**)",
+      "Read(~/.config/gcloud/**)",
+      "Read(~/.config/op/**)",
       "Read(~/.claude/**)",
       "Read(~/.atelier/**)",
       "Read(~/.cloudflared/**)",
       "Read(~/Library/**)",
       "Read(//Library/Application Support/com.cloudflare.cloudflared/**)",
-      "Read(**/.env)",
-      "Read(**/.env.*)",
       "Read(**/*.pem)",
       "Read(**/*.key)",
       "Read(**/id_rsa*)",
-      "Read(**/id_ed25519*)"
+      "Read(**/id_ed25519*)",
+      "Read(.env.local)",
+      "Read(~/Developer/**/.env)",
+      "Read(~/Developer/**/.env.local)",
+      "Read(~/Developer/**/.env.production)"
     ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false,
+    "autoAllowBashIfSandboxed": false,
+    "excludedCommands": [],
+    "filesystem": {
+      "allowWrite": [
+        "~/Developer/vyductan/apps/vyductan.dev/.git/objects",
+        "~/Developer/vyductan/apps/vyductan.dev/.git/refs/heads",
+        "~/Developer/vyductan/apps/vyductan.dev/.git/logs",
+        "~/Developer/vyductan/apps/vyductan.dev/.git/worktrees/vyductan-agent"
+      ],
+      "denyRead": [
+        "~/.ssh",
+        "~/.aws",
+        "~/.gnupg",
+        "~/.netrc",
+        "~/.atelier",
+        "~/.cloudflared",
+        "~/Library",
+        "~/.claude",
+        "~/.config/gh",
+        "~/.config/gcloud",
+        "~/.config/op"
+      ]
+    },
+    "network": {
+      "allowedDomains": [
+        "github.com",
+        "registry.npmjs.org"
+      ]
+    }
   }
 }
