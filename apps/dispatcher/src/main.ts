@@ -102,6 +102,16 @@ function deps(config: FileConfig): Deps {
     now: () => new Date(),
     log,
     ...(config.ntfy ? { notify: ntfyNotifier(config.ntfy) } : {}),
+    collect: async (collector) => {
+      // execFile: no shell; the command and its arguments come from config.json.
+      const { stdout } = await exec(collector.cmd, collector.args, {
+        cwd: expand(collector.cwd),
+        timeout: 5 * 60_000,
+        maxBuffer: 8 * 1024 * 1024,
+      });
+      if (stdout.length > 200_000) throw new Error(`collector output too large (${stdout.length} chars)`);
+      return stdout;
+    },
   };
 }
 

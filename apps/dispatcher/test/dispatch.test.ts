@@ -200,6 +200,85 @@ describe("tick", () => {
     assert.equal(state.runs.length, 0);
   });
 
+  it("runs a due routine once a day: collect, hand to its bot, ping when done, never touch tasks", async () => {
+    const w = world([task("bb", "Bot: Dev\none")]);
+    w.deps.config = {
+      ...config,
+      bots: { ...config.bots, Ops: { ombName: "Ops" } },
+      routines: [{ name: "digest", bot: "Ops", at: "08:00", collector: { cmd: "x", args: [], cwd: "/" }, instruction: "Summarise:" }],
+    };
+    const collected: string[] = [];
+    w.deps.collect = async (c) => {
+      collected.push(c.cmd);
+      return '{"errors": 3}';
+    };
+    const pings: string[] = [];
+    w.deps.notify = async (title) => void pings.push(title);
+    const state: State = { runs: [] };
+
+    // 07:59 local: not due; the task goes out instead.
+    w.setNow(new Date(2026, 10, 18, 7, 59));
+    await tick(w.deps, state);
+    assert.equal(w.sent[0]!.bot, "Dev");
+    w.setJob({ status: "completed", outcome: "done", needsInput: false, result: null });
+
+    // 08:05: the task settles, then the routine starts (one run at a time).
+    w.setNow(new Date(2026, 10, 18, 8, 5));
+    w.setJob({ status: "completed", outcome: "done", needsInput: false, result: null });
+    await tick(w.deps, state);
+    assert.equal(w.sent.length, 2);
+    assert.equal(w.sent[1]!.bot, "Ops");
+    // OpenMausBot's send id rule: 16-80 of [A-Za-z0-9_-].
+    assert.match(w.sent[1]!.sendId, /^vdt-routine-[0-9a-f]{12}-2026-11-18$/);
+    assert.match(w.sent[1]!.text, /^Summarise:\n\n```json\n\{"errors": 3\}\n```$/);
+    const updatesBefore = w.updates.length;
+
+    // It finishes: a ping, no task write, and no second run today.
+    await tick(w.deps, state);
+    assert.equal(w.updates.length, updatesBefore);
+    assert.ok(pings.includes("Ops: digest đã xong"));
+    w.setNow(new Date(2026, 10, 18, 9, 0));
+    await tick(w.deps, state);
+    assert.deepEqual(collected, ["x"]);
+    assert.equal(w.sent.length, 2);
+  });
+
+  it("makes a valid OpenMausBot send id from any routine name", async () => {
+    const w = world([]);
+    w.deps.config = {
+      ...config,
+      bots: { ...config.bots, Ops: { ombName: "Ops" } },
+      routines: [{ name: "tóm tắt lỗi sáng nay", bot: "Ops", at: "08:00", collector: { cmd: "x", args: [], cwd: "/" }, instruction: "S" }],
+    };
+    w.deps.collect = async () => "{}";
+    w.setNow(new Date(2026, 10, 18, 8, 1));
+    await tick(w.deps, { runs: [] });
+    assert.match(w.sent[0]!.sendId, /^[A-Za-z0-9_-]{16,80}$/);
+  });
+
+  it("a failing collector counts the routine as done for the day and pings once", async () => {
+    const w = world([]);
+    w.deps.config = {
+      ...config,
+      bots: { ...config.bots, Ops: { ombName: "Ops" } },
+      routines: [{ name: "digest", bot: "Ops", at: "08:00", collector: { cmd: "x", args: [], cwd: "/" }, instruction: "S" }],
+    };
+    let calls = 0;
+    w.deps.collect = async () => {
+      calls++;
+      throw new Error("vercel logs failed");
+    };
+    const pings: string[] = [];
+    w.deps.notify = async (title) => void pings.push(title);
+    const state: State = { runs: [] };
+    w.setNow(new Date(2026, 10, 18, 8, 1));
+    await tick(w.deps, state);
+    await tick(w.deps, state);
+    assert.equal(calls, 1);
+    assert.equal(w.sent.length, 0);
+    assert.deepEqual(pings, ["Ops: không lấy được dữ liệu"]);
+  });
+
   it("recovers a run whose send failed or crashed, reusing the send id and marking the task", async () => {
     // A failed first send leaves the task untouched in `todo`.
     const w = world([task("bb", "Bot: Dev\none")]);

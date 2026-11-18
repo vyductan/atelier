@@ -43,3 +43,14 @@ bots:
     computer: off
     cwd: /Users/vyductan/Developer/vyductan-agent
     soul: { file: souls/dev.md }
+
+  # No tools at all (cwd settings deny everything): the bridge runs the
+  # read-only `ops-digest` collector each morning and hands Ops the JSON.
+  - name: Ops
+    team: Workers
+    title: Ops (tóm tắt lỗi mỗi sáng)
+    model: claude/claude-haiku-5-5
+    approval: ask
+    computer: off
+    cwd: /Users/vyductan/.atelier/openmausbot/workspaces/ops
+    soul: { file: souls/ops.md }

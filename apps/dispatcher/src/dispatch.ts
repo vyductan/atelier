@@ -11,6 +11,8 @@
 // - The bridge never approves anything. A run waiting on an approval card is
 //   noted on the task once, then left for the person.
 
+import { createHash } from "node:crypto";
+
 import type { Bots } from "./omb.ts";
 import type { TaskStore } from "./mcp.ts";
 import { appendComment, botOf, briefFor, hasTriage, localDate, quote, setTriage, type Task } from "./tasks.ts";
@@ -22,11 +24,33 @@ export interface BotConfig {
   worktree?: string;
 }
 
+/** A command that prints the data a routine bot works on (no model involved). */
+export interface Collector {
+  cmd: string;
+  args: string[];
+  cwd: string;
+}
+
+/**
+ * A daily job that is not a task: at `at` (local HH:MM) the bridge runs the
+ * collector and hands its output to `bot`. Once a day, through the same
+ * one-run gate and daily budget as tasks.
+ */
+export interface Routine {
+  name: string;
+  bot: string;
+  at: string;
+  collector: Collector;
+  /** The brief's opening; the collector output follows it. */
+  instruction: string;
+}
+
 export interface Config {
   projects: string[];
   bots: Record<string, BotConfig>;
   maxRunsPerDay: number;
   approvalNudgeMinutes: number;
+  routines?: Routine[];
 }
 
 export interface Run {
@@ -41,11 +65,17 @@ export interface Run {
   nudged?: boolean;
   /** The task title, for notifications. */
   title?: string;
+  /** Set for a routine run: no task behind it, so nothing is written to tasks. */
+  routine?: string;
+  /** A routine run's brief, kept to resend after a crash. */
+  brief?: string;
 }
 
 export interface State {
   paused?: { reason: string; at: string };
   runs: Run[];
+  /** Routine name → the local date it last ran (or failed to collect). */
+  routinesDone?: Record<string, string>;
 }
 
 export interface Workspace {
@@ -65,6 +95,15 @@ export interface Deps {
    * Best effort: a failed notification never fails the tick.
    */
   notify?: (title: string, message: string) => Promise<void>;
+  /** Runs a routine's collector and returns what it printed. */
+  collect?: (collector: Collector) => Promise<string>;
+}
+
+/** A routine due now: its time has come today and it has not run today. */
+export function dueRoutine(config: Config, state: State, now: Date): Routine | null {
+  const today = localDate(now);
+  const hhmm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  return (config.routines ?? []).find((r) => state.routinesDone?.[r.name] !== today && hhmm >= r.at && r.bot in config.bots) ?? null;
 }
 
 async function ping(deps: Deps, title: string, message: string): Promise<void> {
@@ -116,10 +155,15 @@ export async function settle(deps: Deps, state: State): Promise<void> {
     // A crash between send and save: send again with the same id, which
     // OpenMausBot never delivers twice, to recover the thread id.
     const ombName = deps.config.bots[run.bot]?.ombName ?? run.bot;
-    const task = await deps.tasks.get(run.taskId);
-    run.title ??= task.title;
-    run.threadId = await deps.bots.send(ombName, briefFor(task, run.bot), run.sendId);
-    await markSent(deps, run);
+    if (run.routine) {
+      run.threadId = await deps.bots.send(ombName, run.brief ?? "", run.sendId);
+      run.status = "sent";
+    } else {
+      const task = await deps.tasks.get(run.taskId);
+      run.title ??= task.title;
+      run.threadId = await deps.bots.send(ombName, briefFor(task, run.bot), run.sendId);
+      await markSent(deps, run);
+    }
     deps.log("recovered", { taskId: run.taskId, threadId: run.threadId });
     return;
   }
@@ -135,7 +179,7 @@ export async function settle(deps: Deps, state: State): Promise<void> {
         await ping(deps, `${run.bot} chờ duyệt`, run.title ?? run.taskId);
       }
       const waited = now.getTime() - new Date(run.waitingSince).getTime();
-      if (!run.nudged && waited >= deps.config.approvalNudgeMinutes * 60_000) {
+      if (!run.routine && !run.nudged && waited >= deps.config.approvalNudgeMinutes * 60_000) {
         await comment(deps, run.taskId, `${run.bot} đang chờ duyệt trong OpenMausBot (thread \`${run.threadId}\`) hơn ${deps.config.approvalNudgeMinutes} phút.`);
         run.nudged = true;
         deps.log("nudged", { taskId: run.taskId });
@@ -148,6 +192,18 @@ export async function settle(deps: Deps, state: State): Promise<void> {
 
   const reply = (await deps.bots.lastReply(run.threadId!)) ?? job.result ?? "(no reply)";
   const ok = job.status === "completed";
+  if (run.routine) {
+    // No task behind a routine: its result stays in the bot's conversation.
+    run.status = ok ? "done" : "failed";
+    run.finishedAt = now.toISOString();
+    deps.log("routine-finished", { routine: run.routine, status: job.status, outcome: job.outcome });
+    await ping(deps, ok ? `${run.bot}: ${run.title ?? run.routine} đã xong` : `${run.bot}: ${run.title ?? run.routine} lỗi`, "Mở OpenMausBot để đọc.");
+    if (!ok && RATE_LIMIT.test(`${job.outcome ?? ""} ${reply}`)) {
+      state.paused = { reason: "rate limit", at: now.toISOString() };
+      deps.log("paused", { reason: "rate limit" });
+    }
+    return;
+  }
   if (ok) {
     await comment(deps, run.taskId, `${run.bot} báo xong (thread \`${run.threadId}\`). Chờ bạn review.\n\n${quote(reply)}`, {
       status: "todo",
@@ -181,6 +237,12 @@ export async function tick(deps: Deps, state: State): Promise<void> {
     return;
   }
 
+  const routine = dueRoutine(deps.config, state, now);
+  if (routine) {
+    await startRoutine(deps, state, routine, now);
+    return;
+  }
+
   const todo: Task[] = [];
   for (const project of deps.config.projects) todo.push(...(await deps.tasks.listTodo(project)));
   const next = pick(todo, deps.config, state);
@@ -208,6 +270,41 @@ export async function tick(deps: Deps, state: State): Promise<void> {
   run.threadId = await deps.bots.send(bot.ombName, briefFor(next.task, next.bot), run.sendId);
   await markSent(deps, run);
   deps.log("sent", { taskId: run.taskId, bot: next.bot, threadId: run.threadId });
+}
+
+/**
+ * Runs the collector, then hands its output to the routine's bot. A collector
+ * failure still counts the routine as done for today (one ping, no retry loop
+ * every minute).
+ */
+async function startRoutine(deps: Deps, state: State, routine: Routine, now: Date): Promise<void> {
+  const today = localDate(now);
+  state.routinesDone = { ...state.routinesDone, [routine.name]: today };
+  let data: string;
+  try {
+    if (!deps.collect) throw new Error("no collector runner");
+    data = await deps.collect(routine.collector);
+  } catch (error) {
+    deps.log("routine-collect-failed", { routine: routine.name, message: error instanceof Error ? error.message.slice(0, 200) : "failed" });
+    await ping(deps, `${routine.bot}: không lấy được dữ liệu`, `${routine.name} ${today}`);
+    return;
+  }
+  const brief = `${routine.instruction}\n\n\`\`\`json\n${data.trim()}\n\`\`\``;
+  const run: Run = {
+    taskId: `routine:${routine.name}:${today}`,
+    bot: routine.bot,
+    // OpenMausBot send ids are 16-80 of [A-Za-z0-9_-]: the name (any text) goes in as a hash.
+    sendId: `vdt-routine-${createHash("sha256").update(routine.name).digest("hex").slice(0, 12)}-${today}`,
+    status: "sending",
+    startedAt: now.toISOString(),
+    title: routine.name,
+    routine: routine.name,
+    brief,
+  };
+  state.runs.push(run);
+  run.threadId = await deps.bots.send(deps.config.bots[routine.bot]!.ombName, brief, run.sendId);
+  run.status = "sent";
+  deps.log("routine-sent", { routine: routine.name, threadId: run.threadId });
 }
 
 /** After a send (first or recovered): the task shows who has it and where. */
