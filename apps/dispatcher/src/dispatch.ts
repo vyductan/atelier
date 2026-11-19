@@ -54,6 +54,8 @@ export interface Routine {
   collector: Collector;
   /** The brief's opening; the collector output follows it. */
   instruction: string;
+  /** Configured but not run (e.g. until a live test has passed). */
+  disabled?: boolean;
 }
 
 export interface Config {
@@ -121,25 +123,30 @@ export interface Deps {
 }
 
 /**
- * Refuses to hand work to a bot whose installed settings drifted from the
- * reviewed template: pauses the bridge and pings. True when it is safe to send.
+ * Refuses to hand out work while ANY configured bot's installed settings
+ * drifted from the reviewed template (a Chief can pass the work on to
+ * teammates, so checking only the receiving bot is not enough): pauses the
+ * bridge and pings. True when it is safe to send.
  */
-async function settingsIntact(deps: Deps, state: State, bot: string): Promise<boolean> {
-  const s = deps.config.bots[bot]?.settings;
-  if (!s || !deps.sameFile) return true;
-  if (await deps.sameFile(s.template, s.installed)) return true;
-  const now = deps.now();
-  state.paused = { reason: `settings drift: ${bot}`, at: now.toISOString() };
-  deps.log("paused", { reason: "settings drift", bot });
-  await ping(deps, `Atelier Dispatcher tạm dừng`, `Settings của ${bot} khác bản trong repo. Kiểm tra rồi chạy install-settings.sh và resume.`);
-  return false;
+async function settingsIntact(deps: Deps, state: State): Promise<boolean> {
+  if (!deps.sameFile) return true;
+  for (const [bot, cfg] of Object.entries(deps.config.bots)) {
+    const s = cfg.settings;
+    if (!s || (await deps.sameFile(s.template, s.installed))) continue;
+    const now = deps.now();
+    state.paused = { reason: `settings drift: ${bot}`, at: now.toISOString() };
+    deps.log("paused", { reason: "settings drift", bot });
+    await ping(deps, `Atelier Dispatcher tạm dừng`, `Settings của ${bot} khác bản trong repo. Kiểm tra rồi chạy install-settings.sh và resume.`);
+    return false;
+  }
+  return true;
 }
 
 /** A routine due now: its time has come today and it has not run today. */
 export function dueRoutine(config: Config, state: State, now: Date): Routine | null {
   const today = localDate(now);
   const hhmm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-  return (config.routines ?? []).find((r) => state.routinesDone?.[r.name] !== today && hhmm >= r.at && r.bot in config.bots) ?? null;
+  return (config.routines ?? []).find((r) => !r.disabled && state.routinesDone?.[r.name] !== today && hhmm >= r.at && r.bot in config.bots) ?? null;
 }
 
 async function ping(deps: Deps, title: string, message: string): Promise<void> {
@@ -382,7 +389,7 @@ export async function tick(deps: Deps, state: State): Promise<void> {
 
   const routine = dueRoutine(deps.config, state, now);
   if (routine) {
-    if (!(await settingsIntact(deps, state, routine.bot))) return;
+    if (!(await settingsIntact(deps, state))) return;
     await startRoutine(deps, state, routine, now);
     return;
   }
@@ -397,7 +404,7 @@ export async function tick(deps: Deps, state: State): Promise<void> {
   if (!next) return;
 
   const bot = deps.config.bots[next.bot]!;
-  if (!(await settingsIntact(deps, state, next.bot))) return;
+  if (!(await settingsIntact(deps, state))) return;
   if (bot.worktree) {
     const why = await deps.workspace.prepare(bot.worktree);
     if (why) {
@@ -436,6 +443,11 @@ async function startRoutine(deps: Deps, state: State, routine: Routine, now: Dat
   } catch (error) {
     deps.log("routine-collect-failed", { routine: routine.name, message: error instanceof Error ? error.message.slice(0, 200) : "failed" });
     await ping(deps, `${routine.bot}: không lấy được dữ liệu`, `${routine.name} ${today}`);
+    return;
+  }
+  if (!data.trim()) {
+    // A quiet day: the collector found nothing worth a model run.
+    deps.log("routine-empty", { routine: routine.name });
     return;
   }
   const brief = `${routine.instruction}\n\n\`\`\`json\n${data.trim()}\n\`\`\``;

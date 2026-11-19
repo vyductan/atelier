@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { pick, runsToday, tick, type Config, type Deps, type State } from "../src/dispatch.ts";
-import type { JobStatus } from "../src/omb.ts";
+import { jobStatusFrom, type JobStatus } from "../src/omb.ts";
 import { appendComment, botOf, hasTriage, setTriage, type Task } from "../src/tasks.ts";
 
 const config: Config = {
@@ -280,6 +280,56 @@ describe("tick", () => {
     assert.match(w.sent[0]!.sendId, /^[A-Za-z0-9_-]{16,80}$/);
   });
 
+  it("a quiet day (empty collector output) sends nothing and costs no run", async () => {
+    const w = world([]);
+    w.deps.config = {
+      ...config,
+      bots: { ...config.bots, "bl3q-lead": { ombName: "bl3q-lead" } },
+      routines: [{ name: "bl3q tối", bot: "bl3q-lead", at: "20:00", collector: { cmd: "x", args: [], cwd: "/" }, instruction: "S" }],
+    };
+    let calls = 0;
+    w.deps.collect = async () => {
+      calls++;
+      return "\n";
+    };
+    const state: State = { runs: [] };
+    w.setNow(new Date(2026, 10, 18, 20, 1));
+    await tick(w.deps, state);
+    await tick(w.deps, state);
+    assert.equal(calls, 1);
+    assert.equal(w.sent.length, 0);
+    assert.equal(state.runs.length, 0);
+    assert.equal(state.routinesDone?.["bl3q tối"], "2026-11-18");
+  });
+
+  it("a disabled routine never runs", async () => {
+    const w = world([]);
+    w.deps.config = {
+      ...config,
+      bots: { ...config.bots, "bl3q-lead": { ombName: "bl3q-lead" } },
+      routines: [{ name: "r", bot: "bl3q-lead", at: "20:00", collector: { cmd: "x", args: [], cwd: "/" }, instruction: "S", disabled: true }],
+    };
+    let calls = 0;
+    w.deps.collect = async () => (calls++, "{}");
+    w.setNow(new Date(2026, 10, 18, 20, 1));
+    await tick(w.deps, { runs: [] });
+    assert.equal(calls, 0);
+    assert.equal(w.sent.length, 0);
+  });
+
+  it("pauses when ANY bot's settings drifted, not only the receiving bot (a Chief passes work on)", async () => {
+    const w = world([task("bb", "Bot: Dev\none")]);
+    w.deps.config = {
+      ...config,
+      bots: { ...config.bots, "bl3q-fix": { ombName: "bl3q-fix", settings: { template: "ft", installed: "fi" } } },
+    };
+    w.deps.sameFile = async (a) => a !== "ft";
+    const state: State = { runs: [] };
+    await tick(w.deps, state);
+    assert.equal(w.sent.length, 0);
+    assert.equal(state.paused?.reason, "settings drift: bl3q-fix");
+  });
+
   it("a failing collector counts the routine as done for the day and pings once", async () => {
     const w = world([]);
     w.deps.config = {
@@ -312,5 +362,25 @@ describe("tick", () => {
     assert.equal(state.runs[0]!.status, "sent");
     assert.equal(w.store.get("bb")!.status_code, "in-progress");
     assert.match(w.store.get("bb")!.description!, /Đã giao cho Dev \(OpenMausBot thread `thread-1`\)/);
+  });
+});
+
+describe("jobStatusFrom", () => {
+  const node = (status: string) => ({ threadId: "t", status, outcome: null, result: "r" });
+  it("keeps a Chief's job running while a teammate still works, even if the lead's own node is done", () => {
+    assert.equal(jobStatusFrom({ state: "running", nodes: [node("completed")] }, "t")?.status, "running");
+  });
+  it("reports needs-input for a teammate's approval card", () => {
+    const j = jobStatusFrom({ state: "needs-input", nodes: [node("completed")] }, "t");
+    assert.equal(j?.status, "running");
+    assert.equal(j?.needsInput, true);
+  });
+  it("finishes only when the whole job is completed", () => {
+    assert.equal(jobStatusFrom({ state: "completed", nodes: [node("completed")] }, "t")?.status, "completed");
+    assert.equal(jobStatusFrom({ state: "stalled", nodes: [node("running")] }, "t")?.status, "failed");
+  });
+  it("falls back to the node when the server sends no job state", () => {
+    assert.equal(jobStatusFrom({ nodes: [node("failed")] }, "t")?.status, "failed");
+    assert.equal(jobStatusFrom({ nodes: [] }, "t"), null);
   });
 });

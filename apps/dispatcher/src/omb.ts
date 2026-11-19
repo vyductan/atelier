@@ -56,21 +56,39 @@ export function ombBots(cli: string, port: number, tokenFile: string): Bots {
     },
     async job(threadId) {
       const d = await get(`/api/threads/${encodeURIComponent(threadId)}/job?since=0`);
-      if (!d) return null;
-      const node = d.nodes?.find((n: { threadId?: string }) => n.threadId === threadId) ?? d.nodes?.[0];
-      if (!node) return null;
-      return {
-        status: String(node.status),
-        outcome: node.outcome ?? null,
-        needsInput: (d.needsInput?.length ?? 0) > 0,
-        result: typeof node.result === "string" ? node.result : null,
-      };
+      return d ? jobStatusFrom(d, threadId) : null;
     },
     async lastReply(threadId) {
       const d = await get(`/api/threads/${encodeURIComponent(threadId)}/messages?limit=20`);
       const last = d?.messages?.findLast((m: { role?: string; kind?: string; text?: string }) => m.role === "bot" && m.kind === "text" && m.text);
       return last?.text ?? null;
     },
+  };
+}
+
+/**
+ * One status for the whole job: the top-level `state` covers teammates the bot
+ * handed work to (a Chief's chain), so the bridge's one-run gate holds until
+ * every teammate is done, not just the bot it sent to. Falls back to the node.
+ */
+export function jobStatusFrom(d: {
+  state?: string;
+  needsInput?: unknown[];
+  nodes?: { threadId?: string; status?: string; outcome?: string | null; result?: unknown }[];
+}, threadId: string): JobStatus | null {
+  const node = d.nodes?.find((n) => n.threadId === threadId) ?? d.nodes?.[0];
+  if (!node && !d.state) return null;
+  const nodeStatus = String(node?.status ?? "running");
+  const status =
+    d.state === "completed" ? "completed"
+    : d.state === "failed" || d.state === "stalled" ? "failed"
+    : d.state === "running" || d.state === "needs-input" ? (nodeStatus === "cancelled" ? "cancelled" : "running")
+    : nodeStatus;
+  return {
+    status,
+    outcome: node?.outcome ?? (d.state === "stalled" ? "stalled" : null),
+    needsInput: d.state === "needs-input" || (d.needsInput?.length ?? 0) > 0,
+    result: typeof node?.result === "string" ? node.result : null,
   };
 }
 
