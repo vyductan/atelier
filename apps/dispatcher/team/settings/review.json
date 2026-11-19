@@ -100,21 +100,23 @@
         "~/.cloudflared",
         "~/Library",
         "~/.claude",
-        "~/.config"
+        "~/.config",
+        "~/Developer",
+        "~/Developer/vyductan-agent/.env.local-db",
+        "~/Developer/vyductan-agent/packages/claude-plugins/vyductan-tasks/.mcp.json"
       ],
       "allowRead": [
-        "~/.config/git"
+        "~/.config/git",
+        "~/Developer/vyductan-agent",
+        "~/Developer/vyductan/apps/vyductan.dev/.git"
       ],
       "denyWrite": [
         "~/.vyductan-team/review/.claude"
       ]
     },
     "network": {
-      "allowedDomains": [
-        "localhost",
-        "127.0.0.1"
-      ],
-      "allowLocalBinding": true
+      "allowedDomains": [],
+      "allowLocalBinding": false
     }
   }
 }
