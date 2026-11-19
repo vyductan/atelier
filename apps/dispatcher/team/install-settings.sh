@@ -1,5 +1,6 @@
 #!/bin/zsh
-# Installs team/settings/<bot>.json as each bot's cwd .claude/settings.json.
+# Installs team/settings/<bot>.json as each bot's cwd .claude/settings.json,
+# and team/skills/<bot>/* as its cwd .claude/skills/.
 # These files are the bots' hard limits (OpenMausBot runs claude with
 # --setting-sources project); edit them here, review, then run this script.
 #
@@ -21,6 +22,16 @@ for bot dir in ${(kv)cwd}; do
   mkdir -p "$dir/.claude"
   cp "$here/$bot.json" "$dir/.claude/settings.json"
   print "installed $bot -> $dir/.claude/settings.json"
+  # Bot-only skills: team/skills/<bot>/<skill>/ -> cwd .claude/skills/ (project
+  # skills are the only ones --setting-sources project loads).
+  if [[ -d ${here:h}/skills/$bot ]]; then
+    for skill in ${here:h}/skills/$bot/*(/); do
+      rm -rf "$dir/.claude/skills/${skill:t}"
+      mkdir -p "$dir/.claude/skills"
+      cp -R "$skill" "$dir/.claude/skills/"
+      print "installed $bot skill ${skill:t}"
+    done
+  fi
 done
 # Dev's worktree tracks the repo's own .claude/settings.json; keep ours out of commits.
 git -C "${cwd[dev]}" update-index --skip-worktree .claude/settings.json
