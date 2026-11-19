@@ -1,7 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type { SkillUsageReport } from "./skills-client";
-
 import type {
   ClaudeContextWindowValue,
   ClaudeModelOptions,
@@ -126,9 +125,7 @@ export async function ensureDirectory(path: string): Promise<void> {
   return await invoke<void>("ensure_directory", { path });
 }
 
-export async function readSessionMessages(
-  sessionPath: string,
-): Promise<
+export async function readSessionMessages(sessionPath: string): Promise<
   Array<{
     role: string;
     content: unknown;
@@ -215,9 +212,7 @@ export async function readGlobalClaudeConfig(): Promise<string> {
   return await invoke<string>("read_global_claude_config");
 }
 
-export async function writeGlobalClaudeConfig(
-  contents: string,
-): Promise<void> {
+export async function writeGlobalClaudeConfig(contents: string): Promise<void> {
   ensureTauri();
   return await invoke<void>("write_global_claude_config", { contents });
 }
@@ -232,7 +227,10 @@ export async function syncClaudePermissionsToCodex(
   deny: string[],
 ): Promise<void> {
   ensureTauri();
-  return await invoke<void>("sync_claude_permissions_to_codex", { allow, deny });
+  return await invoke<void>("sync_claude_permissions_to_codex", {
+    allow,
+    deny,
+  });
 }
 
 export async function openGlobalCodexConfig(editor: string): Promise<void> {
@@ -387,7 +385,10 @@ export async function installSkill(skillSource: string): Promise<void> {
   return await invoke<void>("install_skill", { skillSource });
 }
 
-export async function searchSkills(query: string, limit?: number): Promise<string> {
+export async function searchSkills(
+  query: string,
+  limit?: number,
+): Promise<string> {
   ensureTauri();
   return await invoke<string>("search_skills", { query, limit });
 }
@@ -402,14 +403,28 @@ export async function uninstallSkill(skillName: string): Promise<void> {
   return await invoke<void>("uninstall_skill", { skillName });
 }
 
-export async function enableSkillForAgent(skillSource: string, skillName: string, agentName: string): Promise<void> {
+export async function enableSkillForAgent(
+  skillSource: string,
+  skillName: string,
+  agentName: string,
+): Promise<void> {
   ensureTauri();
-  return await invoke<void>("enable_skill_for_agent", { skillSource, skillName, agentName });
+  return await invoke<void>("enable_skill_for_agent", {
+    skillSource,
+    skillName,
+    agentName,
+  });
 }
 
-export async function disableSkillForAgent(skillName: string, agentName: string): Promise<void> {
+export async function disableSkillForAgent(
+  skillName: string,
+  agentName: string,
+): Promise<void> {
   ensureTauri();
-  return await invoke<void>("disable_skill_for_agent", { skillName, agentName });
+  return await invoke<void>("disable_skill_for_agent", {
+    skillName,
+    agentName,
+  });
 }
 
 export async function disableSkill(skillName: string): Promise<void> {
@@ -449,9 +464,17 @@ export async function getSkillAgentStates(): Promise<SkillAgentStates> {
   return await invoke<SkillAgentStates>("get_skill_agent_states");
 }
 
-export async function setSkillForAgent(skillName: string, agentId: string, enabled: boolean): Promise<void> {
+export async function setSkillForAgent(
+  skillName: string,
+  agentId: string,
+  enabled: boolean,
+): Promise<void> {
   ensureTauri();
-  return await invoke<void>("set_skill_for_agent", { skillName, agentId, enabled });
+  return await invoke<void>("set_skill_for_agent", {
+    skillName,
+    agentId,
+    enabled,
+  });
 }
 
 export async function getDetectedAgents(): Promise<string[]> {
@@ -459,7 +482,95 @@ export async function getDetectedAgents(): Promise<string[]> {
   return await invoke<string[]>("get_detected_agents");
 }
 
+/** Mirrors `PluginSkill` in src-tauri/src/features/skills/plugins.rs. */
+export interface PluginSkill {
+  name: string;
+  invokeName: string;
+  plugin: string;
+  marketplace: string;
+  kind: "skill" | "command" | "agent" | "mcp" | "hook";
+  path: string;
+  enabled: boolean;
+  /** MCP server URL/command or a hook's commands; null for Markdown kinds. */
+  detail: string | null;
+  installedAt: string | null;
+  updatedAt: string | null;
+}
+
+export async function getPluginSkills(): Promise<PluginSkill[]> {
+  ensureTauri();
+  return await invoke<PluginSkill[]>("get_plugin_skills");
+}
+
+/** Front matter of a skill or command file. */
+export interface SkillMeta {
+  description: string | null;
+  /** Other fields, flattened (`metadata.version` → `version`), in file order. */
+  fields: [string, string][];
+}
+
+/** Front matter keyed by the paths asked for; unreadable paths are missing. */
+export async function getSkillMeta(
+  paths: string[],
+): Promise<Record<string, SkillMeta>> {
+  ensureTauri();
+  return await invoke<Record<string, SkillMeta>>("get_skill_meta", { paths });
+}
+
+/** `pluginId` is `<plugin>@<marketplace>`; user scope, through `claude plugin`. */
+export async function setPluginEnabled(
+  pluginId: string,
+  enabled: boolean,
+): Promise<void> {
+  ensureTauri();
+  return await invoke<void>("set_plugin_enabled", { pluginId, enabled });
+}
+
 export async function getSkillUsage(): Promise<SkillUsageReport> {
   ensureTauri();
   return await invoke<SkillUsageReport>("get_skill_usage");
+}
+
+/** Mirrors `SkillFiles` in src-tauri/src/features/skills/content.rs. */
+export interface SkillFiles {
+  root: string;
+  /** The file to show first. */
+  main: string;
+  /** Relative to `root`, `main` first. */
+  files: string[];
+  truncated: boolean;
+}
+
+/** Files of a skill folder, or just the item's own file. */
+export async function getSkillFiles(path: string): Promise<SkillFiles> {
+  ensureTauri();
+  return await invoke<SkillFiles>("get_skill_files", { path });
+}
+
+export async function readSkillFile(
+  root: string,
+  rel: string,
+): Promise<string> {
+  ensureTauri();
+  return await invoke<string>("read_skill_file", { root, rel });
+}
+
+/** `reveal`: show in Finder; otherwise open in the editor. */
+export async function openSkillPath(
+  path: string,
+  reveal: boolean,
+): Promise<void> {
+  ensureTauri();
+  await invoke<void>("open_skill_path", { path, reveal });
+}
+
+/** Names of installed skills with a newer version upstream (`skills check`). */
+export async function checkSkillUpdates(): Promise<string[]> {
+  ensureTauri();
+  return await invoke<string[]>("check_skill_updates");
+}
+
+export async function updateSkill(skillName: string): Promise<void> {
+  ensureTauri();
+  return await invoke<void>("update_skill", { skillName });
 }

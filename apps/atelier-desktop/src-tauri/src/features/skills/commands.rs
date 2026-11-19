@@ -1,6 +1,6 @@
 use std::process::{Command, Output};
 
-fn run_pnpm(args: &[&str]) -> std::io::Result<Output> {
+pub(super) fn run_pnpm(args: &[&str]) -> std::io::Result<Output> {
     if cfg!(target_os = "windows") {
         let mut cmd = Command::new("cmd");
         cmd.arg("/C").arg("pnpm");

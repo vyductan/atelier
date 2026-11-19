@@ -6,7 +6,28 @@ import type {
 
 export type SkillSort = "name" | "uses" | "last-used";
 
-/** Usage keyed by skill name; the backend already strips `plugin:` prefixes. */
+/**
+ * The name history records a skill under: plugin skills are invoked as
+ * `plugin:name`, everything else by its bare name.
+ */
+export function usageKey(skill: InstalledSkill): string {
+  return skill.plugin?.invokeName ?? skill.name;
+}
+
+/**
+ * Whether history counts it at all: skills and slash commands are; a plugin's
+ * agents, MCP servers and hooks never show up as invocations, so they get "–"
+ * instead of looking unused.
+ */
+export function isCounted(skill: InstalledSkill): boolean {
+  return (
+    !skill.plugin ||
+    skill.plugin.kind === "skill" ||
+    skill.plugin.kind === "command"
+  );
+}
+
+/** Usage keyed by invoked name (`plugin:name` for plugin skills). */
 export function indexUsage(
   report: SkillUsageReport | null,
 ): Map<string, SkillUsage> {
@@ -17,7 +38,7 @@ export function usesOf(
   usage: Map<string, SkillUsage>,
   skill: InstalledSkill,
 ): number {
-  return usage.get(skill.name)?.total ?? 0;
+  return usage.get(usageKey(skill))?.total ?? 0;
 }
 
 /**
@@ -30,7 +51,7 @@ export function sortSkills(
   usage: Map<string, SkillUsage>,
 ): InstalledSkill[] {
   const lastUsed = (skill: InstalledSkill) => {
-    const iso = usage.get(skill.name)?.lastUsed;
+    const iso = usage.get(usageKey(skill))?.lastUsed;
     return iso ? Date.parse(iso) : 0;
   };
   const byName = (a: InstalledSkill, b: InstalledSkill) =>
@@ -71,7 +92,7 @@ export function sortGroups(
     Math.max(
       0,
       ...skills.map((skill) => {
-        const iso = usage.get(skill.name)?.lastUsed;
+        const iso = usage.get(usageKey(skill))?.lastUsed;
         return iso ? Date.parse(iso) : 0;
       }),
     );

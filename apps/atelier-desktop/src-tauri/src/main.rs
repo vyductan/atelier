@@ -30,6 +30,10 @@ use features::skills::commands::{
 };
 use features::skills::disable::{disable_skill, enable_skill, list_disabled_skills};
 use features::skills::agent_toggle::{get_skill_agent_states, set_skill_for_agent};
+use features::skills::content::{get_skill_files, open_skill_path, read_skill_file};
+use features::skills::meta::get_skill_meta;
+use features::skills::plugins::{get_plugin_skills, set_plugin_enabled};
+use features::skills::updates::{check_skill_updates, update_skill};
 use features::services::commands::{
     get_services_order, list_services, open_services_config, read_service_log, restart_service,
     save_services_order, start_service, stop_service,
@@ -95,11 +99,19 @@ fn main() {
             disable_skill_for_agent,
             get_detected_agents,
             get_skill_usage,
+            get_plugin_skills,
+            get_skill_meta,
+            get_skill_files,
+            read_skill_file,
+            open_skill_path,
+            set_plugin_enabled,
             disable_skill,
             enable_skill,
             list_disabled_skills,
             get_skill_agent_states,
             set_skill_for_agent,
+            check_skill_updates,
+            update_skill,
             list_services,
             start_service,
             stop_service,

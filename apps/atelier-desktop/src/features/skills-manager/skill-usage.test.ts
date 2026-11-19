@@ -9,8 +9,10 @@ import {
   describeUsage,
   formatLastUsed,
   indexUsage,
+  isCounted,
   sortGroups,
   sortSkills,
+  usageKey,
 } from "./skill-usage";
 
 const NOW = Date.parse("2026-10-24T12:00:00Z");
@@ -168,5 +170,70 @@ describe("sortGroups", () => {
       "mattpocock/skills: grilling,pr,to-spec",
       "tt-a1i/archify: archify",
     ]);
+  });
+});
+
+describe("plugin skills", () => {
+  const plugin = (name: string, pluginName: string): InstalledSkill => ({
+    ...skill(name),
+    plugin: {
+      plugin: pluginName,
+      marketplace: "official",
+      kind: "skill",
+      invokeName: `${pluginName}:${name}`,
+      enabled: true,
+    },
+  });
+
+  it("counts a plugin skill under plugin:name, apart from a same-named standalone skill", () => {
+    const index = indexUsage({
+      skills: [
+        usage("code-review", 5, 3),
+        usage("code-review:code-review", 2, 1),
+      ],
+      since: null,
+      scannedFiles: 1,
+    });
+    const standalone = skill("code-review");
+    const fromPlugin = plugin("code-review", "code-review");
+    expect(usageKey(standalone)).toBe("code-review");
+    expect(usageKey(fromPlugin)).toBe("code-review:code-review");
+    expect(
+      sortSkills([standalone, fromPlugin], "uses", index).map(usageKey),
+    ).toEqual(["code-review", "code-review:code-review"]);
+    expect(
+      sortSkills([standalone, fromPlugin], "last-used", index).map(usageKey),
+    ).toEqual(["code-review:code-review", "code-review"]);
+  });
+});
+
+describe("isCounted", () => {
+  const base = {
+    name: "x",
+    path: "/x",
+    scope: "global",
+    agents: [],
+    inStore: false,
+    agentStates: {},
+  };
+  const of = (kind: "skill" | "command" | "agent" | "mcp" | "hook") => ({
+    ...base,
+    plugin: {
+      plugin: "p",
+      marketplace: "m",
+      kind,
+      invokeName: "p:x",
+      enabled: true,
+      detail: null,
+    },
+  });
+
+  it("counts skills and commands, not agents, MCP servers or hooks", () => {
+    expect(isCounted(base)).toBe(true);
+    expect(
+      ["skill", "command", "agent", "mcp", "hook"].map((k) =>
+        isCounted(of(k as never)),
+      ),
+    ).toEqual([true, true, false, false, false]);
   });
 });

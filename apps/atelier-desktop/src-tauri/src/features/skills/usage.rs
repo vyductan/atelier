@@ -21,7 +21,8 @@ use std::time::UNIX_EPOCH;
 
 use serde::{Deserialize, Serialize};
 
-const CACHE_VERSION: u32 = 1;
+/// 2: plugin skills keep their `plugin:` prefix (1 stripped it).
+const CACHE_VERSION: u32 = 2;
 const DAY_SECS: i64 = 24 * 60 * 60;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -81,12 +82,12 @@ pub struct SkillUsageReport {
 
 // ---------------------------------------------------------------- parsing --
 
-/// Plugin skills are invoked as `plugin:skill`; installed skills are listed by
-/// the bare name, so usage is keyed by the part after the last colon.
+/// Plugin skills are invoked as `plugin:skill` and keep that prefix, so
+/// `code-review:code-review` (a plugin) and `code-review` (a standalone
+/// skill) are counted apart. The UI looks plugin rows up by the prefixed key.
 fn normalize_skill(name: &str) -> Option<String> {
     let name = name.trim().trim_start_matches('/');
-    let name = name.rsplit(':').next().unwrap_or(name);
-    (!name.is_empty()).then(|| name.to_string())
+    (!name.is_empty() && !name.ends_with(':')).then(|| name.to_string())
 }
 
 fn parse_rfc3339(ts: &str) -> i64 {
@@ -473,7 +474,7 @@ mod tests {
         let events = parse_transcript_line(line);
         assert_eq!(events.len(), 2);
         assert_eq!(events[0], UsageEvent { skill: "archify".into(), kind: UsageKind::ClaudeAuto, ts: 1_791_280_800 });
-        assert_eq!(events[1].skill, "docs");
+        assert_eq!(events[1].skill, "anthropic-skills:docs");
     }
 
     #[test]

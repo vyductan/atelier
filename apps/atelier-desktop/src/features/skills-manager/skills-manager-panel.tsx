@@ -14,11 +14,14 @@ import type {
   Skill,
   SkillUsageReport,
 } from "../../lib/skills-client";
+import type { SkillMeta } from "../../lib/tauri";
 import { skillsClient } from "../../lib/skills-client";
 import { installSkill } from "../../lib/tauri";
 import { useToastStore } from "../../store/toast-store";
 import { InstalledSkillsTable } from "./installed-skills-table";
+import { setPluginFlag } from "./plugin-groups";
 import { SkillListItem } from "./skill-list-item";
+import { useSkillUpdates } from "./use-skill-updates";
 
 export function SkillsManagerPanel() {
   const [activeTab, setActiveTab] = useState("installed");
@@ -34,10 +37,11 @@ export function SkillsManagerPanel() {
 
   // Installed state
   const [installedSkills, setInstalledSkills] = useState<InstalledSkill[]>([]);
-  const [skillAgents, setSkillAgents] = useState<{ id: string; name: string }[]>(
-    [],
-  );
+  const [skillAgents, setSkillAgents] = useState<
+    { id: string; name: string }[]
+  >([]);
   const [skillUsage, setSkillUsage] = useState<SkillUsageReport | null>(null);
+  const [skillMeta, setSkillMeta] = useState<Record<string, SkillMeta>>({});
   const [isLoadingInstalled, setIsLoadingInstalled] = useState(false);
   const [installedError, setInstalledError] = useState<string | null>(null);
   const [uninstallingSkillName, setUninstallingSkillName] = useState<
@@ -49,6 +53,26 @@ export function SkillsManagerPanel() {
   const [togglingGroupKey, setTogglingGroupKey] = useState<string | null>(null);
 
   const { addToast } = useToastStore();
+  const skillUpdates = useSkillUpdates(activeTab === "installed");
+
+  const handleUpdate = async (skillNames: string[]) => {
+    if (skillUpdates.updating || skillNames.length === 0) return;
+    const failed = await skillUpdates.update(skillNames);
+    const done = skillNames.length - failed.length;
+    if (failed.length === 0)
+      addToast(
+        skillNames.length === 1
+          ? `Updated ${skillNames[0]}`
+          : `Updated ${done} skills`,
+        "success",
+      );
+    else
+      addToast(
+        `Updated ${done} of ${skillNames.length}; failed: ${failed.join(", ")}`,
+        "error",
+      );
+    void fetchInstalledSkills({ quiet: true });
+  };
   useEffect(() => {
     let cancelled = false;
     const loadSkills = async () => {
@@ -78,26 +102,41 @@ export function SkillsManagerPanel() {
     };
   }, [searchQuery]);
 
-  const fetchInstalledSkills = async () => {
-    setIsLoadingInstalled(true);
-    setInstalledError(null);
-    // Usage is extra information: it loads alongside, and a failed history
-    // scan leaves the columns at "–" instead of blocking the list.
-    skillsClient
-      .getSkillUsage()
-      .then(setSkillUsage)
-      .catch((error: unknown) => {
-        console.error("Failed to count skill usage:", error);
-      });
+  /**
+   * `quiet` refreshes after a change without the skeleton: the table stays
+   * mounted (folds, search, scroll survive) and history is not rescanned,
+   * since a toggle does not change usage.
+   */
+  const fetchInstalledSkills = async ({ quiet = false } = {}) => {
+    if (!quiet) {
+      setIsLoadingInstalled(true);
+      setInstalledError(null);
+      // Usage is extra information: it loads alongside, and a failed history
+      // scan leaves the columns at "–" instead of blocking the list.
+      skillsClient
+        .getSkillUsage()
+        .then(setSkillUsage)
+        .catch((error: unknown) => {
+          console.error("Failed to count skill usage:", error);
+        });
+    }
     try {
       const fetched = await skillsClient.getInstalledSkills();
       setInstalledSkills(fetched.skills);
+      // Descriptions are extra too: rows show without them until they arrive.
+      skillsClient
+        .getSkillMeta(fetched.skills.map((skill) => skill.path))
+        .then(setSkillMeta)
+        .catch((error: unknown) => {
+          console.error("Failed to read skill descriptions:", error);
+        });
       setSkillAgents(fetched.agents);
     } catch (error_) {
-      setInstalledError("Failed to load installed skills.");
+      // A failed quiet refresh keeps the list it has rather than blanking it.
+      if (!quiet) setInstalledError("Failed to load installed skills.");
       console.error(error_);
     } finally {
-      setIsLoadingInstalled(false);
+      if (!quiet) setIsLoadingInstalled(false);
     }
   };
 
@@ -131,7 +170,7 @@ export function SkillsManagerPanel() {
     try {
       await skillsClient.uninstallSkill(skillName);
       addToast(`Successfully uninstalled ${skillName}`, "success");
-      fetchInstalledSkills();
+      void fetchInstalledSkills({ quiet: true });
     } catch (error_: unknown) {
       addToast(
         error_ instanceof Error
@@ -192,7 +231,38 @@ export function SkillsManagerPanel() {
         "error",
       );
     }
-    fetchInstalledSkills();
+    void fetchInstalledSkills({ quiet: true });
+  };
+
+  const handleSetPluginEnabled = async (
+    pluginId: string,
+    enabled: boolean,
+    groupKey: string,
+  ) => {
+    if (togglingSkillName || togglingGroupKey) return;
+    setTogglingGroupKey(groupKey);
+    // Blocks every other switch while the CLI rewrites settings.json.
+    setTogglingSkillName(`plugin:${pluginId}`);
+    try {
+      await skillsClient.setPluginEnabled(pluginId, enabled);
+      // Only the plugin's flag changed: flip it in place, no rescan.
+      setInstalledSkills((skills) => setPluginFlag(skills, pluginId, enabled));
+      addToast(
+        `${enabled ? "Enabled" : "Disabled"} ${pluginId} for new Claude Code sessions`,
+        "success",
+      );
+    } catch (error_: unknown) {
+      console.error(error_);
+      addToast(
+        error_ instanceof Error
+          ? error_.message
+          : `Failed to toggle ${pluginId}`,
+        "error",
+      );
+    } finally {
+      setTogglingSkillName(null);
+      setTogglingGroupKey(null);
+    }
   };
 
   const groupedInstalledSkills = useMemo(() => {
@@ -270,7 +340,7 @@ export function SkillsManagerPanel() {
     <div className="flex h-full flex-col px-6 py-5">
       <header className="mb-3 flex items-baseline gap-2">
         <h2 className="text-sm font-semibold">Skills</h2>
-        <span className="text-muted-foreground text-xs">
+        <span className="text-xs text-muted-foreground">
           Manage skills for AI agents
         </span>
       </header>
@@ -291,14 +361,14 @@ export function SkillsManagerPanel() {
         >
           <div className="mb-8">
             <div className="group relative max-w-2xl">
-              <div className="from-primary/30 absolute -inset-0.5 rounded-xl bg-linear-to-r to-violet-500/30 opacity-0 blur transition duration-500 group-focus-within:opacity-100"></div>
+              <div className="absolute -inset-0.5 rounded-xl bg-linear-to-r from-primary/30 to-violet-500/30 opacity-0 blur transition duration-500 group-focus-within:opacity-100"></div>
               <div className="relative flex items-center">
-                <Search className="text-muted-foreground absolute left-4 h-5 w-5" />
+                <Search className="absolute left-4 h-5 w-5 text-muted-foreground" />
                 <Input
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search skills (e.g. react, postgres, review)..."
-                  className="border-muted bg-background ring-offset-background focus-visible:ring-primary/20 h-14 w-full rounded-xl pr-4 pl-12 text-base shadow-sm transition-all focus-visible:ring-2"
+                  className="h-14 w-full rounded-xl border-muted bg-background pr-4 pl-12 text-base shadow-sm ring-offset-background transition-all focus-visible:ring-2 focus-visible:ring-primary/20"
                 />
               </div>
             </div>
@@ -310,22 +380,22 @@ export function SkillsManagerPanel() {
                 {Array.from({ length: 8 }).map((_, i) => (
                   <div
                     key={i}
-                    className="bg-muted/40 h-[156px] animate-pulse rounded-xl border"
+                    className="h-[156px] animate-pulse rounded-xl border bg-muted/40"
                   />
                 ))}
               </div>
             ) : error ? (
-              <div className="bg-destructive/5 text-destructive flex h-64 flex-col items-center justify-center gap-3 rounded-xl border border-dashed text-center">
+              <div className="flex h-64 flex-col items-center justify-center gap-3 rounded-xl border border-dashed bg-destructive/5 text-center text-destructive">
                 <AlertCircle className="h-10 w-10 opacity-70" />
                 <p className="text-sm font-medium">{error}</p>
               </div>
             ) : skills.length === 0 ? (
-              <div className="bg-muted/20 flex h-64 flex-col items-center justify-center gap-4 rounded-xl border border-dashed text-center">
-                <div className="bg-muted/50 flex h-16 w-16 items-center justify-center rounded-full">
-                  <Compass className="text-muted-foreground/60 h-8 w-8" />
+              <div className="flex h-64 flex-col items-center justify-center gap-4 rounded-xl border border-dashed bg-muted/20 text-center">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted/50">
+                  <Compass className="h-8 w-8 text-muted-foreground/60" />
                 </div>
                 <div className="max-w-[250px]">
-                  <p className="text-muted-foreground text-sm font-medium">
+                  <p className="text-sm font-medium text-muted-foreground">
                     {searchQuery.trim().length < 2
                       ? "Type at least 2 characters to discover new agent skills..."
                       : `No skills found matching "${searchQuery}"`}
@@ -337,11 +407,11 @@ export function SkillsManagerPanel() {
                 {groupedDiscoverSkills.map(([groupName, groupSkills]) => (
                   <div key={groupName} className="flex flex-col gap-4">
                     <div className="flex items-center gap-2 px-1">
-                      <Folder className="text-primary/70 h-5 w-5" />
+                      <Folder className="h-5 w-5 text-primary/70" />
                       <h3 className="text-xl font-semibold tracking-tight">
                         {groupName}
                       </h3>
-                      <span className="bg-muted text-muted-foreground ml-2 flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-medium">
+                      <span className="ml-2 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-muted px-1.5 text-[10px] font-medium text-muted-foreground">
                         {groupSkills.length}
                       </span>
                     </div>
@@ -353,9 +423,9 @@ export function SkillsManagerPanel() {
                             onInstall={handleInstall}
                           />
                           {installingSkillId === skill.skillId && (
-                            <div className="bg-background/50 absolute inset-0 flex items-center justify-center rounded-xl backdrop-blur-[2px]">
-                              <div className="bg-background flex items-center gap-2 rounded-full border px-4 py-2 shadow-lg">
-                                <div className="border-primary h-4 w-4 animate-spin rounded-full border-2 border-t-transparent" />
+                            <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-background/50 backdrop-blur-[2px]">
+                              <div className="flex items-center gap-2 rounded-full border bg-background px-4 py-2 shadow-lg">
+                                <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                                 <span className="text-sm font-medium">
                                   Installing...
                                 </span>
@@ -382,22 +452,22 @@ export function SkillsManagerPanel() {
                 {Array.from({ length: 8 }).map((_, i) => (
                   <div
                     key={i}
-                    className="bg-muted/40 h-8 animate-pulse rounded-md"
+                    className="h-8 animate-pulse rounded-md bg-muted/40"
                   />
                 ))}
               </div>
             ) : installedError ? (
-              <div className="bg-destructive/5 text-destructive flex h-64 flex-col items-center justify-center gap-3 rounded-xl border border-dashed text-center">
+              <div className="flex h-64 flex-col items-center justify-center gap-3 rounded-xl border border-dashed bg-destructive/5 text-center text-destructive">
                 <AlertCircle className="h-10 w-10 opacity-70" />
                 <p className="text-sm font-medium">{installedError}</p>
               </div>
             ) : installedSkills.length === 0 ? (
-              <div className="bg-muted/20 flex h-64 flex-col items-center justify-center gap-4 rounded-xl border border-dashed text-center">
-                <div className="bg-muted/50 flex h-16 w-16 items-center justify-center rounded-full">
-                  <Bot className="text-muted-foreground/60 h-8 w-8" />
+              <div className="flex h-64 flex-col items-center justify-center gap-4 rounded-xl border border-dashed bg-muted/20 text-center">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted/50">
+                  <Bot className="h-8 w-8 text-muted-foreground/60" />
                 </div>
                 <div className="max-w-[250px]">
-                  <p className="text-muted-foreground text-sm font-medium">
+                  <p className="text-sm font-medium text-muted-foreground">
                     You haven't installed any skills yet.
                   </p>
                 </div>
@@ -413,7 +483,13 @@ export function SkillsManagerPanel() {
                 }
                 uninstallingSkillName={uninstallingSkillName}
                 onUninstall={(skillName) => void handleUninstall(skillName)}
+                onSetPluginEnabled={(pluginId, enabled, groupKey) =>
+                  void handleSetPluginEnabled(pluginId, enabled, groupKey)
+                }
                 usage={skillUsage}
+                meta={skillMeta}
+                updates={skillUpdates}
+                onUpdate={(skillNames) => void handleUpdate(skillNames)}
               />
             )}
           </div>
