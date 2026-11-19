@@ -1,0 +1,105 @@
+{
+  "enabledPlugins": {
+    "vercel@claude-plugins-official": false,
+    "plugin-dev@claude-plugins-official": false,
+    "supabase@claude-plugins-official": false
+  },
+  "permissions": {
+    "deny": [
+      "Bash(git push:*)",
+      "Bash(*git push*)",
+      "Bash(git remote:*)",
+      "Bash(git merge:*)",
+      "Bash(git worktree:*)",
+      "Bash(git checkout main:*)",
+      "Bash(git switch main:*)",
+      "Bash(git branch -f:*)",
+      "Bash(git branch -D:*)",
+      "Bash(git update-ref:*)",
+      "Bash(git tag:*)",
+      "Bash(gh:*)",
+      "Bash(curl:*)",
+      "Bash(wget:*)",
+      "Edit(tests/**)",
+      "Edit(tools/selftest*)",
+      "Edit(tools/autofix.py)",
+      "Edit(tools/agent_merge.py)",
+      "Edit(tools/agent_digest.py)",
+      "Edit(tools/cron_manla.py)",
+      "Edit(docs/PLAN.md)",
+      "Edit(.claude/**)",
+      "Write(tests/**)",
+      "Write(tools/selftest*)",
+      "Write(tools/autofix.py)",
+      "Write(tools/agent_merge.py)",
+      "Write(tools/agent_digest.py)",
+      "Write(tools/cron_manla.py)",
+      "Write(docs/PLAN.md)",
+      "Write(.claude/**)",
+      "WebFetch",
+      "WebSearch",
+      "mcp__agents__vm_exec",
+      "mcp__plugin_vercel_vercel",
+      "mcp__plugin_supabase_supabase",
+      "mcp__vyductan-tasks",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.gnupg/**)",
+      "Read(~/.netrc)",
+      "Read(~/.claude/**)",
+      "Read(~/.atelier/**)",
+      "Read(~/.cloudflared/**)",
+      "Read(~/Library/**)",
+      "Read(//Library/Application Support/com.cloudflare.cloudflared/**)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Read(**/id_rsa*)",
+      "Read(**/id_ed25519*)",
+      "Read(~/.config/**)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/.mcp.json)"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false,
+    "autoAllowBashIfSandboxed": true,
+    "excludedCommands": [],
+    "filesystem": {
+      "allowWrite": [
+        "~/Developer/g-bots/bl3q/.git/objects",
+        "~/Developer/g-bots/bl3q/.git/refs/heads/agent",
+        "~/Developer/g-bots/bl3q/.git/logs/refs/heads/agent",
+        "~/Developer/g-bots/bl3q/.git/worktrees/bl3q-agent",
+        "~/.cache/uv",
+        "~/.bl3q-team/agent-state",
+        "~/.bl3q-team/agent-reports",
+        "~/.bl3q-team/agent-shots",
+        "~/.bl3q-team/agent-debug"
+      ],
+      "denyRead": [
+        "~/.ssh",
+        "~/.aws",
+        "~/.gnupg",
+        "~/.netrc",
+        "~/.atelier",
+        "~/.cloudflared",
+        "~/Library",
+        "~/.claude",
+        "~/.config"
+      ],
+      "allowRead": [
+        "~/.config/git"
+      ]
+    },
+    "network": {
+      "allowedDomains": [
+        "localhost",
+        "127.0.0.1"
+      ],
+      "allowLocalBinding": true
+    }
+  }
+}

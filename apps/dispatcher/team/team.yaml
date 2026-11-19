@@ -18,6 +18,13 @@ teams:
     brief: The Chief of Staff's desk. Routes work to the Workers team; never edits code.
   - name: Workers
     brief: Bots that do the work. No Chief on purpose (no automatic retries or incident turns).
+  # Spec "Nhóm bot bl3q" (vyductan-tasks, project bl3q). Lead is this team's Chief
+  # by the owner's choice (2026-11-19): it hands work to fix and review with
+  # coordinate_bots. Its settings deny the Chief's admin tools, and it stays at
+  # `ask` so it never raises a teammate's level. Merging is NOT a bot: the
+  # merge gate (bl3q tools/agent_merge.py) reads review's verdict files.
+  - name: bl3q
+    brief: Daily upkeep of the bl3q game bot. Lead triages the evening digest, fix repairs on agent/* branches in a worktree, review checks independently; a code gate merges.
 
 bots:
   - name: MausBot
@@ -63,8 +70,43 @@ bots:
   - name: g-bots
     team: Workers
     title: g-bots (điều tra, chỉ đọc)
-    model: claude/claude-sonnet-5-5
+    model: claude/claude-opus-5-5  # changed in the web UI 2026-11-19
     approval: auto
     computer: off
     cwd: /Users/vyductan/.atelier/openmausbot/workspaces/g-bots
     soul: { file: souls/g-bots.md }
+
+  # --- team bl3q -----------------------------------------------------------
+  # cwd under ~/.bl3q-team, NOT ~/.atelier: the sandbox and Read denies block
+  # ~/.atelier, and review's Bash must run from its own folder.
+  - name: bl3q-lead
+    team: bl3q
+    chief: true
+    title: bl3q lead (tổng hợp, giao việc)
+    model: claude/claude-sonnet-5-5
+    approval: ask
+    computer: off
+    cwd: /Users/vyductan/.bl3q-team/lead
+    soul: { file: souls/bl3q-lead.md }
+
+  # Bash auto-allowed only inside the sandbox (autoAllowBashIfSandboxed):
+  # writes limited to the worktree and refs/heads/agent/*, no network.
+  - name: bl3q-fix
+    team: bl3q
+    title: bl3q fix (sửa trên nhánh agent/*)
+    model: claude/claude-sonnet-5-5
+    approval: edits
+    computer: off
+    cwd: /Users/vyductan/Developer/g-bots/bl3q-agent
+    soul: { file: souls/bl3q-fix.md }
+
+  # `auto` so it can read the worktree and run tests without a card; the
+  # sandbox cannot write to any repo, so its only output is a verdict file.
+  - name: bl3q-review
+    team: bl3q
+    title: bl3q review (kiểm độc lập)
+    model: claude/claude-sonnet-5-5
+    approval: auto
+    computer: off
+    cwd: /Users/vyductan/.bl3q-team/review
+    soul: { file: souls/bl3q-review.md }

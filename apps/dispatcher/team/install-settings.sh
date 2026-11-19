@@ -13,6 +13,9 @@ typeset -A cwd=(
   ops    "$HOME/.atelier/openmausbot/workspaces/ops"
   g-bots "$HOME/.atelier/openmausbot/workspaces/g-bots"
   dev    "$HOME/Developer/vyductan-agent"
+  bl3q-lead   "$HOME/.bl3q-team/lead"
+  bl3q-fix    "$HOME/Developer/g-bots/bl3q-agent"
+  bl3q-review "$HOME/.bl3q-team/review"
 )
 for bot dir in ${(kv)cwd}; do
   [[ -d $dir ]] || { print -u2 "missing cwd for $bot: $dir"; exit 1; }
