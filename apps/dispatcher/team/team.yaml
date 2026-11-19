@@ -111,7 +111,9 @@ bots:
   - name: bl3q-review
     team: bl3q
     title: bl3q review (kiểm độc lập)
-    model: claude/claude-sonnet-5-5
+    # Opus, not fix's Sonnet: review alone judges edited tests, so a different
+    # (stronger) model is harder for fix's own explanations to talk round.
+    model: claude/claude-opus-5-5
     approval: auto
     computer: off
     cwd: /Users/vyductan/.bl3q-team/review

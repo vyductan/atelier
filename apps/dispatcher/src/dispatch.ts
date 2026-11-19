@@ -56,6 +56,12 @@ export interface Routine {
   instruction: string;
   /** Configured but not run (e.g. until a live test has passed). */
   disabled?: boolean;
+  /**
+   * A task that keeps the routine's reports: each finished run adds the bot's
+   * last reply as a dated comment, so past reports can be read without
+   * scrolling OpenMausBot. The task's status is never touched.
+   */
+  reportTask?: string;
 }
 
 export interface Config {
@@ -147,6 +153,12 @@ export function dueRoutine(config: Config, state: State, now: Date): Routine | n
   const today = localDate(now);
   const hhmm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
   return (config.routines ?? []).find((r) => !r.disabled && state.routinesDone?.[r.name] !== today && hhmm >= r.at && r.bot in config.bots) ?? null;
+}
+
+/** The start of a bot's reply on one line, short enough for a phone notification. */
+function excerpt(reply: string, max = 240): string {
+  const line = reply.replace(/\s+/g, " ").trim();
+  return line.length > max ? `${line.slice(0, max)}…` : line || "Mở OpenMausBot để đọc.";
 }
 
 async function ping(deps: Deps, title: string, message: string): Promise<void> {
@@ -340,7 +352,16 @@ export async function settle(deps: Deps, state: State): Promise<void> {
     run.status = ok ? "done" : "failed";
     run.finishedAt = now.toISOString();
     deps.log("routine-finished", { routine: run.routine, status: job.status, outcome: job.outcome });
-    await ping(deps, ok ? `${run.bot}: ${run.title ?? run.routine} đã xong` : `${run.bot}: ${run.title ?? run.routine} lỗi`, "Mở OpenMausBot để đọc.");
+    const reportTask = deps.config.routines?.find((r) => r.name === run.routine)?.reportTask;
+    if (reportTask) {
+      const head = `${run.routine} (${run.bot}, thread \`${run.threadId}\`)${ok ? "" : ` dừng: ${job.status}`}:`;
+      try {
+        await comment(deps, reportTask, `${head}\n\n${quote(reply)}`);
+      } catch (error) {
+        deps.log("report-failed", { routine: run.routine, message: error instanceof Error ? error.message.slice(0, 200) : "failed" });
+      }
+    }
+    await ping(deps, ok ? `${run.bot}: ${run.title ?? run.routine} đã xong` : `${run.bot}: ${run.title ?? run.routine} lỗi`, excerpt(reply));
     if (!ok && RATE_LIMIT.test(`${job.outcome ?? ""} ${reply}`)) {
       state.paused = { reason: "rate limit", at: now.toISOString() };
       deps.log("paused", { reason: "rate limit" });

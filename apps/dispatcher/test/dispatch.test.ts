@@ -248,6 +248,29 @@ describe("tick", () => {
     assert.equal(w.sent.length, 2);
   });
 
+  it("files a routine's report on its report task and puts its start in the ping", async () => {
+    const w = world([task("rep", "Báo cáo hằng ngày")], { reply: "Báo cáo bl3q 18/11: merge 2 việc.\nChi tiết…" });
+    w.store.get("rep")!.status_code = "in-progress"; // never handed out as work
+    w.deps.config = {
+      ...config,
+      bots: { ...config.bots, Ops: { ombName: "Ops" } },
+      routines: [{ name: "digest", bot: "Ops", at: "08:00", collector: { cmd: "x", args: [], cwd: "/" }, instruction: "S", reportTask: "rep" }],
+    };
+    w.deps.collect = async () => '{"errors": 3}';
+    const pings: { title: string; message: string }[] = [];
+    w.deps.notify = async (title, message) => void pings.push({ title, message });
+    const state: State = { runs: [] };
+    w.setNow(new Date(2026, 10, 18, 8, 5));
+    await tick(w.deps, state);
+    w.setJob({ status: "completed", outcome: "done", needsInput: false, result: null });
+    await tick(w.deps, state);
+    const description = w.store.get("rep")!.description ?? "";
+    assert.match(description, /\*\*2026-11-18:\*\* digest \(Ops, thread `thread-1`\)/);
+    assert.match(description, /> Báo cáo bl3q 18\/11: merge 2 việc\.\n> Chi tiết…/);
+    assert.equal(w.store.get("rep")!.status_code, "in-progress");
+    assert.deepEqual(pings.at(-1), { title: "Ops: digest đã xong", message: "Báo cáo bl3q 18/11: merge 2 việc. Chi tiết…" });
+  });
+
   it("pauses instead of sending when a bot's installed settings drifted from the template", async () => {
     const w = world([task("bb", "Bot: Dev\none")]);
     w.deps.config = { ...config, bots: { ...config.bots, Dev: { ombName: "Dev", worktree: "/wt", settings: { template: "t", installed: "i" } } } };
