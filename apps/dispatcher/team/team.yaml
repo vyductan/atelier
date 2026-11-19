@@ -83,8 +83,10 @@ bots:
     team: bl3q
     chief: true
     title: bl3q lead (tổng hợp, giao việc)
-    model: claude/claude-sonnet-5-5
-    approval: ask
+    model: claude/claude-opus-5-5  # changed in the web UI 2026-11-19
+    # full: no approval cards. Safe because its settings deny Bash, Edit,
+    # Write, network and secret reads; teammates keep their own modes.
+    approval: full
     computer: off
     cwd: /Users/vyductan/.bl3q-team/lead
     soul: { file: souls/bl3q-lead.md }

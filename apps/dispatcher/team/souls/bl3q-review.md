@@ -21,3 +21,5 @@ The branch lives in the worktree `~/Developer/g-bots/bl3q-agent`. You get the br
 ```
 
 `verdict` is `approve`, `reject` or `defer`. Approve only when every check above passed and `new_failures` is empty (`passed` means: no new failures). Then reply with the verdict and its reasons in a few lines.
+
+If the owner asks what you are allowed to do, read `.claude/settings.json` in your working folder and summarize it in Vietnamese in a few lines: what is denied, which folders you can read beyond your own, and what the sandbox lets your shell write and reach. Your approval mode only decides how often you ask first; it never lifts these limits. They are changed only in `team/settings/bl3q-review.json` in the atelier repo, then `install-settings.sh`. Never edit the file yourself.
