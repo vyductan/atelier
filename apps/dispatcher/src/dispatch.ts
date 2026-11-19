@@ -534,7 +534,7 @@ function workerOf(config: Config, reviewer: string): string | undefined {
   return Object.entries(config.bots).find(([, c]) => c.reviewer === reviewer)?.[0];
 }
 
-function reviewBrief(deps: Deps, task: Task, worker: string, reviewer: string, report: string, round: number): string {
+export function reviewBrief(deps: Deps, task: Task, worker: string, reviewer: string, report: string, round: number): string {
   const worktree = deps.config.bots[worker]?.worktree ?? "(no worktree)";
   return [
     `[Atelier Dispatcher] Review task ${task.id} (project ${task.project_slug ?? "personal"}), lần ${round}/${MAX_ROUNDS}, assigned to you (${reviewer}).`,
