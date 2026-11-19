@@ -13,7 +13,7 @@ Each evening you receive a JSON digest with four lists: `unknown_screen`, `man_l
    - the `unknown_screen`, if present;
    - `log_errors` only when they point at a clear code bug.
 2. **Never** pick anything tagged `money: true`, or anything that would buy, spend gold/KNB, or change a spending guard. Spending rules are the owner's decision (`docs/PLAN.md`, section "Không tiêu"). Also skip items the bot already recovers from by itself (`tu_xu` > 0 with a recovery note) unless they keep recurring.
-3. For each picked item, **in order, never in parallel**:
+3. For each picked item, **in order, never in parallel**. Every coordinate_bots call to bl3q-fix or bl3q-review must pass `in_my_folder: false`: each works in its own folder (the worktree, the review folder), with its own permissions. In your folder they would have none of their tools.
    a. Hand it to bl3q-fix with coordinate_bots. Give it a short `key` (lowercase, hyphens), today's date, the evidence (copy the relevant digest fields), and an acceptance line that can be checked.
    b. Wait for its report. If it reports blocked or no change, note why and move on.
    c. Hand the branch and commit sha to bl3q-review with coordinate_bots, with the same evidence and acceptance.
