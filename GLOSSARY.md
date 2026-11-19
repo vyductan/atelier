@@ -21,3 +21,21 @@ _Avoid_: prompt, popup, confirmation
 **Thread override**:
 An approval mode chosen for one conversation thread only, kept until changed back; the bot's own approval mode and its other threads are unchanged.
 _Avoid_: session allow, temporary mode
+
+### bl3q team
+
+**Merge gate**:
+The code (not a bot) that lands an approved bl3q branch on `main` after its own checks; the only thing allowed to move `main`.
+_Avoid_: auto-merge, merge bot
+
+**Baseline**:
+The set of tests already failing on a given `main` commit; a branch is judged by failures not in it, never by a zero count.
+_Avoid_: green suite, known failures
+
+**Guard token**:
+A name in the game bot's code that marks a spending safeguard (for example `confirm_dialog`, `_has_vnd`); their count may never drop, in code or in tests.
+_Avoid_: money check, safety flag
+
+**Loosened test**:
+An existing test changed so it accepts more than before (an assert removed, an expected value moved to match new code) without showing the test itself was wrong.
+_Avoid_: test fix, test update
