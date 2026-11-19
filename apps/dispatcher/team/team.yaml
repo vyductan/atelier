@@ -4,7 +4,7 @@
 #
 # Rules (spec "Atelier Dispatcher" on vyductan.dev tasks):
 # - No bot is `full` (a Chief's level is passed down to the bots it hands work to),
-#   except bl3q-lead and bl3q-fix, by the owner's explicit choice on 2026-11-19.
+#   except bl3q-lead, bl3q-fix and CoS, by the owner's explicit choice on 2026-11-19.
 # - Workers sit in a team WITHOUT a Chief. OpenMausBot only auto-retries a failed run and
 #   sends incident turns to a Chief when the bot has one; with no Chief, a failure becomes a
 #   notification to the person instead of extra model turns (server/host/chief-notices.ts).
@@ -37,8 +37,9 @@ bots:
     team: Office
     chief: true
     title: Chief of Staff
-    model: claude/claude-sonnet-5-5
-    approval: ask
+    # Opus + full set in the UI by the owner (folded in 2026-11-19).
+    model: claude/claude-opus-5-5
+    approval: full
     computer: off
     cwd: /Users/vyductan/.atelier/openmausbot/workspaces/cos
     soul: { file: souls/cos.md }
