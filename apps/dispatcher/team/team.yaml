@@ -84,9 +84,10 @@ bots:
     chief: true
     title: bl3q lead (tổng hợp, giao việc)
     model: claude/claude-opus-5-5  # changed in the web UI 2026-11-19
-    # full: no approval cards. Safe because its settings deny Bash, Edit,
-    # Write, network and secret reads; teammates keep their own modes.
-    approval: full
+    # ask, NEVER higher: OpenMausBot raises every thread this Chief hands work
+    # to up to the Chief's own level (delegatedApprovalMode / patchTask), and
+    # bl3q-fix's Write tool is not sandboxed. Checked in the 0.1.169 code.
+    approval: ask
     computer: off
     cwd: /Users/vyductan/.bl3q-team/lead
     soul: { file: souls/bl3q-lead.md }
