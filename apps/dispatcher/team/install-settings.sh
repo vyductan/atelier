@@ -11,7 +11,6 @@ here=${0:A:h}/settings
 typeset -A cwd=(
   cos    "$HOME/.atelier/openmausbot/workspaces/cos"
   ops    "$HOME/.atelier/openmausbot/workspaces/ops"
-  g-bots "$HOME/.atelier/openmausbot/workspaces/g-bots"
   dev    "$HOME/Developer/vyductan-agent"
   bl3q-lead   "$HOME/.bl3q-team/lead"
   bl3q-fix    "$HOME/Developer/g-bots/bl3q-agent"

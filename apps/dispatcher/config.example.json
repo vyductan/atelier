@@ -32,13 +32,6 @@
         "installed": "~/.atelier/openmausbot/workspaces/ops/.claude/settings.json"
       }
     },
-    "g-bots": {
-      "ombName": "g-bots",
-      "settings": {
-        "template": "~/Developer/vyductan/apps/atelier/apps/dispatcher/team/settings/g-bots.json",
-        "installed": "~/.atelier/openmausbot/workspaces/g-bots/.claude/settings.json"
-      }
-    },
     "bl3q-lead": {
       "ombName": "bl3q-lead",
       "settings": {
