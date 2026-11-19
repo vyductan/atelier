@@ -3,7 +3,8 @@
 # Check:  ... team apply team.yaml --port 28799 --check   (exit 6 = server drifted from this file)
 #
 # Rules (spec "Atelier Dispatcher" on vyductan.dev tasks):
-# - No bot is ever `full`: a Chief's level is passed down to the bots it hands work to.
+# - No bot is `full` (a Chief's level is passed down to the bots it hands work to),
+#   except bl3q-lead and bl3q-fix, by the owner's explicit choice on 2026-11-19.
 # - Workers sit in a team WITHOUT a Chief. OpenMausBot only auto-retries a failed run and
 #   sends incident turns to a Chief when the bot has one; with no Chief, a failure becomes a
 #   notification to the person instead of extra model turns (server/host/chief-notices.ts).
@@ -20,8 +21,8 @@ teams:
     brief: Bots that do the work. No Chief on purpose (no automatic retries or incident turns).
   # Spec "Nhóm bot bl3q" (vyductan-tasks, project bl3q). Lead is this team's Chief
   # by the owner's choice (2026-11-19): it hands work to fix and review with
-  # coordinate_bots. Its settings deny the Chief's admin tools, and it stays at
-  # `ask` so it never raises a teammate's level. Merging is NOT a bot: the
+  # coordinate_bots. Its settings deny the Chief's admin tools. It runs `full` by
+  # the owner's choice, which also raises fix to full. Merging is NOT a bot: the
   # merge gate (bl3q tools/agent_merge.py) reads review's verdict files.
   - name: bl3q
     brief: Daily upkeep of the bl3q game bot. Lead triages the evening digest, fix repairs on agent/* branches in a worktree, review checks independently; a code gate merges.
@@ -84,10 +85,10 @@ bots:
     chief: true
     title: bl3q lead (tổng hợp, giao việc)
     model: claude/claude-opus-5-5  # changed in the web UI 2026-11-19
-    # ask, NEVER higher: OpenMausBot raises every thread this Chief hands work
-    # to up to the Chief's own level (delegatedApprovalMode / patchTask), and
-    # bl3q-fix's Write tool is not sandboxed. Checked in the 0.1.169 code.
-    approval: ask
+    # full: the OWNER's choice (2026-11-19), made knowing that OpenMausBot raises
+    # every thread this Chief hands work to up to full (delegatedApprovalMode),
+    # so bl3q-fix runs full too and its Write tool is not sandboxed.
+    approval: full
     computer: off
     cwd: /Users/vyductan/.bl3q-team/lead
     soul: { file: souls/bl3q-lead.md }
@@ -98,7 +99,9 @@ bots:
     team: bl3q
     title: bl3q fix (sửa trên nhánh agent/*)
     model: claude/claude-sonnet-5-5
-    approval: edits
+    # full: the owner's choice (2026-11-19); the lead hands its level down anyway.
+    # Bash stays in the OS sandbox; Write/Edit do not. The merge gate still guards main.
+    approval: full
     computer: off
     cwd: /Users/vyductan/Developer/g-bots/bl3q-agent
     soul: { file: souls/bl3q-fix.md }
