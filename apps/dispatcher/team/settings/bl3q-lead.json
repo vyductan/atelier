@@ -46,6 +46,9 @@
       "Read(**/.env)",
       "Read(**/.env.*)",
       "Read(**/.mcp.json)"
+    ],
+    "additionalDirectories": [
+      "/Users/vyductan/Developer/g-bots/bl3q"
     ]
   }
 }
