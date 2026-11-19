@@ -47,12 +47,16 @@ export function appendComment(description: string, date: string, text: string): 
     : `${body}\n\n## Comments\n\n${entry}\n`;
 }
 
+export const LINE_BREAK = /\r\n|[\n\r\u2028\u2029]/;
+
 /** A reply quoted as a Markdown blockquote, cut to `max` characters. */
 export function quote(text: string, max = 3000): string {
   const cut = text.length > max ? `${text.slice(0, max)}…` : text;
   return cut
     .trim()
-    .split("\n")
+    // Every JS line terminator, not just \n: `^…$/m` treats \r, U+2028 and U+2029 as
+    // line breaks too, so a bare one would let `Bot:`/`Plan:` escape the quote.
+    .split(LINE_BREAK)
     .map((line) => (line ? `> ${line}` : ">"))
     .join("\n");
 }

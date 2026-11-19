@@ -8,6 +8,7 @@
 // a bot except through those child tasks and the usual one-run gate.
 
 import type { Config } from "./dispatch.ts";
+import { LINE_BREAK } from "./tasks.ts";
 
 export type Kind = "code" | "investigate" | "human";
 
@@ -68,7 +69,7 @@ export const CHILD_MARKER = "Part of plan in task ";
 const quoted = (text: string) =>
   text
     .trim()
-    .split(/\r?\n/)
+    .split(LINE_BREAK)
     .map((l) => `> ${l}`)
     .join("\n");
 
