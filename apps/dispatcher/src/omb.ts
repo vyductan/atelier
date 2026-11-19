@@ -1,7 +1,14 @@
 // OpenMausBot on 127.0.0.1: send with its CLI (validation and `--send-id`
 // idempotency come for free), watch with its REST routes.
+//
+// Every call carries a client-scope access token (`openmausbot token create`).
+// The server runs with OMB_LOOPBACK_TRUST=service, so a session-less loopback
+// caller (any local process, including a bot's sandboxed shell) cannot read
+// job state, approve cards or change settings. The token file lives where no
+// bot may read (~/.atelier); it is never logged.
 
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 
 export interface JobStatus {
   /** completed | failed | cancelled | running | queued | waiting | … */
@@ -18,10 +25,12 @@ export interface Bots {
   lastReply(threadId: string): Promise<string | null>;
 }
 
-export function ombBots(cli: string, port: number): Bots {
+export function ombBots(cli: string, port: number, tokenFile: string): Bots {
   const base = `http://127.0.0.1:${port}`;
   const get = async (path: string) => {
-    const res = await fetch(base + path, { signal: AbortSignal.timeout(30_000) });
+    // Read per call: a rotated token takes effect without a restart.
+    const token = readFileSync(tokenFile, "utf8").trim();
+    const res = await fetch(base + path, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30_000) });
     if (res.status === 404) return null;
     if (!res.ok) throw new Error(`OpenMausBot ${path.split("?")[0]}: HTTP ${res.status}`);
     return res.json();
@@ -32,7 +41,7 @@ export function ombBots(cli: string, port: number): Bots {
       const stdout = await new Promise<string>((resolve, reject) => {
         const child = spawn(
           cli,
-          ["send", bot, "-", "--task", "new", "--send-id", sendId, "--port", String(port), "--json", "--quiet"],
+          ["send", bot, "-", "--task", "new", "--send-id", sendId, "--url", base, "--token-file", tokenFile, "--json", "--quiet"],
           { stdio: ["pipe", "pipe", "pipe"], timeout: 60_000 },
         );
         let out = "";

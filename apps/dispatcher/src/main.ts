@@ -29,6 +29,8 @@ interface FileConfig extends Config {
   tokenFile: string;
   ombCli: string;
   ombPort: number;
+  /** Client-scope OpenMausBot access token (the server refuses session-less loopback). */
+  ombTokenFile: string;
   intervalSeconds: number;
   /** Phone notifications. The topic is a secret (anyone who knows it can read), so it lives in a file. */
   ntfy?: { server: string; topicFile: string; clickUrl?: string };
@@ -42,6 +44,7 @@ function loadConfig(): FileConfig {
     ...c,
     tokenFile: expand(c.tokenFile),
     ombCli: expand(c.ombCli),
+    ombTokenFile: expand(c.ombTokenFile),
     ...(c.ntfy ? { ntfy: { ...c.ntfy, topicFile: expand(c.ntfy.topicFile) } } : {}),
   };
 }
@@ -97,7 +100,7 @@ function deps(config: FileConfig): Deps {
   return {
     config,
     tasks: mcpTaskStore(config.mcpUrl, token),
-    bots: ombBots(config.ombCli, config.ombPort),
+    bots: ombBots(config.ombCli, config.ombPort, config.ombTokenFile),
     workspace: gitWorkspace,
     now: () => new Date(),
     log,

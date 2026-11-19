@@ -90,6 +90,11 @@
       ],
       "allowRead": [
         "~/.config/git"
+      ],
+      "denyWrite": [
+        "~/.bl3q-team/review/verdicts",
+        "~/.bl3q-team/review/.claude",
+        "~/.bl3q-team/baseline"
       ]
     },
     "network": {

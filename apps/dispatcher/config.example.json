@@ -3,6 +3,7 @@
   "tokenFile": "~/.atelier/openmausbot/secrets/dispatcher-mcp-token",
   "ombCli": "~/.atelier/openmausbot/bin/node_modules/.bin/openmausbot",
   "ombPort": 28799,
+  "ombTokenFile": "~/.atelier/openmausbot/secrets/omb-client-token",
   "intervalSeconds": 60,
   "projects": [
     "vyductan",
