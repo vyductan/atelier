@@ -13,6 +13,7 @@ typeset -A cwd=(
   cos    "$HOME/.atelier/openmausbot/workspaces/cos"
   ops    "$HOME/.atelier/openmausbot/workspaces/ops"
   dev    "$HOME/Developer/vyductan-agent"
+  review "$HOME/.vyductan-team/review"
   bl3q-lead   "$HOME/.bl3q-team/lead"
   bl3q-fix    "$HOME/Developer/g-bots/bl3q-agent"
   bl3q-review "$HOME/.bl3q-team/review"

@@ -5,20 +5,23 @@
 # Rules (spec "Atelier Dispatcher" on vyductan.dev tasks):
 # - No bot is `full` (a Chief's level is passed down to the bots it hands work to),
 #   except bl3q-lead, bl3q-fix and CoS, by the owner's explicit choice on 2026-11-19.
-# - Workers sit in a team WITHOUT a Chief. OpenMausBot only auto-retries a failed run and
-#   sends incident turns to a Chief when the bot has one; with no Chief, a failure becomes a
-#   notification to the person instead of extra model turns (server/host/chief-notices.ts).
-#   CoS can still hand work to them with coordinate_bots.
+# - Every bot sits in a team with a Chief (CoS for vyductan, bl3q-lead for bl3q):
+#   OpenMausBot auto-retries a failed run and sends incident turns to the Chief
+#   (server/host/chief-notices.ts), which costs model turns. Workers used to have no
+#   Chief to avoid that; the owner chose the grouping on 2026-11-19.
+# - Chiefs' admin tools (create_bot, app_settings, ...) are denied in their settings.
 # - Hard limits live in each bot's cwd `.claude/settings.json` (deny), not in `tools`:
 #   for Claude, `tools` only filters MCP tools.
 # - computer: off everywhere (local needs the desktop app; headless runs fail with it).
 version: 1
 
 teams:
-  - name: Office
-    brief: The Chief of Staff's desk. Routes work to the Workers team; never edits code.
-  - name: Workers
-    brief: Bots that do the work. No Chief on purpose (no automatic retries or incident turns).
+  # The vyductan.dev team (owner's choice 2026-11-19): CoS is its Chief, so it
+  # hears about Dev/Review/Ops failures and OpenMausBot retries their failed runs.
+  # The bridge, not CoS, hands out work: Dev, then Review on Dev's branch, once
+  # back to Dev on a fail, then the person merges.
+  - name: vyductan
+    brief: vyductan.dev work. CoS triages and briefs tasks, the bridge hands them to Dev, Review checks Dev's branch against the brief, the person merges. Ops sums up the morning's errors.
   # Spec "Nhóm bot bl3q" (vyductan-tasks, project bl3q). Lead is this team's Chief
   # by the owner's choice (2026-11-19): it hands work to fix and review with
   # coordinate_bots. Its settings deny the Chief's admin tools. It runs `full` by
@@ -34,7 +37,7 @@ bots:
     computer: off
 
   - name: CoS
-    team: Office
+    team: vyductan
     chief: true
     title: Chief of Staff
     # Opus + full set in the UI by the owner (folded in 2026-11-19).
@@ -45,7 +48,7 @@ bots:
     soul: { file: souls/cos.md }
 
   - name: Dev
-    team: Workers
+    team: vyductan
     title: Dev vyductan
     model: claude/claude-sonnet-5-5
     approval: edits
@@ -53,10 +56,23 @@ bots:
     cwd: /Users/vyductan/Developer/vyductan-agent
     soul: { file: souls/dev.md }
 
+  # Checks Dev's branch for the bridge (bot Dev has reviewer: Review in the
+  # bridge config). `auto` so it can read the worktree and run checks without a
+  # card; no Edit/Write, and its sandbox writes only its runs/ folder.
+  # Opus, not Dev's Sonnet: a different model is harder to talk round.
+  - name: Review
+    team: vyductan
+    title: Review vyductan (chấm nhánh của Dev)
+    model: claude/claude-opus-5-5
+    approval: auto
+    computer: off
+    cwd: /Users/vyductan/.vyductan-team/review
+    soul: { file: souls/review.md }
+
   # No tools at all (cwd settings deny everything): the bridge runs the
   # read-only `ops-digest` collector each morning and hands Ops the JSON.
   - name: Ops
-    team: Workers
+    team: vyductan
     title: Ops (tóm tắt lỗi mỗi sáng)
     model: claude/claude-haiku-5-5
     approval: ask

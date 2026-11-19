@@ -13,6 +13,11 @@
 // - A CoS split plan runs only after the person writes `Plan: approved` and
 //   the plan passes validatePlan; it becomes child tasks, never a direct send.
 //   A child waits until every task on its `Depends:` line is completed.
+// - A bot with a `reviewer` does not hand finished work to the person: the
+//   reviewer bot checks the branch against the task's brief first. A failed
+//   review goes back to the worker ONCE (same branch); a second fail, a review
+//   with no verdict, or a pass all end with the person (todo + ready-for-human).
+//   Merging stays the person's job.
 
 import { createHash } from "node:crypto";
 
@@ -33,6 +38,8 @@ export interface BotConfig {
    * bridge instead of handing it more work.
    */
   settings?: { template: string; installed: string };
+  /** A bot (key of `bots`) that reviews this bot's finished work before the person sees it. */
+  reviewer?: string;
 }
 
 /** A command that prints the data a routine bot works on (no model involved). */
@@ -86,8 +93,21 @@ export interface Run {
   title?: string;
   /** Set for a routine run: no task behind it, so nothing is written to tasks. */
   routine?: string;
-  /** A routine run's brief, kept to resend after a crash. */
+  /** A routine or follow-up run's brief, kept to resend after a crash. */
   brief?: string;
+  /** A follow-up run: `review` (the reviewer checks) or `rework` (the worker fixes). */
+  kind?: FollowUp["kind"];
+  /** Review round of a follow-up run (1, then 2 after one rework). */
+  round?: number;
+}
+
+/** Work the bridge queues itself after a run, ahead of new tasks. */
+export interface FollowUp {
+  taskId: string;
+  bot: string;
+  kind: "review" | "rework";
+  round: number;
+  brief: string;
 }
 
 export interface State {
@@ -103,6 +123,8 @@ export interface State {
    * separate write after the proposal (CoS cannot propose and approve at once).
    */
   proposed?: Record<string, string>;
+  /** Review and rework runs waiting for the one-run gate, oldest first. */
+  followUps?: FollowUp[];
 }
 
 export interface Workspace {
@@ -316,7 +338,7 @@ export async function settle(deps: Deps, state: State): Promise<void> {
     } else {
       const task = await deps.tasks.get(run.taskId);
       run.title ??= task.title;
-      run.threadId = await deps.bots.send(ombName, briefFor(task, run.bot), run.sendId);
+      run.threadId = await deps.bots.send(ombName, run.brief ?? briefFor(task, run.bot), run.sendId);
       await markSent(deps, run);
     }
     deps.log("recovered", { taskId: run.taskId, threadId: run.threadId });
@@ -369,10 +391,7 @@ export async function settle(deps: Deps, state: State): Promise<void> {
     return;
   }
   if (ok) {
-    await comment(deps, run.taskId, `${run.bot} báo xong (thread \`${run.threadId}\`). Chờ bạn review.\n\n${quote(reply)}`, {
-      status: "todo",
-      triage: "ready-for-human",
-    });
+    await settleDone(deps, state, run, reply);
   } else {
     await comment(deps, run.taskId, `${run.bot} dừng: ${job.status}${job.outcome ? ` (${job.outcome})` : ""}, thread \`${run.threadId}\`.\n\n${quote(reply)}`, {
       status: "blocked",
@@ -381,7 +400,9 @@ export async function settle(deps: Deps, state: State): Promise<void> {
   run.status = ok ? "done" : "failed";
   run.finishedAt = now.toISOString();
   deps.log("finished", { taskId: run.taskId, status: job.status, outcome: job.outcome });
-  await ping(deps, ok ? `${run.bot} xong, chờ review` : `${run.bot} bị chặn`, run.title ?? run.taskId);
+  if (!ok || !(state.followUps ?? []).some((f) => f.taskId === run.taskId)) {
+    await ping(deps, ok ? `${run.bot} xong, chờ review` : `${run.bot} bị chặn`, run.title ?? run.taskId);
+  }
 
   if (!ok && RATE_LIMIT.test(`${job.outcome ?? ""} ${reply}`)) {
     state.paused = { reason: "rate limit", at: now.toISOString() };
@@ -414,6 +435,8 @@ export async function tick(deps: Deps, state: State): Promise<void> {
     await startRoutine(deps, state, routine, now);
     return;
   }
+
+  if (await startFollowUp(deps, state, now)) return;
 
   let next: { task: Task; bot: string } | null = null;
   for (const c of candidates(todo, deps.config, state)) {
@@ -493,4 +516,137 @@ async function startRoutine(deps: Deps, state: State, routine: Routine, now: Dat
 async function markSent(deps: Deps, run: Run): Promise<void> {
   run.status = "sent";
   await comment(deps, run.taskId, `Đã giao cho ${run.bot} (OpenMausBot thread \`${run.threadId}\`).`, { status: "in-progress" });
+}
+
+/** A review reply's verdict: the last line that is exactly `VERDICT: pass|fail`, else null. */
+export function verdictOf(reply: string): "pass" | "fail" | null {
+  const all = [...reply.matchAll(/^VERDICT:[ \t]*(pass|fail)[ \t]*$/gim)];
+  return (all.at(-1)?.[1]?.toLowerCase() as "pass" | "fail" | undefined) ?? null;
+}
+
+const MAX_ROUNDS = 2;
+
+/** The worker's branch, as briefFor names it. */
+const branchOf = (taskId: string) => `agent/${taskId.slice(0, 8)}`;
+
+/** Whom a review run reviewed: the bot whose `reviewer` is this bot. */
+function workerOf(config: Config, reviewer: string): string | undefined {
+  return Object.entries(config.bots).find(([, c]) => c.reviewer === reviewer)?.[0];
+}
+
+function reviewBrief(deps: Deps, task: Task, worker: string, reviewer: string, report: string, round: number): string {
+  const worktree = deps.config.bots[worker]?.worktree ?? "(no worktree)";
+  return [
+    `[Atelier Dispatcher] Review task ${task.id} (project ${task.project_slug ?? "personal"}), lần ${round}/${MAX_ROUNDS}, assigned to you (${reviewer}).`,
+    `${worker} finished it on branch \`${branchOf(task.id)}\` in the worktree \`${worktree}\` (read it there; never write to it). Compare the branch with origin/main.`,
+    "Check the work against the task below, its Agent Brief and acceptance criteria first. Report each criterion as met or not, anything done outside the task's scope, and what you ran and its result.",
+    "End your reply with exactly one line, alone: `VERDICT: pass` or `VERDICT: fail`.",
+    "",
+    `${worker}'s report (its own words, not evidence):`,
+    "",
+    quote(report),
+    "",
+    `# ${task.title}`,
+    "",
+    (task.description ?? "").trim() || "(no description)",
+  ].join("\n");
+}
+
+function reworkBrief(task: Task, worker: string, reviewer: string, review: string, round: number): string {
+  return [
+    briefFor(task, worker),
+    "",
+    `## ${reviewer} chưa cho qua (lần ${round}): sửa lại`,
+    "",
+    `This is a rework, not a new task: the branch \`${branchOf(task.id)}\` already holds your earlier commits. Run \`git switch ${branchOf(task.id)}\` (no -c), fix what the review below found, commit on that branch, and report again.`,
+    "",
+    quote(review),
+  ].join("\n");
+}
+
+/** A finished, successful task run: to the reviewer, back to the worker, or to the person. */
+async function settleDone(deps: Deps, state: State, run: Run, reply: string): Promise<void> {
+  const toPerson = (text: string) => comment(deps, run.taskId, text, { status: "todo", triage: "ready-for-human" });
+  const thread = `thread \`${run.threadId}\``;
+  const queue = (f: FollowUp) => (state.followUps ??= []).push(f);
+
+  if (run.kind === "review") {
+    const round = run.round ?? 1;
+    const verdict = verdictOf(reply);
+    const worker = workerOf(deps.config, run.bot);
+    if (verdict === "pass") {
+      await toPerson(`${run.bot}: qua (lần ${round}, ${thread}). Chờ bạn review và merge.\n\n${quote(reply)}`);
+    } else if (verdict === null) {
+      await toPerson(`${run.bot} không ghi kết luận (${thread}). Chờ bạn xem.\n\n${quote(reply)}`);
+    } else if (round >= MAX_ROUNDS || !worker) {
+      await toPerson(`${run.bot}: chưa qua lần ${round} (${thread}). Hết lượt sửa tự động, chờ bạn.\n\n${quote(reply)}`);
+    } else {
+      const task = await deps.tasks.get(run.taskId);
+      await comment(deps, run.taskId, `${run.bot}: chưa qua lần ${round} (${thread}). Trả ${worker} sửa.\n\n${quote(reply)}`);
+      queue({ taskId: run.taskId, bot: worker, kind: "rework", round: round + 1, brief: reworkBrief(task, worker, run.bot, reply, round) });
+    }
+    return;
+  }
+
+  const reviewer = deps.config.bots[run.bot]?.reviewer;
+  if (reviewer && reviewer in deps.config.bots) {
+    const round = run.round ?? 1;
+    const task = await deps.tasks.get(run.taskId);
+    await comment(deps, run.taskId, `${run.bot} báo xong (${thread}). Chuyển ${reviewer} chấm (lần ${round}).\n\n${quote(reply)}`);
+    queue({ taskId: run.taskId, bot: reviewer, kind: "review", round, brief: reviewBrief(deps, task, run.bot, reviewer, reply, round) });
+    return;
+  }
+  await toPerson(`${run.bot} báo xong (${thread}). Chờ bạn review.\n\n${quote(reply)}`);
+}
+
+/**
+ * Sends the oldest queued follow-up, if any. A follow-up whose task the person
+ * moved out of `in-progress` meanwhile is dropped. True when it sent one (or
+ * must wait), so no new task starts this tick.
+ */
+async function startFollowUp(deps: Deps, state: State, now: Date): Promise<boolean> {
+  while (state.followUps?.length) {
+    const f = state.followUps[0]!;
+    let task: Task;
+    try {
+      task = await deps.tasks.get(f.taskId);
+    } catch {
+      state.followUps.shift();
+      continue;
+    }
+    if (task.status_code !== "in-progress" || !(f.bot in deps.config.bots)) {
+      deps.log("follow-up-dropped", { taskId: f.taskId, kind: f.kind, status: task.status_code });
+      state.followUps.shift();
+      continue;
+    }
+    if (!(await settingsIntact(deps, state))) return true;
+    const bot = deps.config.bots[f.bot]!;
+    // Only the worker's own rework resets its worktree; a review reads it as the worker left it.
+    if (bot.worktree) {
+      const why = await deps.workspace.prepare(bot.worktree);
+      if (why) {
+        deps.log("worktree-not-ready", { taskId: f.taskId, why });
+        return true;
+      }
+    }
+    state.followUps.shift();
+    const attempt = state.runs.filter((r) => r.taskId === f.taskId).length + 1;
+    const run: Run = {
+      taskId: f.taskId,
+      bot: f.bot,
+      sendId: `vdt-${f.taskId}-${attempt}`,
+      status: "sending",
+      startedAt: now.toISOString(),
+      title: task.title,
+      kind: f.kind,
+      round: f.round,
+      brief: f.brief,
+    };
+    state.runs.push(run);
+    run.threadId = await deps.bots.send(bot.ombName, f.brief, run.sendId);
+    await markSent(deps, run);
+    deps.log("follow-up-sent", { taskId: f.taskId, bot: f.bot, kind: f.kind, round: f.round, threadId: run.threadId });
+    return true;
+  }
+  return false;
 }

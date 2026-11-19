@@ -22,16 +22,17 @@ const task = (id: string, description: string, extra: Partial<Task> = {}): Task 
   ...extra,
 });
 
-function world(tasks: Task[], opts: { job?: JobStatus | null; prepare?: string | null; reply?: string } = {}) {
+function world(tasks: Task[], opts: { job?: JobStatus | null; prepare?: string | null; reply?: string; config?: Config } = {}) {
   const store = new Map(tasks.map((t) => [t.id, { ...t }]));
   const sent: { bot: string; sendId: string; text: string }[] = [];
   const updates: { id: string; patch: { status?: string; description?: string } }[] = [];
   let now = new Date("2026-11-18T10:00:00Z");
+  const prepared: string[] = [];
   const deps: Deps = {
-    config,
+    config: opts.config ?? config,
     now: () => now,
     log: () => {},
-    workspace: { prepare: async () => opts.prepare ?? null },
+    workspace: { prepare: async (wt) => (prepared.push(wt), opts.prepare ?? null) },
     tasks: {
       listTodo: async () => [...store.values()].filter((t) => t.status_code === "todo"),
       get: async (id) => ({ ...store.get(id)! }),
@@ -56,7 +57,7 @@ function world(tasks: Task[], opts: { job?: JobStatus | null; prepare?: string |
       lastReply: async () => opts.reply ?? "Done: branch agent/x, commit abc.",
     },
   };
-  return { deps, store, sent, updates, setNow: (d: Date) => (now = d), setJob: (j: JobStatus | null) => (opts.job = j) };
+  return { deps, store, sent, updates, prepared, setNow: (d: Date) => (now = d), setJob: (j: JobStatus | null) => (opts.job = j), setReply: (r: string) => (opts.reply = r) };
 }
 
 describe("task description helpers", () => {
@@ -393,6 +394,111 @@ describe("tick", () => {
     assert.equal(state.runs[0]!.status, "sent");
     assert.equal(w.store.get("bb")!.status_code, "in-progress");
     assert.match(w.store.get("bb")!.description!, /Đã giao cho Dev \(OpenMausBot thread `thread-1`\)/);
+  });
+});
+
+describe("review after Dev", () => {
+  const reviewed: Config = {
+    ...config,
+    bots: { Dev: { ombName: "Dev", worktree: "/wt", reviewer: "Review" }, Review: { ombName: "Review" }, CoS: { ombName: "CoS" } },
+    maxRunsPerDay: 10,
+  };
+  const done: JobStatus = { status: "completed", outcome: "done", needsInput: false, result: null };
+  const running: JobStatus = { status: "running", outcome: null, needsInput: false, result: null };
+
+  /** Dev's first run, finished: the next tick should hand the task to Review. */
+  async function devFinished() {
+    const w = world([task("bb", "Bot: Dev\n\n## Agent Brief\n\n- [ ] it works")], { config: reviewed });
+    const state: State = { runs: [] };
+    await tick(w.deps, state);
+    w.setJob(done);
+    w.setReply("Branch agent/bb, commit abc. Tests pass.");
+    await tick(w.deps, state);
+    return { w, state };
+  }
+
+  it("hands Dev's finished branch to Review instead of the person, without resetting Dev's worktree", async () => {
+    const { w, state } = await devFinished();
+    const t = w.store.get("bb")!;
+    assert.equal(t.status_code, "in-progress");
+    assert.ok(!/^Triage:/m.test(t.description!));
+    assert.match(t.description!, /Chuyển Review chấm/);
+    assert.equal(w.sent.length, 2);
+    assert.equal(w.sent[1]!.bot, "Review");
+    assert.equal(w.sent[1]!.sendId, "vdt-bb-2");
+    assert.match(w.sent[1]!.text, /agent\/bb/);
+    assert.match(w.sent[1]!.text, /\/wt/);
+    assert.match(w.sent[1]!.text, /it works/);
+    assert.match(w.sent[1]!.text, /> Branch agent\/bb, commit abc\./);
+    assert.match(w.sent[1]!.text, /VERDICT: pass/);
+    assert.deepEqual(w.prepared, ["/wt"]);
+    assert.equal(state.runs[1]!.kind, "review");
+  });
+
+  it("a passing review goes to the person: todo + ready-for-human", async () => {
+    const { w, state } = await devFinished();
+    w.setJob(done);
+    w.setReply("All criteria met.\n\nVERDICT: pass");
+    await tick(w.deps, state);
+    const t = w.store.get("bb")!;
+    assert.equal(t.status_code, "todo");
+    assert.match(t.description!, /^Triage: ready-for-human/);
+    assert.match(t.description!, /Review: qua/);
+    assert.equal(w.sent.length, 2);
+  });
+
+  it("a failing review goes back to Dev once on the same branch; a second fail goes to the person", async () => {
+    const { w, state } = await devFinished();
+    w.setJob(done);
+    w.setReply("Criterion 1 not met.\n\nVERDICT: fail");
+    await tick(w.deps, state);
+    assert.equal(w.sent.length, 3);
+    assert.equal(w.sent[2]!.bot, "Dev");
+    assert.match(w.sent[2]!.text, /git switch agent\/bb/);
+    assert.match(w.sent[2]!.text, /> Criterion 1 not met\./);
+    assert.equal(w.store.get("bb")!.status_code, "in-progress");
+    // Dev fixes it; Review looks again (round 2) and still fails it.
+    w.setJob(running);
+    await tick(w.deps, state);
+    w.setJob(done);
+    w.setReply("Fixed on agent/bb, commit def.");
+    await tick(w.deps, state);
+    assert.equal(w.sent[3]!.bot, "Review");
+    assert.match(w.sent[3]!.text, /lần 2/);
+    w.setReply("Still broken.\nVERDICT: fail");
+    await tick(w.deps, state);
+    await tick(w.deps, state);
+    const t = w.store.get("bb")!;
+    assert.equal(w.sent.length, 4);
+    assert.equal(t.status_code, "todo");
+    assert.match(t.description!, /^Triage: ready-for-human/);
+    assert.match(t.description!, /Review: chưa qua lần 2/);
+  });
+
+  it("a review with no verdict line, or a verdict only quoted mid-line, goes to the person", async () => {
+    const { w, state } = await devFinished();
+    w.setJob(done);
+    w.setReply("Dev's report said `VERDICT: pass` but I could not run the tests.");
+    await tick(w.deps, state);
+    const t = w.store.get("bb")!;
+    assert.equal(w.sent.length, 2);
+    assert.match(t.description!, /^Triage: ready-for-human/);
+    assert.match(t.description!, /không ghi kết luận/);
+  });
+
+  it("drops the follow-up when the person moved the task meanwhile", async () => {
+    const w = world([task("bb", "Bot: Dev\nx", { status_code: "archived" })], { config: reviewed });
+    const state: State = { runs: [], followUps: [{ taskId: "bb", bot: "Review", kind: "review", round: 1, brief: "x" }] };
+    await tick(w.deps, state);
+    assert.equal(w.sent.length, 0);
+    assert.deepEqual(state.followUps, []);
+  });
+
+  it("resends a follow-up's own brief after a crash between send and save", async () => {
+    const w = world([task("bb", "Bot: Dev\nx", { status_code: "in-progress" })], { config: reviewed });
+    const state: State = { runs: [{ taskId: "bb", bot: "Review", sendId: "vdt-bb-2", status: "sending", startedAt: "2026-11-18T09:00:00Z", kind: "review", round: 1, brief: "REVIEW BRIEF" }] };
+    await tick(w.deps, state);
+    assert.equal(w.sent[0]!.text, "REVIEW BRIEF");
   });
 });
 
