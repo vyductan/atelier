@@ -89,7 +89,10 @@
     "excludedCommands": [],
     "filesystem": {
       "allowWrite": [
-        "~/.vyductan-team/review/runs"
+        "~/.vyductan-team/review/runs",
+        "~/.vyductan-team/review/pnpm",
+        "~/Developer/vyductan-agent/node_modules",
+        "~/Developer/vyductan-agent/**/node_modules"
       ],
       "denyRead": [
         "~/.ssh",
@@ -115,7 +118,10 @@
       ]
     },
     "network": {
-      "allowedDomains": [],
+      "allowedDomains": [
+        "registry.npmjs.org",
+        "cdn.sheetjs.com"
+      ],
       "allowLocalBinding": false
     }
   }

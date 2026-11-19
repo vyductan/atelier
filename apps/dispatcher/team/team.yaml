@@ -4,7 +4,7 @@
 #
 # Rules (spec "Atelier Dispatcher" on vyductan.dev tasks):
 # - No bot is `full` (a Chief's level is passed down to the bots it hands work to),
-#   except bl3q-lead, bl3q-fix and CoS, by the owner's explicit choice on 2026-11-19.
+#   except bl3q-lead, bl3q-fix, CoS (2026-11-19) and Review (2026-11-20), by the owner's explicit choice.
 # - Every bot sits in a team with a Chief (CoS for vyductan, bl3q-lead for bl3q):
 #   OpenMausBot auto-retries a failed run and sends incident turns to the Chief
 #   (server/host/chief-notices.ts), which costs model turns. Workers used to have no
@@ -64,7 +64,9 @@ bots:
     team: vyductan
     title: Review vyductan (chấm nhánh của Dev)
     model: claude/claude-opus-5-5
-    approval: auto
+    # full: the owner's choice (2026-11-20) so installs and tests run without
+    # cards; the sandbox still keeps Bash off .env, ~/Library and the repo source.
+    approval: full
     computer: off
     cwd: /Users/vyductan/.vyductan-team/review
     soul: { file: souls/review.md }
