@@ -16,7 +16,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { active, runsToday, tick, type Config, type Deps, type State, type Workspace } from "./dispatch.ts";
+import { active, agentConfigPaths, runsToday, tick, type Config, type Deps, type State, type Workspace } from "./dispatch.ts";
 import { backlogDigest, type BacklogTask } from "./backlog.ts";
 import { intakeDigest } from "./intake.ts";
 import { callTool, mcpTaskStore } from "./mcp.ts";
@@ -93,7 +93,12 @@ const gitWorkspace: Workspace = {
     if (stdout.trim()) return "worktree has uncommitted changes";
     if (branch) {
       // A rework: back onto the bot's own branch (never main), as it left it.
-      if (!/^agent\/[\w-]+$/.test(branch)) return `refusing to switch to ${branch}`;
+      if (!/^agent\/[\w-]+$/.test(branch)) return `refused: not a bot branch (${branch}).`;
+      // Unsandboxed checkout of a bot-made branch: never materialize files the
+      // bot's next run would load as its own instructions or settings.
+      const { stdout: changed } = await git("diff", "--name-only", "--no-renames", "--no-ext-diff", "--no-textconv", `origin/main...${branch}`);
+      const bad = agentConfigPaths(changed.split("\n"));
+      if (bad.length) return `refused: ${branch} changes agent config (${bad.slice(0, 3).join(", ")}).`;
       await git("switch", "-q", branch);
       return null;
     }

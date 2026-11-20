@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { pick, runsToday, tick, type Config, type Deps, type State } from "../src/dispatch.ts";
+import { agentConfigPaths, pick, runsToday, tick, type Config, type Deps, type State } from "../src/dispatch.ts";
 import { jobStatusFrom, type JobStatus } from "../src/omb.ts";
 import { appendComment, botOf, hasTriage, quote, setTriage, type Task } from "../src/tasks.ts";
 
@@ -58,7 +58,7 @@ function world(tasks: Task[], opts: { job?: JobStatus | null; prepare?: string |
       lastReply: async () => opts.reply ?? "Done: branch agent/x, commit abc.",
     },
   };
-  return { deps, store, sent, updates, prepared, preparedBranches, setNow: (d: Date) => (now = d), setJob: (j: JobStatus | null) => (opts.job = j), setReply: (r: string) => (opts.reply = r) };
+  return { deps, store, sent, updates, prepared, preparedBranches, setNow: (d: Date) => (now = d), setJob: (j: JobStatus | null) => (opts.job = j), setReply: (r: string) => (opts.reply = r), setPrepare: (why: string | null) => (opts.prepare = why) };
 }
 
 describe("task description helpers", () => {
@@ -550,6 +550,20 @@ describe("review after Dev", () => {
     assert.match(t.description!, /Review: chưa qua lần 2/);
   });
 
+  it("a rework whose branch the bridge refuses to check out goes to the person, not a retry loop", async () => {
+    const { w, state } = await devFinished();
+    w.setJob(done);
+    w.setReply("Criterion 1 not met.\n\nVERDICT: fail");
+    w.setPrepare("refused: agent/bb changes agent config (CLAUDE.md).");
+    await tick(w.deps, state);
+    assert.equal(w.sent.length, 2);
+    assert.deepEqual(state.followUps, []);
+    const t = w.store.get("bb")!;
+    assert.equal(t.status_code, "todo");
+    assert.match(t.description!, /^Triage: ready-for-human/);
+    assert.match(t.description!, /Không giao lại Dev sửa: agent\/bb changes agent config \(CLAUDE\.md\)\./);
+  });
+
   it("a review with no verdict line, or a verdict only quoted mid-line, goes to the person", async () => {
     const { w, state } = await devFinished();
     w.setJob(done);
@@ -594,5 +608,24 @@ describe("jobStatusFrom", () => {
   it("falls back to the node when the server sends no job state", () => {
     assert.equal(jobStatusFrom({ nodes: [node("failed")] }, "t")?.status, "failed");
     assert.equal(jobStatusFrom({ nodes: [] }, "t"), null);
+  });
+});
+
+describe("agentConfigPaths", () => {
+  it("flags files a bot's next run would load or a hook would run, anywhere in the tree", () => {
+    assert.deepEqual(
+      agentConfigPaths([
+        "apps/web/src/a.tsx",
+        "CLAUDE.md",
+        "apps/web/AGENTS.md",
+        ".claude/settings.json",
+        "packages/x/.mcp.json",
+        ".husky/pre-commit",
+        ".gitattributes",
+        "docs/agents/issue-tracker.md",
+        "",
+      ]),
+      ["CLAUDE.md", "apps/web/AGENTS.md", ".claude/settings.json", "packages/x/.mcp.json", ".husky/pre-commit", ".gitattributes"],
+    );
   });
 });

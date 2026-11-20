@@ -576,6 +576,17 @@ export function reviewBrief(deps: Deps, task: Task, worker: string, reviewer: st
   ].join("\n");
 }
 
+/**
+ * Paths a bot's branch must not change before the bridge (outside any
+ * sandbox) checks it out into that bot's working folder: agent instructions
+ * and settings the next run would load, git and package-manager hooks.
+ */
+const AGENT_CONFIG = /(^|\/)(\.claude\/|\.agents?\/|\.cursor\/|\.gemini\/|\.windsurf\/|\.husky\/|\.vscode\/|\.githooks\/|(CLAUDE|AGENTS|GEMINI)(\.local)?\.md$|\.mcp\.json$|\.gitattributes$|\.gitmodules$|\.envrc$|\.npmrc$|\.pnpmfile\.c?js$)/i;
+
+export function agentConfigPaths(changed: string[]): string[] {
+  return changed.filter((p) => p && AGENT_CONFIG.test(p));
+}
+
 export function reworkBrief(task: Task, worker: string, reviewer: string, review: string, round: number): string {
   return [
     briefFor(task, worker),
@@ -650,7 +661,11 @@ async function startFollowUp(deps: Deps, state: State, now: Date): Promise<boole
       const why = await deps.workspace.prepare(bot.worktree, f.kind === "rework" ? branchOf(f.taskId) : undefined);
       if (why) {
         deps.log("worktree-not-ready", { taskId: f.taskId, why });
-        return true;
+        if (f.kind !== "rework" || !why.startsWith("refused:")) return true;
+        // The bot's branch itself is the problem: retrying cannot help.
+        state.followUps.shift();
+        await comment(deps, f.taskId, `Không giao lại ${f.bot} sửa: ${why.slice("refused:".length).trim()} Chờ bạn xem nhánh.`, { status: "todo", triage: "ready-for-human" });
+        continue;
       }
     }
     state.followUps.shift();
