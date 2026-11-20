@@ -59,7 +59,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/bin/zsh /Users/vyductan/.bl3q-team/lead/.claude/hooks/chi-mot-lenh.zsh"
+            "command": "/bin/zsh -c '[[ -r /Users/vyductan/.bl3q-team/lead/.claude/hooks/chi-mot-lenh.zsh ]] || exit 2; /bin/zsh /Users/vyductan/.bl3q-team/lead/.claude/hooks/chi-mot-lenh.zsh || exit 2'"
           }
         ]
       }

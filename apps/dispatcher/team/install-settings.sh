@@ -25,8 +25,12 @@ for bot dir in ${(kv)cwd}; do
   print "installed $bot -> $dir/.claude/settings.json"
   # Bot-only hooks: team/hooks/<bot>/* -> cwd .claude/hooks/ (bl3q-lead's Bash whitelist).
   if [[ -d ${here:h}/hooks/$bot ]]; then
-    rm -rf "$dir/.claude/hooks"
-    cp -R "${here:h}/hooks/$bot" "$dir/.claude/hooks"
+    # Copy beside, then swap: the hook path is never missing mid-install.
+    rm -rf "$dir/.claude/hooks.new" "$dir/.claude/hooks.old"
+    cp -R "${here:h}/hooks/$bot" "$dir/.claude/hooks.new"
+    [[ -e $dir/.claude/hooks ]] && mv "$dir/.claude/hooks" "$dir/.claude/hooks.old"
+    mv "$dir/.claude/hooks.new" "$dir/.claude/hooks"
+    rm -rf "$dir/.claude/hooks.old"
     print "installed $bot hooks"
   fi
   # Bot-only skills: team/skills/<bot>/<skill>/ -> cwd .claude/skills/ (project
