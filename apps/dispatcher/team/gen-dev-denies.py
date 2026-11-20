@@ -22,10 +22,10 @@ if 'mcp' in levels:
     for r in json.load(open('team/settings/review.json'))['permissions']['deny']:
         if r.startswith('mcp__'): add(r)
 special=re.compile(r'[\[\]*?\\{}!]')
-def fence(b, keep, rel):
+def fence(b, keep, rel, tool='Edit'):
     for n in sorted(os.listdir(b)):
         if n in keep or special.search(n): continue
-        add(f'Edit({rel}/{n})'); add(f'Edit({rel}/{n}/**)')
+        add(f'{tool}({rel}/{n})'); add(f'{tool}({rel}/{n}/**)')
 if 'home' in levels: fence(H,{'Developer'},'~')
 if 'dev' in levels: fence(f'{H}/Developer',{'vyductan-agent','vyductan'},'~/Developer')
 if 'vy' in levels: fence(f'{H}/Developer/vyductan',{'apps'},'~/Developer/vyductan')
@@ -45,7 +45,7 @@ if 'git' in levels:
     fence(f'{g}/worktrees',{'vyductan-agent'},f'{gr}/worktrees')
     for n in ['commondir','gitdir','config.worktree','info','hooks']:
         add(f'Edit({gr}/worktrees/vyductan-agent/{n})'); add(f'Edit({gr}/worktrees/vyductan-agent/{n}/**)')
-    for n in ['refs/replace','refs/notes','refs/tags','refs/remotes','refs/stash','objects/info','objects/pack','modules','shallow','info','hooks','config','commondir']:
+    for n in ['refs/replace','refs/notes','refs/tags','refs/remotes','refs/stash','refs/bisect','refs/original','refs/rewritten','objects/info','objects/pack','modules','shallow','info','hooks','config','config.worktree','commondir']:
         add(f'Edit({gr}/{n})'); add(f'Edit({gr}/{n}/**)')
 if 'static' in levels:
     # Startup files and agents that would run code later, whether or not they exist yet.
@@ -66,7 +66,12 @@ if 'secrets' in levels:
     for r in ['~/Developer/vyductan-agent','~/Developer/vyductan/apps/vyductan.dev/.git']:
         if r not in fs['allowRead']: fs['allowRead'].append(r)
     base['sandbox']['network']['allowedDomains']=[x for x in base['sandbox']['network']['allowedDomains'] if x!='registry.npmjs.org']
-    add('Bash(security:*)'); add('Bash(*security find*)'); add('Bash(*security dump*)')
+    add('Bash(security:*)'); add('Bash(*security find*)'); add('Bash(*security dump*)'); add('Bash(*/security *)')
+    # The Read tool is not sandboxed: fence other repos and the main checkout for it too.
+    fence(f'{H}/Developer',{'vyductan-agent','vyductan'},'~/Developer','Read')
+    fence(f'{H}/Developer/vyductan',{'apps'},'~/Developer/vyductan','Read')
+    fence(f'{H}/Developer/vyductan/apps',{'vyductan.dev'},'~/Developer/vyductan/apps','Read')
+    fence(f'{H}/Developer/vyductan/apps/vyductan.dev',{'.git'},'~/Developer/vyductan/apps/vyductan.dev','Read')
 if 'root' in levels:
     for r in ['Edit(//Applications/**)','Edit(//Library/**)','Edit(//usr/**)','Edit(//opt/**)','Edit(//etc/**)','Edit(//private/etc/**)']: add(r)
 out=json.dumps(base,ensure_ascii=False,indent=2)+'\n'
