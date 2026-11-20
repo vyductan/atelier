@@ -6,10 +6,11 @@
   },
   "permissions": {
     "deny": [
-      "Bash",
       "Edit",
       "Write",
       "NotebookEdit",
+      "PowerShell",
+      "Monitor",
       "mcp__agents__create_bot",
       "mcp__agents__propose_team_setup",
       "mcp__agents__propose_bot_deletion",
@@ -49,6 +50,19 @@
     ],
     "additionalDirectories": [
       "/Users/vyductan/Developer/g-bots/bl3q"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/zsh /Users/vyductan/.bl3q-team/lead/.claude/hooks/chi-mot-lenh.zsh"
+          }
+        ]
+      }
     ]
   }
 }

@@ -23,6 +23,12 @@ for bot dir in ${(kv)cwd}; do
   mkdir -p "$dir/.claude"
   cp "$here/$bot.json" "$dir/.claude/settings.json"
   print "installed $bot -> $dir/.claude/settings.json"
+  # Bot-only hooks: team/hooks/<bot>/* -> cwd .claude/hooks/ (bl3q-lead's Bash whitelist).
+  if [[ -d ${here:h}/hooks/$bot ]]; then
+    rm -rf "$dir/.claude/hooks"
+    cp -R "${here:h}/hooks/$bot" "$dir/.claude/hooks"
+    print "installed $bot hooks"
+  fi
   # Bot-only skills: team/skills/<bot>/<skill>/ -> cwd .claude/skills/ (project
   # skills are the only ones --setting-sources project loads).
   if [[ -d ${here:h}/skills/$bot ]]; then
