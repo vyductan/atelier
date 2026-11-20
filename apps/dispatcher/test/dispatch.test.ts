@@ -622,10 +622,11 @@ describe("agentConfigPaths", () => {
         "packages/x/.mcp.json",
         ".husky/pre-commit",
         ".gitattributes",
+        ".pnpmfile.mjs",
         "docs/agents/issue-tracker.md",
         "",
       ]),
-      ["CLAUDE.md", "apps/web/AGENTS.md", ".claude/settings.json", "packages/x/.mcp.json", ".husky/pre-commit", ".gitattributes"],
+      ["CLAUDE.md", "apps/web/AGENTS.md", ".claude/settings.json", "packages/x/.mcp.json", ".husky/pre-commit", ".gitattributes", ".pnpmfile.mjs"],
     );
   });
 });

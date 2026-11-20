@@ -96,8 +96,9 @@ const gitWorkspace: Workspace = {
       if (!/^agent\/[\w-]+$/.test(branch)) return `refused: not a bot branch (${branch}).`;
       // Unsandboxed checkout of a bot-made branch: never materialize files the
       // bot's next run would load as its own instructions or settings.
-      const { stdout: changed } = await git("diff", "--name-only", "--no-renames", "--no-ext-diff", "--no-textconv", `origin/main...${branch}`);
-      const bad = agentConfigPaths(changed.split("\n"));
+      // -z: raw NUL-separated names (no C-style quoting that would hide a suffix).
+      const { stdout: changed } = await git("-c", "core.quotePath=false", "diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", "--no-textconv", `origin/main...${branch}`);
+      const bad = agentConfigPaths(changed.split("\0"));
       if (bad.length) return `refused: ${branch} changes agent config (${bad.slice(0, 3).join(", ")}).`;
       await git("switch", "-q", branch);
       return null;

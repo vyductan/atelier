@@ -581,7 +581,7 @@ export function reviewBrief(deps: Deps, task: Task, worker: string, reviewer: st
  * sandbox) checks it out into that bot's working folder: agent instructions
  * and settings the next run would load, git and package-manager hooks.
  */
-const AGENT_CONFIG = /(^|\/)(\.claude\/|\.agents?\/|\.cursor\/|\.gemini\/|\.windsurf\/|\.husky\/|\.vscode\/|\.githooks\/|(CLAUDE|AGENTS|GEMINI)(\.local)?\.md$|\.mcp\.json$|\.gitattributes$|\.gitmodules$|\.envrc$|\.npmrc$|\.pnpmfile\.c?js$)/i;
+const AGENT_CONFIG = /(^|\/)(\.claude\/|\.agents?\/|\.cursor\/|\.gemini\/|\.windsurf\/|\.husky\/|\.vscode\/|\.githooks\/|(CLAUDE|AGENTS|GEMINI)(\.local)?\.md$|\.mcp\.json$|\.gitattributes$|\.gitmodules$|\.envrc$|\.npmrc$|\.pnpmfile\.[cm]?js$|\.yarnrc(\.yml)?$)/i;
 
 export function agentConfigPaths(changed: string[]): string[] {
   return changed.filter((p) => p && AGENT_CONFIG.test(p));
