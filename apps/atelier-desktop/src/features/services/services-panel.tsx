@@ -40,6 +40,7 @@ import type { ServiceHealth } from "./service-health";
 import type { ServiceAction, Transition } from "./service-transition";
 import type { OrderedGroup, ServicesOrder } from "./services-order";
 import { servicesClient } from "../../lib/services-client";
+import { WakeSwitch } from "../power/wake-switch";
 import { useToastStore } from "../../store/toast-store";
 import { groupListeners } from "./listener-info";
 import { deriveServiceHealth } from "./service-health";
@@ -672,7 +673,8 @@ export function ServicesPanel() {
           <span className="truncate text-xs text-muted-foreground">
             {snapshot.data?.configPath}
           </span>
-          <div className="ml-auto flex gap-1">
+          <div className="ml-auto flex items-center gap-1">
+            <WakeSwitch />
             <Button
               type="text"
               size="small"
