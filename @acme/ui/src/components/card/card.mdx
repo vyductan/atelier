@@ -1,0 +1,19 @@
+import { Meta, Story } from "@storybook/addon-docs/blocks";
+
+import * as CardStories from "./card.stories";
+
+<Meta of={CardStories} />
+
+# Examples
+
+## Basic card
+
+A basic card containing a title, content and an extra corner content. Supports two sizes: `default` and `small`.
+
+<Story of={CardStories.Default} />
+
+## Composed classNames hooks
+
+This story demonstrates that `classNames.*` still applies to `CardHeader` and `CardContent` when the card is composed manually with child slots, not only when using the shorthand title/description API.
+
+<Story of={CardStories.ComposedClassNames} />

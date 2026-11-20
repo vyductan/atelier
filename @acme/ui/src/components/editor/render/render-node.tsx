@@ -1,0 +1,642 @@
+import type { ReactNode } from "react";
+import { Fragment } from "react";
+
+import { cn } from "@acme/ui/lib/utils";
+
+import type {
+  EditorRenderCheckBlockNode,
+  EditorRenderCodeHighlightNode,
+  EditorRenderContent,
+  EditorRenderImageNode,
+  EditorRenderInlineNode,
+  EditorRenderLinkNode,
+  EditorRenderListItemNode,
+  EditorRenderListNode,
+  EditorRenderNode,
+  EditorRenderTableCellNode,
+  EditorRenderTextNode,
+} from "./render-types";
+import { richTextSemanticContract } from "../themes/rich-text-semantic-contract";
+import { sanitizeUrl } from "../utils/url";
+import { parseInlineStyle } from "./parse-inline-style";
+
+const TEXT_FORMAT_BOLD = 1;
+const TEXT_FORMAT_ITALIC = 1 << 1;
+const TEXT_FORMAT_STRIKETHROUGH = 1 << 2;
+const TEXT_FORMAT_UNDERLINE = 1 << 3;
+const TEXT_FORMAT_CODE = 1 << 4;
+const TEXT_FORMAT_SUBSCRIPT = 1 << 5;
+const TEXT_FORMAT_SUPERSCRIPT = 1 << 6;
+
+export function renderRootNodes(
+  nodes: EditorRenderContent["root"]["children"],
+): ReactNode[] {
+  return nodes.map((node, index) => renderNode(node, String(index), 0));
+}
+
+export function renderNode(
+  node: EditorRenderNode,
+  key: string,
+  depth = 0,
+): ReactNode {
+  switch (node.type) {
+    case "paragraph": {
+      // An empty paragraph is a blank line the author left. The editor keeps
+      // it a line tall because Lexical writes a <br> into it; an empty <p>
+      // collapses to nothing, and the published copy lost every gap.
+      const isEmpty = node.children.length === 0;
+      return (
+        <p key={key} className={richTextSemanticContract.paragraph}>
+          {isEmpty ? (
+            <br />
+          ) : (
+            renderInlineChildren(node.children, `${key}-child`)
+          )}
+        </p>
+      );
+    }
+    case "heading": {
+      const Tag = node.tag;
+      return (
+        <Tag key={key} className={richTextSemanticContract.heading[node.tag]}>
+          {renderInlineChildren(node.children, `${key}-child`)}
+        </Tag>
+      );
+    }
+    case "quote": {
+      return (
+        <blockquote key={key} className={richTextSemanticContract.quote}>
+          {node.children.map((child, index) =>
+            renderNode(child, `${key}-child-${index}`, depth),
+          )}
+        </blockquote>
+      );
+    }
+    case "link":
+    case "autolink": {
+      return renderLinkNode(node, key);
+    }
+    case "list": {
+      return renderListNode(node, key, depth);
+    }
+    case "listitem": {
+      return renderListItemNode(node, key, depth);
+    }
+    case "check-block": {
+      return renderCheckBlockNode(node, key);
+    }
+    case "code": {
+      return (
+        <pre key={key}>
+          <code className={richTextSemanticContract.code}>
+            {node.children.map((child, index) =>
+              renderCodeChild(child, `${key}-${index}`),
+            )}
+          </code>
+        </pre>
+      );
+    }
+    case "horizontalrule": {
+      return <hr key={key} className={richTextSemanticContract.hr} />;
+    }
+    case "table": {
+      const colWidths = Array.isArray(node.colWidths) ? node.colWidths : null;
+
+      return (
+        <table key={key} className={richTextSemanticContract.table}>
+          {/*
+            Without this the published view drops every column width, even
+            though the sanitizer already whitelists colgroup/col for exactly
+            this. The `width ? …` guard mirrors Lexical's own $updateColgroup, so
+            a falsy entry means "no opinion" in both renderers.
+          */}
+          {colWidths && colWidths.length > 0 ? (
+            <colgroup>
+              {colWidths.map((width, index) => (
+                <col
+                  key={index}
+                  style={width ? { width: `${width}px` } : undefined}
+                />
+              ))}
+            </colgroup>
+          ) : null}
+          <tbody>
+            {node.children.map((child, index) =>
+              renderNode(child, `${key}-${index}`, depth),
+            )}
+          </tbody>
+        </table>
+      );
+    }
+    case "tablerow": {
+      return (
+        <tr key={key}>
+          {node.children.map((child, index) =>
+            renderNode(child, `${key}-${index}`, depth),
+          )}
+        </tr>
+      );
+    }
+    case "tablecell": {
+      return renderTableCellNode(node, key);
+    }
+    case "text": {
+      return renderTextNode(node, key);
+    }
+    case "linebreak": {
+      return <br key={key} />;
+    }
+    case "code-highlight": {
+      return renderCodeHighlightNode(node, key);
+    }
+    case "image": {
+      return renderImageNode(node, key);
+    }
+    default: {
+      return null;
+    }
+  }
+}
+
+/**
+ * Sources an image may come from: an inline image pasted into the note, the
+ * web, or this site. Anything else — `javascript:`, a `data:` URI that is not
+ * an image — is not drawn.
+ */
+const SAFE_IMAGE_SOURCE =
+  /^(?:data:image\/(?:png|jpe?g|gif|webp|avif);base64,|https?:\/\/|\/(?!\/))/i;
+
+function renderImageNode(node: EditorRenderImageNode, key: string): ReactNode {
+  if (!SAFE_IMAGE_SOURCE.test(node.src)) return null;
+
+  // 0 is how the editor serializes "the image's own size".
+  const width = node.width || undefined;
+  const height = node.height || undefined;
+
+  return (
+    <img
+      key={key}
+      src={node.src}
+      alt={node.altText ?? ""}
+      width={width}
+      height={height}
+      loading="lazy"
+      className="inline-block h-auto max-w-full align-bottom"
+      style={
+        node.maxWidth
+          ? { maxWidth: `min(100%, ${node.maxWidth}px)` }
+          : undefined
+      }
+    />
+  );
+}
+
+function renderInlineChildren(
+  children: EditorRenderInlineNode[],
+  keyPrefix: string,
+): ReactNode[] {
+  return children.map((child, index) =>
+    renderNode(child, `${keyPrefix}-${index}`),
+  );
+}
+
+function renderLinkNode(node: EditorRenderLinkNode, key: string): ReactNode {
+  const sanitizedUrl = sanitizeUrl(node.url);
+
+  if (sanitizedUrl === "about:blank") {
+    return (
+      <Fragment key={key}>
+        {renderInlineChildren(node.children, `${key}-child`)}
+      </Fragment>
+    );
+  }
+
+  return (
+    <a
+      key={key}
+      className={richTextSemanticContract.link}
+      href={sanitizedUrl}
+      rel={node.rel ?? undefined}
+      target={node.target ?? undefined}
+      title={node.title ?? undefined}
+    >
+      {renderInlineChildren(node.children, `${key}-child`)}
+    </a>
+  );
+}
+
+function renderListNode(
+  node: EditorRenderListNode,
+  key: string,
+  depth: number,
+): ReactNode {
+  const Tag = node.tag;
+  const listClassName =
+    node.tag === "ol"
+      ? cn(
+          richTextSemanticContract.list.ol,
+          richTextSemanticContract.list.olDepth[
+            depth % richTextSemanticContract.list.olDepth.length
+          ],
+        )
+      : cn(
+          richTextSemanticContract.list.ul,
+          richTextSemanticContract.list.ulDepth[
+            depth % richTextSemanticContract.list.ulDepth.length
+          ],
+          node.listType === "check" && richTextSemanticContract.list.checklist,
+        );
+  const items = coalesceNestedListItems(node.children);
+  // Unmarked items (continuation lines) take no number, as in the editor;
+  // the serialized `value` counts them, so the numbers are recomputed.
+  let nextValue = node.start;
+  const values = items.map((item) =>
+    item.$?.unmarked === true ? undefined : nextValue++,
+  );
+
+  return (
+    <Tag
+      key={key}
+      className={listClassName}
+      start={node.tag === "ol" ? node.start : undefined}
+    >
+      {items.map((child, index) =>
+        renderListItemNode(
+          child,
+          `${key}-${index}`,
+          depth,
+          values[index],
+          node.tag === "ul",
+        ),
+      )}
+    </Tag>
+  );
+}
+
+function renderListItemNode(
+  node: EditorRenderListItemNode,
+  key: string,
+  depth: number,
+  displayedValue?: number,
+  depthIsBullet = false,
+): ReactNode {
+  const isUnmarked = node.$?.unmarked === true;
+  const isChecklistItem = typeof node.checked === "boolean";
+  const checkboxLabel = isChecklistItem ? getListItemLabel(node) : undefined;
+  const className = cn(
+    richTextSemanticContract.list.listitem,
+    // Only an item that holds nothing but a nested list is a holder, whose
+    // marker is hidden — as Lexical decides it in the editor. Every item
+    // below the top level used to get it, so nested lists on a published
+    // page showed no markers at all.
+    isNestedListHolder(node) && richTextSemanticContract.list.nested.listitem,
+    isChecklistItem &&
+      (node.checked
+        ? richTextSemanticContract.list.listitemChecked
+        : richTextSemanticContract.list.listitemUnchecked),
+  );
+
+  return (
+    <li
+      key={key}
+      className={className}
+      value={isUnmarked ? undefined : (displayedValue ?? node.value)}
+      // The editor measures the marker it pulls back over; a static render
+      // cannot, so it uses the widths Chrome draws at body size: "1. " is
+      // ~1.15em, a disc and its gap ~1.375em.
+      style={
+        isUnmarked
+          ? {
+              listStyleType: "none",
+              marginInlineStart: depthIsBullet ? "-1.375em" : "-1.15em",
+            }
+          : undefined
+      }
+    >
+      {isChecklistItem ? (
+        <input
+          aria-label={checkboxLabel || undefined}
+          checked={node.checked}
+          className="sr-only"
+          readOnly
+          type="checkbox"
+        />
+      ) : null}
+      {renderListItemChildren(node.children, key, depth)}
+    </li>
+  );
+}
+
+function renderCheckBlockNode(
+  node: EditorRenderCheckBlockNode,
+  key: string,
+): ReactNode {
+  const checkboxLabel = getInlineText(node.children);
+
+  return (
+    <div
+      key={key}
+      className={cn(
+        richTextSemanticContract.checkBlock,
+        node.checked && richTextSemanticContract.checkBlockChecked,
+      )}
+    >
+      <input
+        aria-label={checkboxLabel || undefined}
+        checked={node.checked}
+        className="sr-only"
+        readOnly
+        type="checkbox"
+      />
+      <span
+        aria-hidden="true"
+        className={richTextSemanticContract.checkBlockIcon}
+        data-check-icon
+      />
+      <span data-lexical-text="true">
+        {renderInlineChildren(node.children, `${key}-child`)}
+      </span>
+    </div>
+  );
+}
+
+function renderListItemChildren(
+  children: EditorRenderListItemNode["children"],
+  key: string,
+  depth: number,
+): ReactNode[] {
+  const renderedChildren: ReactNode[] = [];
+  let inlineBuffer: EditorRenderInlineNode[] = [];
+
+  const flushInlineBuffer = () => {
+    if (inlineBuffer.length === 0) {
+      return;
+    }
+
+    renderedChildren.push(
+      <p
+        key={`${key}-paragraph-${renderedChildren.length}`}
+        // A list line, not a paragraph of running text: the list spaces its
+        // items, and paragraph spacing here made every item taller than in
+        // the editor, which draws no <p> inside an item at all.
+        className={cn(richTextSemanticContract.paragraph, "my-0")}
+      >
+        {renderInlineChildren(
+          inlineBuffer,
+          `${key}-inline-${renderedChildren.length}`,
+        )}
+      </p>,
+    );
+    inlineBuffer = [];
+  };
+
+  for (const child of children) {
+    if (child.type === "list") {
+      flushInlineBuffer();
+      renderedChildren.push(
+        renderListNode(
+          child,
+          `${key}-list-${renderedChildren.length}`,
+          depth + 1,
+        ),
+      );
+      continue;
+    }
+
+    if (child.type === "paragraph") {
+      flushInlineBuffer();
+      renderedChildren.push(
+        renderNode(child, `${key}-paragraph-${renderedChildren.length}`, depth),
+      );
+      continue;
+    }
+
+    inlineBuffer.push(child);
+  }
+
+  flushInlineBuffer();
+  return renderedChildren;
+}
+
+function isNestedListHolder(node: EditorRenderListItemNode): boolean {
+  return (
+    node.children.length > 0 &&
+    node.children.every((child) => child.type === "list")
+  );
+}
+
+function coalesceNestedListItems(
+  items: EditorRenderListItemNode[],
+): EditorRenderListItemNode[] {
+  const coalescedItems: EditorRenderListItemNode[] = [];
+
+  for (const item of items) {
+    if (
+      item.children.length === 1 &&
+      item.children[0]?.type === "list" &&
+      coalescedItems.length > 0
+    ) {
+      const previousItem = coalescedItems.at(-1);
+
+      if (!previousItem) {
+        continue;
+      }
+
+      coalescedItems[coalescedItems.length - 1] = {
+        ...previousItem,
+        children: [...previousItem.children, item.children[0]],
+      };
+      continue;
+    }
+
+    coalescedItems.push(item);
+  }
+
+  return coalescedItems;
+}
+
+function renderTableCellNode(
+  node: EditorRenderTableCellNode,
+  key: string,
+): ReactNode {
+  const Tag = node.headerState > 0 ? "th" : "td";
+  const className =
+    node.headerState > 0
+      ? richTextSemanticContract.tableCellHeader
+      : richTextSemanticContract.tableCell;
+
+  return (
+    <Tag
+      key={key}
+      className={className}
+      colSpan={node.colSpan}
+      rowSpan={node.rowSpan}
+      style={
+        node.backgroundColor
+          ? { backgroundColor: node.backgroundColor }
+          : undefined
+      }
+    >
+      {node.children.map((child, index) =>
+        renderNode(child, `${key}-${index}`),
+      )}
+    </Tag>
+  );
+}
+
+function renderCodeChild(
+  child:
+    | EditorRenderCodeHighlightNode
+    | EditorRenderTextNode
+    | { type: "linebreak"; version: number },
+  key: string,
+): ReactNode {
+  if (child.type === "linebreak") {
+    return <br key={key} />;
+  }
+
+  if (child.type === "code-highlight") {
+    return renderCodeHighlightNode(child, key);
+  }
+
+  return <span key={key}>{child.text}</span>;
+}
+
+function renderCodeHighlightNode(
+  node: EditorRenderCodeHighlightNode,
+  key: string,
+): ReactNode {
+  const className = node.highlightType
+    ? richTextSemanticContract.codeHighlight[
+        node.highlightType as keyof typeof richTextSemanticContract.codeHighlight
+      ]
+    : undefined;
+
+  return (
+    <span key={key} className={className} style={parseInlineStyle(node.style)}>
+      {node.text}
+    </span>
+  );
+}
+
+function renderTextNode(node: EditorRenderTextNode, key: string): ReactNode {
+  let content: ReactNode = node.text;
+  let hasMarkup = false;
+
+  if (hasFormat(node.format, TEXT_FORMAT_CODE)) {
+    hasMarkup = true;
+    content = (
+      <code className={richTextSemanticContract.text.code} key={`${key}-code`}>
+        {content}
+      </code>
+    );
+  }
+
+  if (
+    hasFormat(node.format, TEXT_FORMAT_UNDERLINE) &&
+    hasFormat(node.format, TEXT_FORMAT_STRIKETHROUGH)
+  ) {
+    hasMarkup = true;
+    content = (
+      <span
+        className={richTextSemanticContract.text.underlineStrikethrough}
+        key={`${key}-us`}
+      >
+        {content}
+      </span>
+    );
+  } else {
+    if (hasFormat(node.format, TEXT_FORMAT_UNDERLINE)) {
+      hasMarkup = true;
+      content = <u key={`${key}-underline`}>{content}</u>;
+    }
+
+    if (hasFormat(node.format, TEXT_FORMAT_STRIKETHROUGH)) {
+      hasMarkup = true;
+      content = <s key={`${key}-strike`}>{content}</s>;
+    }
+  }
+
+  if (hasFormat(node.format, TEXT_FORMAT_ITALIC)) {
+    hasMarkup = true;
+    content = <em key={`${key}-italic`}>{content}</em>;
+  }
+
+  if (hasFormat(node.format, TEXT_FORMAT_BOLD)) {
+    hasMarkup = true;
+    content = <strong key={`${key}-bold`}>{content}</strong>;
+  }
+
+  if (hasFormat(node.format, TEXT_FORMAT_SUBSCRIPT)) {
+    hasMarkup = true;
+    content = <sub key={`${key}-sub`}>{content}</sub>;
+  }
+
+  if (hasFormat(node.format, TEXT_FORMAT_SUPERSCRIPT)) {
+    hasMarkup = true;
+    content = <sup key={`${key}-sup`}>{content}</sup>;
+  }
+
+  // Outermost so the format tags above inherit the color rather than fight it.
+  const inlineStyle = parseInlineStyle(node.style);
+
+  if (inlineStyle) {
+    hasMarkup = true;
+    content = (
+      <span key={`${key}-style`} style={inlineStyle}>
+        {content}
+      </span>
+    );
+  }
+
+  if (!hasMarkup) {
+    return node.text;
+  }
+
+  return content;
+}
+
+function hasFormat(format: number, flag: number): boolean {
+  return (format & flag) === flag;
+}
+
+function getListItemLabel(node: EditorRenderListItemNode): string {
+  return node.children
+    .map((child) => {
+      if (child.type === "paragraph") {
+        return getInlineText(child.children);
+      }
+
+      if (child.type === "list") {
+        return "";
+      }
+
+      return getInlineText([child]);
+    })
+    .join(" ")
+    .trim();
+}
+
+function getInlineText(children: EditorRenderInlineNode[]): string {
+  return children
+    .map((child) => {
+      switch (child.type) {
+        case "text":
+        case "code-highlight": {
+          return child.text;
+        }
+        case "linebreak": {
+          return " ";
+        }
+        case "link":
+        case "autolink": {
+          return getInlineText(child.children);
+        }
+        default: {
+          return "";
+        }
+      }
+    })
+    .join("")
+    .trim();
+}

@@ -276,9 +276,11 @@ export function ClaudeGlobalConfig({ onOptimizeRules }: { onOptimizeRules?: () =
               </DropdownMenu>
             </div>
 
-            <Button variant="secondary" onClick={onOptimizeRules}>
-              ✨ Optimize Rules
-            </Button>
+            {onOptimizeRules ? (
+              <Button variant="secondary" onClick={onOptimizeRules}>
+                ✨ Optimize Rules
+              </Button>
+            ) : null}
             <Button
               variant="outline"
               onClick={() => void handleOpenCodexConfig()}

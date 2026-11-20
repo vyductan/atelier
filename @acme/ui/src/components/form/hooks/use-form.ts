@@ -1,0 +1,284 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+"use client";
+
+/**
+ * Docs
+ * https://github.com/react-component/field-form/blob/master/src/useForm.ts
+ * https://github.com/react-hook-form/react-hook-form/blob/master/src/useForm.ts
+ */
+import type { BaseSyntheticEvent } from "react";
+import type {
+  UseFormProps as __UseFormProps,
+  DeepPartial,
+  DefaultValues,
+  FieldPath,
+  FieldValues,
+  KeepStateOptions,
+  SubmitHandler,
+  UseFormReset,
+  UseFormReturn,
+} from "react-hook-form";
+import type { ZodType } from "zod";
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import { standardSchemaResolver } from "@hookform/resolvers/standard-schema";
+import _ from "lodash";
+import { useForm as __useForm } from "react-hook-form";
+
+import type { ResetAction } from "../types";
+
+type FormInstance<
+  TFieldValues extends FieldValues = FieldValues,
+  TContext = any,
+  TTransformedValues = TFieldValues,
+> = UseFormReturn<TFieldValues, TContext, TTransformedValues> & {
+  schema?: ZodType | undefined;
+  defaultValues?: UseFormProps<
+    TFieldValues,
+    TContext,
+    TTransformedValues
+  >["defaultValues"];
+  submit: (
+    event?: BaseSyntheticEvent<object, unknown, unknown>,
+  ) => Promise<void>;
+  setFieldsValue: UseFormReset<TFieldValues>;
+  resetFields: (keepStateOptions?: KeepStateOptions) => void;
+  validateFields: (
+    nameList?: FieldPath<TFieldValues> | FieldPath<TFieldValues>[],
+  ) => Promise<DeepPartial<TFieldValues>>;
+};
+
+type UseFormProps<
+  TFieldValues extends FieldValues = FieldValues,
+  TContext = any,
+  TTransformedValues = TFieldValues,
+> = {
+  // Input MUST stay `TFieldValues` (do NOT widen to `any`). This ties the
+  // form's field-value type to the schema's input. Widening to `any` lets an
+  // object-literal `values`/`defaultValues` drive TFieldValues with required
+  // keys, which diverges from the schema's optional keys and breaks forms
+  // across the app (FormInstance<values> !== FormInstance<schema>).
+  // For schemas with `.default()` (input ≠ output), do NOT pass an explicit
+  // `useForm<...>` generic at the call site — let the schema infer
+  // TFieldValues=input / TTransformedValues=output.
+  schema?: ZodType<TTransformedValues, TFieldValues>;
+  onSubmit?: SubmitHandler<TTransformedValues>;
+  onValuesChange?: (
+    changedValues: Partial<TFieldValues>,
+    values: DeepPartial<TFieldValues>,
+  ) => void;
+} & __UseFormProps<TFieldValues, TContext, TTransformedValues>;
+
+type ErrorField = { name: string[]; errors: string[] };
+
+class ValidateFieldsError<TFieldValues> extends Error {
+  values: DeepPartial<TFieldValues>;
+  errorFields: ErrorField[];
+
+  constructor(
+    message: string,
+    values: DeepPartial<TFieldValues>,
+    errorFields: ErrorField[],
+  ) {
+    super(message);
+    this.name = "ValidateFieldsError";
+    this.values = values;
+    this.errorFields = errorFields;
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+const useForm = <
+  TFieldValues extends FieldValues = FieldValues,
+  TContext = any,
+  TTransformedValues = TFieldValues,
+>(
+  props?: UseFormProps<TFieldValues, TContext, TTransformedValues>,
+): FormInstance<TFieldValues, TContext, TTransformedValues> => {
+  const { schema, onSubmit, ...restProps } = props ?? {};
+
+  // Memoize the resolver so it isn't rebuilt on every render (stable per schema).
+  const resolver = useMemo(
+    () =>
+      schema
+        ? standardSchemaResolver<TFieldValues, TContext, TTransformedValues>(
+            schema,
+          )
+        : undefined,
+    [schema],
+  );
+
+  const methods = __useForm<TFieldValues, TContext, TTransformedValues>(
+    props
+      ? {
+          resolver,
+          // defaultValues: props.defaultValues,
+          // values: props.values,
+          ...restProps,
+        }
+      : undefined,
+  );
+
+  const { reset } = methods;
+
+  const setFieldsValue = useCallback(
+    (
+      values?:
+        DefaultValues<TFieldValues> | TFieldValues | ResetAction<TFieldValues>,
+      keepStateOptions?: KeepStateOptions,
+    ) => {
+      reset(values, {
+        keepDefaultValues: true,
+        ...keepStateOptions,
+      });
+    },
+    [reset],
+  );
+
+  // `props` (and usually an inline `defaultValues` literal) is a new object on
+  // every render. Read it through a ref so `resetFields` keeps a stable
+  // identity — otherwise a consumer effect that lists it as a dependency and
+  // calls it re-runs on every render, and reset() re-renders → infinite loop.
+  const hasProps = props !== undefined;
+  const defaultValuesRef = useRef(props?.defaultValues);
+  useEffect(() => {
+    defaultValuesRef.current = props?.defaultValues;
+  });
+
+  const resetFields = useCallback(
+    (keepStateOptions?: KeepStateOptions) => {
+      if (!hasProps) return;
+      const defaultValues = defaultValuesRef.current;
+      if (typeof defaultValues === "function") {
+        // defaultValues()
+        //   .then((values: TFieldValues) => {
+        //     return reset(values, keepStateOptions);
+        //   })
+        //   .catch(() => void 0);
+      } else {
+        reset(defaultValues, keepStateOptions);
+      }
+    },
+    [hasProps, reset],
+  );
+  const _formControl =
+    useRef<FormInstance<TFieldValues, TContext, TTransformedValues>>(null);
+
+  const validateFields = useCallback(
+    async (
+      nameList?: FieldPath<TFieldValues> | FieldPath<TFieldValues>[],
+    ): Promise<DeepPartial<TFieldValues>> => {
+      const names = Array.isArray(nameList)
+        ? nameList
+        : nameList
+          ? [nameList]
+          : undefined;
+
+      const isValid = await methods.trigger(names as any);
+
+      if (isValid) {
+        return methods.getValues() as unknown as DeepPartial<TFieldValues>;
+      }
+
+      // Build AntD-like errorFields
+      const buildErrorFields = (obj: unknown, path: string[] = []) => {
+        const acc: { name: string[]; errors: string[] }[] = [];
+        if (!obj || typeof obj !== "object") return acc;
+        for (const [key, value] of Object.entries(
+          obj as Record<string, unknown>,
+        )) {
+          const nextPath = [...path, key];
+          if (value && typeof value === "object") {
+            // FieldError has message; nested errors are objects
+            const maybeMsg = (value as { message?: unknown }).message;
+            if (typeof maybeMsg === "string" && maybeMsg) {
+              acc.push({ name: nextPath, errors: [maybeMsg] });
+            }
+            const children = buildErrorFields(value, nextPath);
+            if (children.length > 0) acc.push(...children);
+          }
+        }
+        return acc;
+      };
+
+      // Read the non-proxy state so calling validateFields() does not escalate
+      // the root formState proxy to 'all' (which would re-render the whole form
+      // on every subsequent errors emission). Identity does not matter here —
+      // it is read imperatively inside the callback, not as a dependency.
+      const errorFieldsAll = buildErrorFields(
+        methods.control._formState.errors,
+      );
+      const errorFields = names
+        ? errorFieldsAll.filter((e) =>
+            names.some((n) => e.name.join(".") === String(n)),
+          )
+        : errorFieldsAll;
+
+      // Focus first error field if possible
+      if (errorFields.length > 0) {
+        const firstError = errorFields[0];
+        if (firstError) {
+          methods.setFocus(firstError.name.join(".") as any);
+        }
+      }
+
+      const values =
+        methods.getValues() as unknown as DeepPartial<TFieldValues>;
+      throw new ValidateFieldsError<TFieldValues>(
+        "Validation failed",
+        values,
+        errorFields,
+      );
+    },
+    [methods],
+  );
+
+  const submit = useCallback(
+    // `handleSubmit` resolves with whatever the handler returns, so the result
+    // is dropped here to keep `submit` on its `Promise<void>` contract.
+    async (event?: BaseSyntheticEvent<object, unknown, unknown>) => {
+      if (!onSubmit) return;
+      await methods.handleSubmit(onSubmit)(event);
+    },
+    [methods, onSubmit],
+  );
+
+  _formControl.current ??= {
+    ...methods,
+    schema,
+    defaultValues: props?.defaultValues,
+    submit,
+    resetFields,
+    setFieldsValue,
+    validateFields,
+  };
+
+  const { onValuesChange } = props ?? {};
+  useEffect(() => {
+    if (!onValuesChange) return;
+
+    // eslint-disable-next-line react-hooks/incompatible-library
+    const subscription = methods.watch((value, info) => {
+      if (info.type === "change") {
+        onValuesChange(info.name ? value[info.name] : {}, value);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [methods, onValuesChange]);
+
+  // The instance is cached once (stable identity for consumers/effects), so
+  // every member that closes over render-scoped values MUST be refreshed here
+  // — a member left out keeps its first-render closure and goes stale (e.g.
+  // resetFields once froze the initial defaultValues prop).
+  _formControl.current.submit = submit;
+  _formControl.current.formState = methods.formState;
+  _formControl.current.validateFields = validateFields;
+  _formControl.current.resetFields = resetFields;
+  _formControl.current.setFieldsValue = setFieldsValue;
+  _formControl.current.schema = schema;
+  _formControl.current.defaultValues = props?.defaultValues;
+
+  return _formControl.current;
+};
+
+export { useForm, ValidateFieldsError };
+export type { UseFormProps, FormInstance };

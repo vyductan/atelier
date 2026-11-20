@@ -1,0 +1,80 @@
+"use client";
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import type { FieldValues } from "react-hook-form";
+import { useWatch } from "react-hook-form";
+
+import type { FormInstance, UseFormProps } from "./hooks/use-form";
+import warning from "../_util/warning";
+import { FormItem } from "./_components";
+import { FormErrorList as ErrorList } from "./_components/form-error-list";
+// import { Field as Item } from "./_components/form-field";
+import { FieldList as List } from "./_components/form-list";
+import { Provider as FormProvider } from "./context";
+import { Form as InternalForm } from "./form";
+import { useForm } from "./hooks/use-form";
+import { useFormInstance } from "./hooks/use-form-instance";
+
+export * from "./form";
+export * from "./context";
+export * from "./hooks/use-form";
+
+// export * from "./_components/form-field";
+export * from "./_components/form-label";
+export * from "./_components/form-message";
+export * from "./_components/form-description";
+export * from "./_components/form-list";
+export * from "./_components/form-control";
+export * from "./_components/form-controller";
+export * from "./types";
+export { requiredNumberSchema } from "./utils";
+
+// Export Field components from shadcn
+// export * from "./_components";
+
+type InternalFormType = typeof InternalForm;
+
+type CompoundedComponent = InternalFormType & {
+  useForm: typeof useWrapForm;
+  useFormInstance: typeof useFormInstance;
+  useWatch: typeof useWatch;
+  Item: typeof FormItem;
+  List: typeof List;
+  ErrorList: typeof ErrorList;
+  Provider: typeof FormProvider;
+
+  /** @deprecated Only for warning usage. Do not use. */
+  create: () => void;
+};
+
+const Form = InternalForm as unknown as CompoundedComponent;
+
+function useWrapForm<
+  TFieldValues extends FieldValues = FieldValues,
+  TContext = any,
+  TTransformedValues = TFieldValues,
+>(
+  props?: UseFormProps<TFieldValues, TContext, TTransformedValues>,
+): [FormInstance<TFieldValues, TContext, TTransformedValues>] {
+  const form = useForm(props);
+  return [form];
+}
+
+Form.Item = FormItem;
+Form.List = List;
+Form.ErrorList = ErrorList;
+Form.useForm = useWrapForm;
+Form.useFormInstance = useFormInstance;
+Form.useWatch = useWatch;
+Form.Provider = FormProvider;
+Form.create = () => {
+  warning(
+    false,
+    "Form",
+    "antd v4 removed `Form.create`. Please remove or use `@ant-design/compatible` instead.",
+  );
+};
+
+export { Form };
+
+export { FormItem } from "./_components";

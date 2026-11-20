@@ -112,6 +112,10 @@ vi.mock("@acme/ui/components/tabs", async () => {
   };
 });
 
+vi.mock("../features/services/services-panel", () => ({
+  ServicesPanel: () => <div data-testid="services-panel">Services panel</div>,
+}));
+
 vi.mock("@acme/ui/components/button", () => ({
   Button: ({
     children,
@@ -890,6 +894,53 @@ describe("AppShell", () => {
     expect(activePanel?.textContent).toContain("Chat sidebar");
     expect(activePanel?.textContent).toContain("Conversation workspace");
     expect(inactivePanel?.textContent).not.toContain("Acme Sync view");
+  });
+
+  it("leaves hidden views out and opens the first visible one", async () => {
+    const { AppShell } = await import("./app-shell");
+
+    flushSync(() => {
+      root?.render(
+        <AppShell
+          configView={({ onOptimizeRules }) => (
+            <div data-testid="config-view">
+              {onOptimizeRules ? "Optimize Rules" : "no optimize"}
+            </div>
+          )}
+          chatsWorkspace={
+            <div data-testid="conversation-workspace">
+              Conversation workspace
+            </div>
+          }
+          syncView={<div data-testid="acme-sync-view">Acme Sync view</div>}
+          hiddenViews={["chats", "sync"]}
+        />,
+      );
+    });
+
+    await settleWorkbenchMount();
+
+    const tabs = [
+      ...(container?.querySelectorAll('[data-slot="tabs-trigger"]') ?? []),
+    ];
+    const tabLabels = tabs.map((tab) => tab.textContent);
+    expect(tabLabels).toEqual(["Services", "Skills", "Claude Config"]);
+
+    const activePanel = container?.querySelector(
+      '[data-state="active"][data-slot="tabs-content"]',
+    );
+    expect(activePanel?.textContent).toContain("Services panel");
+    expect(activePanel?.textContent).not.toContain("Conversation workspace");
+
+    const configTab = tabs.find((tab) => tab.textContent === "Claude Config");
+    flushSync(() => {
+      configTab?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    // Optimize Rules would switch to the hidden Chats tab, so it is withheld.
+    expect(
+      container?.querySelector('[data-testid="config-view"]')?.textContent,
+    ).toBe("no optimize");
   });
 
   it("disables task creation until the workbench is ready", async () => {

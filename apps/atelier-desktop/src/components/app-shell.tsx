@@ -22,12 +22,33 @@ import { TaskDetailPanel } from "./task-detail-panel";
 import { WorkbenchStatusBar } from "./workbench-status-bar";
 import { ChatSidebar } from "./chat-sidebar";
 import { SkillsManagerPanel } from "../features/skills-manager/skills-manager-panel";
+import { ServicesPanel } from "../features/services/services-panel";
+
+export type AppView = "chats" | "sync" | "services" | "skills" | "config";
+
+const APP_VIEWS: readonly AppView[] = [
+  "chats",
+  "sync",
+  "services",
+  "skills",
+  "config",
+];
+
+function isAppView(value: string): value is AppView {
+  return (APP_VIEWS as readonly string[]).includes(value);
+}
 
 interface AppShellProps {
   chatsWorkspace: React.ReactNode;
   syncView: React.ReactNode;
-  configView: React.ReactNode | ((props: { onOptimizeRules: () => void }) => React.ReactNode);
+  configView:
+    | React.ReactNode
+    | ((props: { onOptimizeRules?: () => void }) => React.ReactNode);
+  /** Tabs to leave out; the first remaining tab opens on launch. */
+  hiddenViews?: readonly AppView[];
 }
+
+const NO_HIDDEN_VIEWS: readonly AppView[] = [];
 
 function resolveWorkspaceState(
   projectPath: string | null,
@@ -69,11 +90,27 @@ export function AppShell({
   chatsWorkspace,
   syncView,
   configView,
+  hiddenViews = NO_HIDDEN_VIEWS,
 }: AppShellProps): JSX.Element {
-  const [activeView, setActiveView] = useState<"chats" | "sync" | "skills" | "config">("chats");
-  const [hasMountedSyncView, setHasMountedSyncView] = useState(false);
-  const [hasMountedConfigView, setHasMountedConfigView] = useState(false);
-  const [hasMountedSkillsView, setHasMountedSkillsView] = useState(false);
+  // A hidden tab never becomes active (not initially, not via onValueChange),
+  // so its TabsContent never renders and needs no guard of its own.
+  const isViewVisible = (view: AppView) => !hiddenViews.includes(view);
+  const [initialView] = useState<AppView>(
+    () => APP_VIEWS.find((view) => !hiddenViews.includes(view)) ?? "config",
+  );
+  const [activeView, setActiveView] = useState<AppView>(initialView);
+  const [hasMountedSyncView, setHasMountedSyncView] = useState(
+    initialView === "sync",
+  );
+  const [hasMountedConfigView, setHasMountedConfigView] = useState(
+    initialView === "config",
+  );
+  const [hasMountedSkillsView, setHasMountedSkillsView] = useState(
+    initialView === "skills",
+  );
+  const [hasMountedServicesView, setHasMountedServicesView] = useState(
+    initialView === "services",
+  );
   const [taskWorkbench, setTaskWorkbench] = useState<TaskWorkbench | null>(
     null,
   );
@@ -312,7 +349,7 @@ export function AppShell({
     <Tabs
       value={activeView}
       onValueChange={(value: string) => {
-        if (value === "chats" || value === "sync" || value === "skills" || value === "config") {
+        if (isAppView(value) && isViewVisible(value)) {
           if (value === "sync") {
             setHasMountedSyncView(true);
           }
@@ -321,6 +358,9 @@ export function AppShell({
           }
           if (value === "skills") {
             setHasMountedSkillsView(true);
+          }
+          if (value === "services") {
+            setHasMountedServicesView(true);
           }
 
           setActiveView(value);
@@ -335,11 +375,18 @@ export function AppShell({
           status={resolvedWorkspaceStatus}
         />
         <TabsList className="h-auto">
-          <TabsTrigger value="chats" className="px-3 py-1 text-xs">
-            Chats
-          </TabsTrigger>
-          <TabsTrigger value="sync" className="px-3 py-1 text-xs">
-            @acme Sync
+          {isViewVisible("chats") ? (
+            <TabsTrigger value="chats" className="px-3 py-1 text-xs">
+              Chats
+            </TabsTrigger>
+          ) : null}
+          {isViewVisible("sync") ? (
+            <TabsTrigger value="sync" className="px-3 py-1 text-xs">
+              @acme Sync
+            </TabsTrigger>
+          ) : null}
+          <TabsTrigger value="services" className="px-3 py-1 text-xs">
+            Services
           </TabsTrigger>
           <TabsTrigger value="skills" className="px-3 py-1 text-xs">
             Skills
@@ -465,6 +512,13 @@ export function AppShell({
             <main className="flex-1 overflow-hidden">{syncView}</main>
           ) : null}
         </TabsContent>
+        <TabsContent value="services" className="flex flex-1 flex-col overflow-hidden">
+          {hasMountedServicesView ? (
+            <main className="bg-background flex flex-1 flex-col overflow-hidden">
+              <ServicesPanel />
+            </main>
+          ) : null}
+        </TabsContent>
         <TabsContent value="skills" className="flex flex-1 flex-col overflow-hidden">
           {hasMountedSkillsView ? (
             <main className="flex flex-1 flex-col overflow-hidden bg-background">
@@ -476,7 +530,8 @@ export function AppShell({
           {hasMountedConfigView ? (
             <main className="flex flex-1 flex-col overflow-hidden">
               {typeof configView === "function" ? configView({ 
-                onOptimizeRules: () => {
+                // Optimize Rules opens a chat, so it goes away with the Chats tab.
+                onOptimizeRules: isViewVisible("chats") ? () => {
                   const prompt = "Please review my ~/.claude/settings.json 'allow' and 'deny' lists and group similar commands together using wildcards (like `Bash(git *)` or `File(read:*)`) to make the configuration cleaner and more maintainable. After grouping them, please write the modified configuration back to ~/.claude/settings.json.";
 
                   void (async () => {
@@ -509,7 +564,7 @@ export function AppShell({
                       );
                     }
                   })();
-                }
+                } : undefined,
               }) : configView}
             </main>
           ) : null}
