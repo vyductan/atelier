@@ -135,8 +135,12 @@ export interface State {
 }
 
 export interface Workspace {
-  /** Prepares a code bot's worktree; returns why it cannot, or null when ready. */
-  prepare(worktree: string): Promise<string | null>;
+  /**
+   * Prepares a code bot's worktree; returns why it cannot, or null when ready.
+   * With `branch` (a rework) the worktree is left on that existing branch: the
+   * bot's sandbox hides some tracked files, so its own git cannot switch there.
+   */
+  prepare(worktree: string, branch?: string): Promise<string | null>;
 }
 
 export interface Deps {
@@ -578,7 +582,7 @@ export function reworkBrief(task: Task, worker: string, reviewer: string, review
     "",
     `## ${reviewer} chưa cho qua (lần ${round}): sửa lại`,
     "",
-    `This is a rework, not a new task: the branch \`${branchOf(task.id)}\` already holds your earlier commits. Run \`git switch ${branchOf(task.id)}\` (no -c), fix what the review below found, commit on that branch, and report again.`,
+    `This is a rework, not a new task: the branch \`${branchOf(task.id)}\` already holds your earlier commits, and the bridge has already switched your worktree to it (check with \`git branch --show-current\`; do not switch away). Fix what the review below found, commit on that branch, and report again.`,
     "",
     quote(review),
   ].join("\n");
@@ -643,7 +647,7 @@ async function startFollowUp(deps: Deps, state: State, now: Date): Promise<boole
     const bot = deps.config.bots[f.bot]!;
     // Only the worker's own rework resets its worktree; a review reads it as the worker left it.
     if (bot.worktree) {
-      const why = await deps.workspace.prepare(bot.worktree);
+      const why = await deps.workspace.prepare(bot.worktree, f.kind === "rework" ? branchOf(f.taskId) : undefined);
       if (why) {
         deps.log("worktree-not-ready", { taskId: f.taskId, why });
         return true;

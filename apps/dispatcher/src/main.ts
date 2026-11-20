@@ -87,10 +87,16 @@ const log = (event: string, data: Record<string, unknown> = {}) =>
 
 /** A code bot's worktree: clean, then detached at a fresh origin/main. */
 const gitWorkspace: Workspace = {
-  async prepare(worktree) {
+  async prepare(worktree, branch) {
     const git = (...args: string[]) => exec("git", ["-C", worktree, ...args], { timeout: 120_000 });
     const { stdout } = await git("status", "--porcelain");
     if (stdout.trim()) return "worktree has uncommitted changes";
+    if (branch) {
+      // A rework: back onto the bot's own branch (never main), as it left it.
+      if (!/^agent\/[\w-]+$/.test(branch)) return `refusing to switch to ${branch}`;
+      await git("switch", "-q", branch);
+      return null;
+    }
     await git("fetch", "-q", "origin", "main");
     await git("switch", "-q", "--detach", "origin/main");
     return null;

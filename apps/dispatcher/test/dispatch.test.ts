@@ -28,11 +28,12 @@ function world(tasks: Task[], opts: { job?: JobStatus | null; prepare?: string |
   const updates: { id: string; patch: { status?: string; description?: string } }[] = [];
   let now = new Date("2026-11-18T10:00:00Z");
   const prepared: string[] = [];
+  const preparedBranches: (string | undefined)[] = [];
   const deps: Deps = {
     config: opts.config ?? config,
     now: () => now,
     log: () => {},
-    workspace: { prepare: async (wt) => (prepared.push(wt), opts.prepare ?? null) },
+    workspace: { prepare: async (wt, branch) => (prepared.push(wt), preparedBranches.push(branch), opts.prepare ?? null) },
     tasks: {
       listTodo: async () => [...store.values()].filter((t) => t.status_code === "todo"),
       get: async (id) => ({ ...store.get(id)! }),
@@ -57,7 +58,7 @@ function world(tasks: Task[], opts: { job?: JobStatus | null; prepare?: string |
       lastReply: async () => opts.reply ?? "Done: branch agent/x, commit abc.",
     },
   };
-  return { deps, store, sent, updates, prepared, setNow: (d: Date) => (now = d), setJob: (j: JobStatus | null) => (opts.job = j), setReply: (r: string) => (opts.reply = r) };
+  return { deps, store, sent, updates, prepared, preparedBranches, setNow: (d: Date) => (now = d), setJob: (j: JobStatus | null) => (opts.job = j), setReply: (r: string) => (opts.reply = r) };
 }
 
 describe("task description helpers", () => {
@@ -527,7 +528,8 @@ describe("review after Dev", () => {
     await tick(w.deps, state);
     assert.equal(w.sent.length, 3);
     assert.equal(w.sent[2]!.bot, "Dev");
-    assert.match(w.sent[2]!.text, /git switch agent\/bb/);
+    assert.match(w.sent[2]!.text, /switched your worktree to it/);
+    assert.equal(w.preparedBranches.at(-1), "agent/bb");
     assert.match(w.sent[2]!.text, /> Criterion 1 not met\./);
     assert.equal(w.store.get("bb")!.status_code, "in-progress");
     // Dev fixes it; Review looks again (round 2) and still fails it.
