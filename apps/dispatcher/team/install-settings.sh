@@ -23,7 +23,9 @@ for bot dir in ${(kv)cwd}; do
   mkdir -p "$dir/.claude"
   cp "$here/$bot.json" "$dir/.claude/settings.json"
   print "installed $bot -> $dir/.claude/settings.json"
-  # Bot-only hooks: team/hooks/<bot>/* -> cwd .claude/hooks/ (bl3q-lead's Bash whitelist).
+  # Bot-only hooks: team/hooks/<bot>/* -> cwd .claude/hooks/. None today. Dropping a bot's
+  # hooks here does not remove its installed copy: delete that by hand (a Dev worktree may
+  # track a .claude/hooks of its own, so the script never deletes one).
   if [[ -d ${here:h}/hooks/$bot ]]; then
     # Copy beside, then swap: the hook path is never missing mid-install.
     rm -rf "$dir/.claude/hooks.new" "$dir/.claude/hooks.old"

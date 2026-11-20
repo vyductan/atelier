@@ -6,6 +6,76 @@
   },
   "permissions": {
     "deny": [
+      "Bash(rm *)",
+      "Bash(rmdir *)",
+      "Bash(sudo *)",
+      "Bash(su *)",
+      "Bash(dd *)",
+      "Bash(mkfs *)",
+      "Bash(diskutil *)",
+      "Bash(shutdown *)",
+      "Bash(reboot *)",
+      "Bash(halt *)",
+      "Bash(kill *)",
+      "Bash(pkill *)",
+      "Bash(killall *)",
+      "Bash(launchctl *)",
+      "Bash(crontab *)",
+      "Bash(chmod *)",
+      "Bash(chown *)",
+      "Bash(chflags *)",
+      "Bash(osascript *)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Bash(ssh *)",
+      "Bash(scp *)",
+      "Bash(sftp *)",
+      "Bash(rsync *)",
+      "Bash(nc *)",
+      "Bash(security *)",
+      "Bash(openmausbot *)",
+      "Bash(git push *)",
+      "Bash(git reset *)",
+      "Bash(git clean *)",
+      "Bash(git checkout *)",
+      "Bash(git switch *)",
+      "Bash(git restore *)",
+      "Bash(git commit *)",
+      "Bash(git merge *)",
+      "Bash(git rebase *)",
+      "Bash(git branch -D *)",
+      "Bash(git branch -d *)",
+      "Bash(git tag *)",
+      "Bash(git stash *)",
+      "Bash(git worktree *)",
+      "Bash(rm)",
+      "Bash(rmdir)",
+      "Bash(sudo)",
+      "Bash(su)",
+      "Bash(dd)",
+      "Bash(mkfs)",
+      "Bash(diskutil)",
+      "Bash(shutdown)",
+      "Bash(reboot)",
+      "Bash(halt)",
+      "Bash(kill)",
+      "Bash(pkill)",
+      "Bash(killall)",
+      "Bash(launchctl)",
+      "Bash(crontab)",
+      "Bash(chmod)",
+      "Bash(chown)",
+      "Bash(chflags)",
+      "Bash(osascript)",
+      "Bash(curl)",
+      "Bash(wget)",
+      "Bash(ssh)",
+      "Bash(scp)",
+      "Bash(sftp)",
+      "Bash(rsync)",
+      "Bash(nc)",
+      "Bash(security)",
+      "Bash(openmausbot)",
       "Edit",
       "Write",
       "NotebookEdit",
@@ -52,17 +122,32 @@
       "/Users/vyductan/Developer/g-bots/bl3q"
     ]
   },
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/bin/zsh -c '[[ -r /Users/vyductan/.bl3q-team/lead/.claude/hooks/chi-mot-lenh.zsh ]] || exit 2; /bin/zsh /Users/vyductan/.bl3q-team/lead/.claude/hooks/chi-mot-lenh.zsh || exit 2'"
-          }
-        ]
-      }
-    ]
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false,
+    "autoAllowBashIfSandboxed": true,
+    "excludedCommands": [
+      "/bin/zsh /Users/vyductan/Developer/g-bots/bl3q/tools/khoi_dong_hang_ngay.sh"
+    ],
+    "filesystem": {
+      "allowWrite": [],
+      "denyRead": [
+        "~/.atelier",
+        "~/.aws",
+        "~/.bl3q-team/agent-state",
+        "~/.bl3q-team/review",
+        "~/.claude",
+        "~/.cloudflared",
+        "~/.config",
+        "~/.gnupg",
+        "~/.netrc",
+        "~/.ssh",
+        "~/Library"
+      ]
+    },
+    "network": {
+      "allowedDomains": []
+    }
   }
 }
