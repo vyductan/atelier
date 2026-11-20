@@ -170,6 +170,9 @@ interface InstalledSkillsTableProps {
   meta: Record<string, SkillMeta>;
   updates: SkillUpdates;
   onUpdate: (skillNames: string[]) => void;
+  /** Reloads the list from disk, for changes made outside Atelier. */
+  onRefresh: () => void;
+  refreshing: boolean;
 }
 
 const SORT_LABELS: Record<SkillSort, string> = {
@@ -195,6 +198,8 @@ export function InstalledSkillsTable({
   meta,
   updates,
   onUpdate,
+  onRefresh,
+  refreshing,
 }: InstalledSkillsTableProps) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SkillSort>("uses");
@@ -645,6 +650,18 @@ export function InstalledSkillsTable({
             className="h-8 pl-8 text-sm"
           />
         </div>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={refreshing}
+          aria-label="Reload skills"
+          title="Reload the list (it also reloads when you come back to this window)"
+          className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-default"
+        >
+          <RefreshCw
+            className={`size-3.5 ${refreshing ? "animate-spin" : ""}`}
+          />
+        </button>
         <span className="text-xs text-muted-foreground">
           {shown === total ? `${total} skills` : `${shown} of ${total} skills`}
           {neverUsed === null ? null : ` · ${neverUsed} never used`}

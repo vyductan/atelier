@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, Bot, Compass, Folder, Search } from "lucide-react";
 
 import { Input } from "@acme/ui/components/input";
@@ -144,6 +144,53 @@ export function SkillsManagerPanel() {
     if (activeTab === "installed") {
       fetchInstalledSkills();
     }
+  }, [activeTab]);
+
+  // Skills also change outside Atelier (`skills add`, a plugin installed in
+  // Claude Code, relink-skills.sh), so the list reloads on request and when
+  // the window comes back to the front. Quietly: folds, filter and scroll
+  // stay. Usage is rescanned too, since new sessions may have run meanwhile.
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const lastRefresh = useRef(0);
+  const refreshInstalled = async () => {
+    if (isRefreshing) return;
+    lastRefresh.current = Date.now();
+    setIsRefreshing(true);
+    try {
+      await Promise.all([
+        fetchInstalledSkills({ quiet: true }),
+        skillsClient
+          .getSkillUsage()
+          .then(setSkillUsage)
+          .catch((error: unknown) => {
+            console.error("Failed to count skill usage:", error);
+          }),
+      ]);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+  // The focus listener reads these through refs so it is bound once per tab.
+  const refreshRef = useRef(refreshInstalled);
+  const busyRef = useRef(false);
+  useEffect(() => {
+    refreshRef.current = refreshInstalled;
+    busyRef.current = Boolean(
+      togglingSkillName || uninstallingSkillName || skillUpdates.updating,
+    );
+  });
+
+  useEffect(() => {
+    if (activeTab !== "installed") return;
+    const onFocus = () => {
+      // Focus can fire twice (window + document); one reload is enough, and
+      // leave a toggle or update that is running to refresh on its own.
+      if (Date.now() - lastRefresh.current < 3000) return;
+      if (busyRef.current) return;
+      void refreshRef.current();
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
   }, [activeTab]);
 
   const handleInstall = async (skill: Skill) => {
@@ -490,6 +537,8 @@ export function SkillsManagerPanel() {
                 meta={skillMeta}
                 updates={skillUpdates}
                 onUpdate={(skillNames) => void handleUpdate(skillNames)}
+                refreshing={isRefreshing}
+                onRefresh={() => void refreshInstalled()}
               />
             )}
           </div>
