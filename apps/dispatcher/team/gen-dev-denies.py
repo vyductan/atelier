@@ -43,6 +43,8 @@ if 'git' in levels:
     fence(f'{g}/logs/refs',{'heads'},f'{gr}/logs/refs')
     fence(f'{g}/logs/refs/heads',{'agent'},f'{gr}/logs/refs/heads')
     fence(f'{g}/worktrees',{'vyductan-agent'},f'{gr}/worktrees')
+    for n in ['commondir','gitdir','config.worktree','info','hooks']:
+        add(f'Edit({gr}/worktrees/vyductan-agent/{n})'); add(f'Edit({gr}/worktrees/vyductan-agent/{n}/**)')
     for n in ['refs/replace','refs/notes','refs/tags','refs/remotes','refs/stash','objects/info','objects/pack','modules','shallow','info','hooks','config','commondir']:
         add(f'Edit({gr}/{n})'); add(f'Edit({gr}/{n}/**)')
 if 'static' in levels:

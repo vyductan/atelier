@@ -88,7 +88,9 @@ const log = (event: string, data: Record<string, unknown> = {}) =>
 /** A code bot's worktree: clean, then detached at a fresh origin/main. */
 const gitWorkspace: Workspace = {
   async prepare(worktree, branch) {
-    const git = (...args: string[]) => exec("git", ["-C", worktree, ...args], { timeout: 120_000 });
+    // The worktree is a bot's: never let its git config run anything here, outside the sandbox.
+    const git = (...args: string[]) =>
+      exec("git", ["-C", worktree, "-c", "core.fsmonitor=", "-c", "core.hooksPath=/dev/null", ...args], { timeout: 120_000 });
     const { stdout } = await git("status", "--porcelain");
     if (stdout.trim()) return "worktree has uncommitted changes";
     if (branch) {
