@@ -11,13 +11,14 @@ A task is the issue. Its status plus a `Triage:` line at the top of its descript
 
 | State | Task |
 | --- | --- |
-| needs-triage | status `planning` |
+| needs-triage | status `triage` |
 | needs-info | status `blocked` + `Triage: needs-info` |
 | ready-for-agent | status `todo`, no `Triage:` line (with a `Bot:` line the bridge hands it out at once) |
 | ready-for-human | status `todo` + `Triage: ready-for-human` |
 | wontfix | status `archived` |
+| parked | status `idea`: kept on record, nobody needs to decide; leave it alone unless the person asks |
 
-Tasks are usually created straight as `todo`, skipping `planning`. So a `todo` task with no `Bot:` line, no `Triage:` line and no `## Agent Brief` has never been triaged: treat it as needs-triage, not ready-for-agent.
+New project tasks start in `triage`. Older tasks were often created straight as `todo`, so a `todo` task with no `Bot:` line, no `Triage:` line and no `## Agent Brief` has never been triaged: treat it as needs-triage, not ready-for-agent.
 
 Every triaged task has one category, written as the task `type` (`bug` or `feat`), and one state. Moving to a state without a `Triage:` line means deleting any existing one. A `blocked` task without a `Triage:` line waits on another task (its `Blocked by:` line), not on info. `in-progress`, `testing` and `completed` are the work's own lifecycle: leave them alone. If a task's lines contradict each other (say `Bot:` and `Triage: ready-for-human`), say so and ask before touching it.
 
@@ -29,8 +30,8 @@ Start every brief, triage note or closing note you write with the line `> *CoS v
 
 List, oldest first, with a count and one line each:
 
-1. Tasks never triaged: `planning` with no `## Triage Notes` and no brief, and `todo` with no `Bot:` line, no `Triage:` line and no `## Agent Brief`.
-2. `planning` tasks with triage in progress.
+1. Tasks never triaged: `triage` with no `## Triage Notes` and no brief, and `todo` with no `Bot:` line, no `Triage:` line and no `## Agent Brief`.
+2. `triage` tasks with triage in progress.
 3. `Triage: needs-info` tasks where the person has written since your last notes.
 
 Let the person pick.
