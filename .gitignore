@@ -1,11 +1,55 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-*.local.*
-
 # dependencies
 node_modules
 .pnp
 .pnp.js
+
+# Logs and Debug
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-debug.log*
+lerna-debug.log*
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.pem
+
+# local env files
+.env
+.env*
+!.env.example
+
+# next.js
+.next/
+out/
+next-env.d.ts
+
+# expo
+.expo/
+expo-env.d.ts
+apps/expo/.gitignore
+apps/expo/ios
+apps/expo/android
+
+# tanstack
+.tanstack/
+routeTree.gen.ts
+
+# tauri
+dist-ssr
 
 # production
 build
@@ -13,51 +57,39 @@ build
 # testing
 coverage
 
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-
-# misc
-.DS_Store
-*.pem
-
-# local env files
-.env
-
-
-# next.js
-.next/
-out/
-next-env.d.ts
-# expo
-.expo/
-expo-env.d.ts
-apps/expo/.gitignore
-apps/expo/ios
-apps/expo/android
-# tauri
-dist-ssr
-
-# vercel
-.vercel
-
-# typescript
+# typescript / output
+dist
 dist/
+*.tsbuildinfo
 .cache
 
 # turbo
 .turbo
 
+# vercel
+.vercel
+
 # intlayer
 .intlayer/
 
 # storybook
+*storybook.log
 storybook-static
 
-# apple
-.build
+.worktrees/
+.claude/
+.playwright-mcp/
+.superpowers/
+docs/plans/
+docs/superpowers/
+.understand-anything/
+graphify-out/
 
-# worktrees
-.worktrees
+AGENTS.md
+CLAUDE.md
+
+# _ prefix
+_*.md
+_*.sql
+_*.html
+_*.json

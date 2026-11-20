@@ -1,0 +1,128 @@
+# Atelier Dispatcher: the bot team on OpenMausBot.
+# Apply:  ~/.atelier/openmausbot/bin/node_modules/.bin/openmausbot team apply team.yaml --port 28799
+# Check:  ... team apply team.yaml --port 28799 --check   (exit 6 = server drifted from this file)
+#
+# Rules (spec "Atelier Dispatcher" on vyductan.dev tasks):
+# - No bot is `full` (a Chief's level is passed down to the bots it hands work to),
+#   except bl3q-lead, bl3q-fix, CoS (2026-11-19) and Review (2026-11-20), by the owner's explicit choice.
+# - Every bot sits in a team with a Chief (CoS for vyductan, bl3q-lead for bl3q):
+#   OpenMausBot auto-retries a failed run and sends incident turns to the Chief
+#   (server/host/chief-notices.ts), which costs model turns. Workers used to have no
+#   Chief to avoid that; the owner chose the grouping on 2026-11-19.
+# - Chiefs' admin tools (create_bot, app_settings, ...) are denied in their settings.
+# - Hard limits live in each bot's cwd `.claude/settings.json` (deny), not in `tools`:
+#   for Claude, `tools` only filters MCP tools.
+# - computer: off everywhere (local needs the desktop app; headless runs fail with it).
+version: 1
+
+teams:
+  # The vyductan.dev team (owner's choice 2026-11-19): CoS is its Chief, so it
+  # hears about Dev/Review/Ops failures and OpenMausBot retries their failed runs.
+  # The bridge, not CoS, hands out work: Dev, then Review on Dev's branch, once
+  # back to Dev on a fail, then the person merges.
+  - name: vyductan
+    brief: vyductan.dev work. CoS triages and briefs tasks, the bridge hands them to Dev, Review checks Dev's branch against the brief, the person merges. Ops sums up the morning's errors.
+  # Spec "Nhóm bot bl3q" (vyductan-tasks, project bl3q). Lead is this team's Chief
+  # by the owner's choice (2026-11-19): it hands work to fix and review with
+  # coordinate_bots. Its settings deny the Chief's admin tools. It runs `full` by
+  # the owner's choice, which also raises fix to full. Merging is NOT a bot: the
+  # merge gate (bl3q tools/agent_merge.py) reads review's verdict files.
+  - name: bl3q
+    brief: Daily upkeep of the bl3q game bot. Lead triages the evening digest, fix repairs on agent/* branches in a worktree, review checks independently; a code gate merges.
+
+bots:
+  - name: MausBot
+    chief: false
+    approval: ask
+    computer: off
+
+  - name: CoS
+    team: vyductan
+    chief: true
+    title: Chief of Staff
+    # Opus + full set in the UI by the owner (folded in 2026-11-19).
+    model: claude/claude-opus-5-5
+    approval: full
+    computer: off
+    cwd: /Users/vyductan/.atelier/openmausbot/workspaces/cos
+    soul: { file: souls/cos.md }
+
+  - name: Dev
+    team: vyductan
+    title: Dev vyductan
+    model: claude/claude-sonnet-5-5
+    approval: edits
+    computer: off
+    cwd: /Users/vyductan/Developer/vyductan-agent
+    soul: { file: souls/dev.md }
+
+  # Checks Dev's branch for the bridge (bot Dev has reviewer: Review in the
+  # bridge config). `auto` so it can read the worktree and run checks without a
+  # card; no Edit/Write, and its sandbox writes only its runs/ folder.
+  # Opus, not Dev's Sonnet: a different model is harder to talk round.
+  - name: Review
+    team: vyductan
+    title: Review vyductan (chấm nhánh của Dev)
+    model: claude/claude-opus-5-5
+    # full: the owner's choice (2026-11-20) so installs and tests run without
+    # cards; the sandbox still keeps Bash off .env, ~/Library and the repo source.
+    approval: full
+    computer: off
+    cwd: /Users/vyductan/.vyductan-team/review
+    soul: { file: souls/review.md }
+
+  # No tools at all (cwd settings deny everything): the bridge runs the
+  # read-only `ops-digest` collector each morning and hands Ops the JSON.
+  - name: Ops
+    team: vyductan
+    title: Ops (tóm tắt lỗi mỗi sáng)
+    model: claude/claude-haiku-5-5
+    approval: ask
+    computer: off
+    cwd: /Users/vyductan/.atelier/openmausbot/workspaces/ops
+    soul: { file: souls/ops.md }
+
+  # g-bots (read-only investigator) was removed 2026-11-19: bl3q has its own
+  # team now. The bot is hidden in OpenMausBot, not deleted (its threads stay).
+
+  # --- team bl3q -----------------------------------------------------------
+  # cwd under ~/.bl3q-team, NOT ~/.atelier: the sandbox and Read denies block
+  # ~/.atelier, and review's Bash must run from its own folder.
+  - name: bl3q-lead
+    team: bl3q
+    chief: true
+    title: bl3q lead (tổng hợp, giao việc)
+    model: claude/claude-opus-5-5  # changed in the web UI 2026-11-19
+    # full: the OWNER's choice (2026-11-19), made knowing that OpenMausBot raises
+    # every thread this Chief hands work to up to full (delegatedApprovalMode),
+    # so bl3q-fix runs full too and its Write tool is not sandboxed.
+    approval: full
+    computer: off
+    cwd: /Users/vyductan/.bl3q-team/lead
+    soul: { file: souls/bl3q-lead.md }
+
+  # Bash auto-allowed only inside the sandbox (autoAllowBashIfSandboxed):
+  # writes limited to the worktree and refs/heads/agent/*, no network.
+  - name: bl3q-fix
+    team: bl3q
+    title: bl3q fix (sửa trên nhánh agent/*)
+    model: claude/claude-sonnet-5-5
+    # full: the owner's choice (2026-11-19); the lead hands its level down anyway.
+    # Bash stays in the OS sandbox; Write/Edit do not. The merge gate still guards main.
+    approval: full
+    computer: off
+    cwd: /Users/vyductan/Developer/g-bots/bl3q-agent
+    soul: { file: souls/bl3q-fix.md }
+
+  # `auto` so it can read the worktree and run tests without a card; the
+  # sandbox cannot write to any repo, so its only output is a verdict file.
+  - name: bl3q-review
+    team: bl3q
+    title: bl3q review (kiểm độc lập)
+    # Opus, not fix's Sonnet: review alone judges edited tests, so a different
+    # (stronger) model is harder for fix's own explanations to talk round.
+    model: claude/claude-opus-5-5
+    approval: auto
+    computer: off
+    cwd: /Users/vyductan/.bl3q-team/review
+    soul: { file: souls/bl3q-review.md }

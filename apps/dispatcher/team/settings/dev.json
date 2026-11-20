@@ -1,0 +1,94 @@
+{
+  "enabledPlugins": {
+    "vercel@claude-plugins-official": false,
+    "plugin-dev@claude-plugins-official": false,
+    "supabase@claude-plugins-official": false
+  },
+  "permissions": {
+    "deny": [
+      "Bash(git push:*)",
+      "Bash(git push)",
+      "Bash(*git push*)",
+      "Bash(git remote set-url:*)",
+      "Bash(git merge:*)",
+      "Bash(git checkout main:*)",
+      "Bash(git switch main:*)",
+      "Bash(git worktree:*)",
+      "Bash(supabase db push:*)",
+      "Bash(supabase migration:*)",
+      "Bash(*supabase db push*)",
+      "Bash(vercel:*)",
+      "Bash(*vercel deploy*)",
+      "Bash(npx vercel:*)",
+      "Bash(pnpm dev:prod:*)",
+      "Bash(gh:*)",
+      "Bash(curl:*)",
+      "Bash(wget:*)",
+      "Bash(*cat ~/.ssh*)",
+      "Edit(@acme/ui/src/shadcn/**)",
+      "Write(@acme/ui/src/shadcn/**)",
+      "Edit(.claude/**)",
+      "Write(.claude/**)",
+      "Read(.env)",
+      "WebFetch",
+      "WebSearch",
+      "mcp__agents__vm_exec",
+      "mcp__plugin_vercel_vercel",
+      "mcp__plugin_supabase_supabase",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.gnupg/**)",
+      "Read(~/.netrc)",
+      "Read(~/.claude/**)",
+      "Read(~/.atelier/**)",
+      "Read(~/.cloudflared/**)",
+      "Read(~/Library/**)",
+      "Read(//Library/Application Support/com.cloudflare.cloudflared/**)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Read(**/id_rsa*)",
+      "Read(**/id_ed25519*)",
+      "Read(~/Developer/**/.env)",
+      "Read(~/.config/**)",
+      "Read(~/Developer/**/.env.*)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/.mcp.json)"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false,
+    "autoAllowBashIfSandboxed": false,
+    "excludedCommands": [],
+    "filesystem": {
+      "allowWrite": [
+        "~/Developer/vyductan/apps/vyductan.dev/.git/objects",
+        "~/Developer/vyductan/apps/vyductan.dev/.git/refs/heads",
+        "~/Developer/vyductan/apps/vyductan.dev/.git/logs",
+        "~/Developer/vyductan/apps/vyductan.dev/.git/worktrees/vyductan-agent"
+      ],
+      "denyRead": [
+        "~/.ssh",
+        "~/.aws",
+        "~/.gnupg",
+        "~/.netrc",
+        "~/.atelier",
+        "~/.cloudflared",
+        "~/Library",
+        "~/.claude",
+        "~/.config"
+      ],
+      "allowRead": [
+        "~/.config/git"
+      ]
+    },
+    "network": {
+      "allowedDomains": [
+        "github.com",
+        "registry.npmjs.org"
+      ]
+    }
+  }
+}

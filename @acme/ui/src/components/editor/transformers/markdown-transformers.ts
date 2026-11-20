@@ -1,0 +1,184 @@
+import type { ElementTransformer, Transformer } from "@lexical/markdown";
+import {
+  $createListNode,
+  $isListItemNode,
+  $isListNode,
+  ListItemNode,
+  ListNode,
+} from "@lexical/list";
+import {
+  ELEMENT_TRANSFORMERS,
+  MULTILINE_ELEMENT_TRANSFORMERS,
+  TEXT_FORMAT_TRANSFORMERS,
+  TEXT_MATCH_TRANSFORMERS,
+} from "@lexical/markdown";
+import { $isParagraphNode } from "lexical";
+
+import {
+  $createCheckBlockNode,
+  $isCheckBlockNode,
+  CheckBlockNode,
+} from "../nodes/check-block-node";
+import { EMOJI } from "../transformers/markdown-emoji-transformer";
+import { EQUATION } from "../transformers/markdown-equation-transofrmer";
+import { HR } from "../transformers/markdown-hr-transformer";
+import {
+  IMAGE,
+  IMAGE_ELEMENT,
+} from "../transformers/markdown-image-transformer";
+import { TABLE } from "../transformers/markdown-table-transformer";
+import {
+  CALLOUT,
+  DETAILS,
+  NFM_COLUMNS,
+} from "./markdown-nfm-blocks-transformer";
+import {
+  NFM_BLOCK_COLOR_EXPORT,
+  NFM_BLOCK_COLOR_IMPORT,
+  NFM_SPAN,
+} from "./markdown-nfm-colors-transformer";
+import { NFM_TABLE } from "./markdown-nfm-table-transformer";
+import { registerMarkdownTransformers } from "./markdown-transformer-registry";
+import {
+  NFM_RAW_BLOCK,
+  NFM_RAW_INLINE,
+  withTabIndentedLists,
+} from "./markdown-nfm-raw-transformer";
+
+/** `- [ ] text` / `- [x] text` ⇄ CheckBlockNode. */
+export const CHECK_BLOCK: ElementTransformer = {
+  dependencies: [CheckBlockNode],
+  export: (node, traverseChildren) => {
+    if (!$isCheckBlockNode(node)) {
+      return null;
+    }
+    const isChecked = node.getChecked();
+    return `- [${isChecked ? "x" : " "}] ${traverseChildren(node)}`;
+  },
+  regExp: /^-\s\[(?:\s|x)\]\s/i,
+  replace: (parentNode, _children, match) => {
+    const matchText = match[0] ?? "";
+    const isChecked = matchText.toLowerCase().includes("[x]");
+    const node = $createCheckBlockNode(isChecked);
+    node.append(...parentNode.getChildren());
+    parentNode.replace(node);
+  },
+  type: "element",
+};
+
+export const MARKDOWN_TRANSFORMERS: Array<Transformer> = [
+  TABLE,
+  HR,
+  IMAGE,
+  IMAGE_ELEMENT,
+  EMOJI,
+  EQUATION,
+  EQUATION,
+  // CHECK_LIST removed to avoid conflict with custom [] transformer
+  // CHECK_LIST,
+  CHECK_BLOCK,
+  // ELEMENT_TRANSFORMERS bao gồm transformers cho lists (unordered và ordered)
+  // Cần có để Lexical có thể convert list nodes thành markdown đúng format
+  ...ELEMENT_TRANSFORMERS.map(withTabIndentedLists),
+  // Transformer custom: Convert current list item to checklist when typing "[] "
+  {
+    dependencies: [CheckBlockNode, ListNode, ListItemNode],
+    export: () => null,
+    importRegExp: /^\[\]\s/,
+    regExp: /^\[\]\s/,
+    replace: (textNode) => {
+      textNode.setTextContent(textNode.getTextContent().replace(/^\[\]\s/, ""));
+      const parent = textNode.getParent();
+      if ($isListItemNode(parent)) {
+        const list = parent.getParent();
+        if ($isListNode(list)) {
+          // Identify the index of the current item
+          const children = list.getChildren();
+          const index = children.indexOf(parent);
+
+          if (index === -1) return;
+
+          const before = children.slice(0, index);
+          const after = children.slice(index + 1);
+
+          const checkBlock = $createCheckBlockNode(false);
+          checkBlock.append(...parent.getChildren());
+
+          // Insert checkBlock after the list
+          list.insertAfter(checkBlock);
+
+          // If there are items before, keep them in the original list
+          // (Lexical automatically handles the original list node content if we don't touch strict children list?)
+          // Actually, we must reorganize.
+
+          // Strategy:
+          // 1. Insert CheckBlock after List.
+          // 2. If 'after' items exist, create a new List after CheckBlock and move them there.
+          // 3. If 'before' items exist, remove 'parent' and 'after' items from original list.
+          //    If no 'before' items, remove original list.
+
+          if (after.length > 0) {
+            const newList = $createListNode(list.getListType());
+            newList.append(...after);
+            checkBlock.insertAfter(newList);
+          }
+
+          if (before.length === 0) {
+            list.remove();
+          } else {
+            // Remove parent and subsequent valid nodes from original list
+            // (which are now in checklist or new list)
+            parent.remove();
+            // 'after' nodes were appended to newList, so they are moved automatically (removed from old list check?).
+            // Lexical append() removes from old parent.
+          }
+        }
+      } else if ($isParagraphNode(parent)) {
+        const checkBlock = $createCheckBlockNode(false);
+        checkBlock.append(...parent.getChildren());
+        parent.replace(checkBlock);
+      }
+    },
+    trigger: " ",
+    type: "text-match",
+  },
+  // No multiline transformers here: this list also drives the typing
+  // shortcuts, and ``` typed mid-sentence must not become a code block.
+  // Whole-document conversion adds them — see MARKDOWN_DOCUMENT_TRANSFORMERS.
+  ...TEXT_FORMAT_TRANSFORMERS,
+  ...TEXT_MATCH_TRANSFORMERS,
+];
+
+/**
+ * For converting a whole document to or from markdown: export, import, the
+ * markdown toggle, paste.
+ *
+ * `MARKDOWN_TRANSFORMERS` leaves the multiline transformers out, and it has to:
+ * it also drives the typing shortcuts, and a ``` typed mid-sentence turning
+ * into a code block was not wanted. But converting a document is not typing.
+ * Without these a code block exported as escaped backticks and came back as a
+ * run of paragraphs.
+ */
+export const MARKDOWN_DOCUMENT_TRANSFORMERS: Array<Transformer> = [
+  // First: a colored block is written by it, before HEADING/QUOTE/paragraph.
+  NFM_BLOCK_COLOR_EXPORT,
+  ...MARKDOWN_TRANSFORMERS,
+  DETAILS,
+  CALLOUT,
+  // Before NFM_RAW_BLOCK, which keeps the <table>s and <columns> these decline.
+  NFM_TABLE,
+  NFM_COLUMNS,
+  NFM_RAW_BLOCK,
+  // Before NFM_RAW_INLINE, which keeps the spans these decline.
+  NFM_SPAN,
+  NFM_BLOCK_COLOR_IMPORT,
+  NFM_RAW_INLINE,
+  ...MULTILINE_ELEMENT_TRANSFORMERS,
+];
+
+// Hand the lists to the transformers that convert their own contents with
+// them; see markdown-transformer-registry for why they are not imported.
+registerMarkdownTransformers({
+  cell: MARKDOWN_TRANSFORMERS,
+  document: MARKDOWN_DOCUMENT_TRANSFORMERS,
+});

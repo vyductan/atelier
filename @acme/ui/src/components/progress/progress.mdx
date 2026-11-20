@@ -1,0 +1,46 @@
+import { Meta } from "@storybook/addon-docs/blocks";
+
+<Meta title="Progress" />
+
+import { ComponentSource } from "@acme/ui/components/mdx";
+
+import ProgressCircleDemo from "./examples/circle";
+import ProgressInfoPositionDemo from "./examples/info-position";
+import ProgressLineDemo from "./examples/line";
+import ProgressSizeDemo from "./examples/size";
+
+# Progress
+
+A progress indicator component for showing completion status. Built with Radix UI primitives and follows Ant Design API patterns.
+
+## Examples
+
+### Line
+
+Standard line progress bars with different statuses including active (with blinking animation), exception, success, and normal states.
+
+<ComponentSource src="progress/examples/line.tsx" __comp__={ProgressLineDemo} />
+
+### Circle
+
+Circular progress indicators showing completion percentage in a circular format.
+
+<ComponentSource
+  src="progress/examples/circle.tsx"
+  __comp__={ProgressCircleDemo}
+/>
+
+### Size
+
+Progress bars support different sizes through the `size` prop. You can use preset sizes (`"default"`, `"small"`) or custom dimensions with numbers or arrays.
+
+<ComponentSource src="progress/examples/size.tsx" __comp__={ProgressSizeDemo} />
+
+### Info Position
+
+Control the position and alignment of the percentage text using the `percentPosition` prop with `type` ("inner" or "outer") and `align` ("start", "center", or "end") options.
+
+<ComponentSource
+  src="progress/examples/info-position.tsx"
+  __comp__={ProgressInfoPositionDemo}
+/>

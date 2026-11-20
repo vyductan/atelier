@@ -1,0 +1,194 @@
+import { useRef } from "react";
+import { Content } from "vaul";
+
+import type { DrawerContent as ShadcnDrawerContent } from "@acme/ui/shadcn/drawer";
+import {
+  DrawerOverlay,
+  DrawerPortal,
+  DrawerHeader as ShadcnDrawerHeader,
+} from "@acme/ui/shadcn/drawer";
+
+import { cn } from "../../lib/utils";
+import {
+  hasEscapeClaimantAfter,
+  hasOpenDialogAfter,
+} from "../../lib/modal-layers";
+
+/**
+ * A vaul Drawer is built on its OWN copy of `@radix-ui/react-dialog`, so it has
+ * a DismissableLayer stack separate from the app's `radix-ui` Modal/AlertModal.
+ * The two stacks don't cross-gate: an Escape / outside-click that dismisses a
+ * Radix dialog stacked ON TOP of the drawer also reaches the drawer (the top of
+ * vaul's own stack) and closes it — taking everything inside it down too. Guard
+ * against that — while a Radix dialog/alert-dialog is open ABOVE the drawer, it
+ * must not self-dismiss. (A closing dialog flips to data-state="closed", so once
+ * the top dialog is gone the drawer dismisses normally again.)
+ *
+ * The panel is what makes "above" answerable. Without it the guard also fires
+ * for the dialog a drawer was opened FROM, and since every close path funnels
+ * through it — the header's close button included — such a drawer has no way
+ * out at all.
+ */
+function hasOpenDialogAbove(panel: Element | null | undefined) {
+  return hasOpenDialogAfter(panel);
+}
+
+// const DrawerContent = ({
+//   className,
+//   children,
+//   ...props
+// }: React.ComponentProps<typeof ShadcnDrawerContent>) => {
+//   return (
+//     <ShadcnDrawerContent
+//       className={cn(
+//         "flex flex-col [&>div]:flex-1",
+//         "touch-auto! select-text!",
+//         "data-[vaul-drawer-direction=right]:w-[inheri",
+//         "data-[vaul-drawer-direction=right]:sm:max-w-auto",
+//         className,
+//       )}
+//       {...props}
+//     >
+//       {children}
+//     </ShadcnDrawerContent>
+//   );
+// };
+
+function DrawerContent({
+  className,
+  children,
+  ref,
+  onInteractOutside,
+  onEscapeKeyDown,
+  ...properties
+}: React.ComponentProps<typeof ShadcnDrawerContent>) {
+  const panelReference = useRef<HTMLDivElement>(null);
+
+  return (
+    <DrawerPortal data-slot="drawer-portal">
+      <DrawerOverlay />
+      <Content
+        ref={(node) => {
+          panelReference.current = node;
+          if (typeof ref === "function") ref(node);
+          else if (ref) ref.current = node;
+        }}
+        data-slot="drawer-content"
+        // Stand down when a Select / Popover / menu / dialog opened ON TOP of
+        // this drawer: Escape belongs to it. Radix calls this back before it
+        // checks `defaultPrevented`, so preventing here is the only way to stop
+        // vaul's layer from dismissing — and vaul's layer registered earlier
+        // than the one above, so without this it acts first and takes the drawer
+        // down with the panel the user was actually trying to close.
+        //
+        // This marks the keydown, which would normally silence the layer above
+        // too. Our floating wrappers close themselves from their own
+        // `onEscapeKeyDown` (also called unconditionally) rather than relying on
+        // Radix's gated dismiss, so they stay immune to that.
+        onEscapeKeyDown={(event) => {
+          if (hasEscapeClaimantAfter(panelReference.current)) {
+            event.preventDefault();
+          }
+          onEscapeKeyDown?.(event);
+        }}
+        className={cn(
+          "group/drawer-content bg-background fixed z-50 flex h-auto flex-col",
+          "data-[vaul-drawer-direction=top]:inset-x-0 data-[vaul-drawer-direction=top]:top-0 data-[vaul-drawer-direction=top]:mb-24 data-[vaul-drawer-direction=top]:max-h-[80vh] data-[vaul-drawer-direction=top]:rounded-b-lg data-[vaul-drawer-direction=top]:border-b",
+          "data-[vaul-drawer-direction=bottom]:inset-x-0 data-[vaul-drawer-direction=bottom]:bottom-0 data-[vaul-drawer-direction=bottom]:mt-24 data-[vaul-drawer-direction=bottom]:max-h-[80vh] data-[vaul-drawer-direction=bottom]:rounded-t-lg data-[vaul-drawer-direction=bottom]:border-t",
+          "data-[vaul-drawer-direction=right]:inset-y-0 data-[vaul-drawer-direction=right]:right-0 data-[vaul-drawer-direction=right]:border-l",
+          // data-[vaul-drawer-direction=right]:w-3/4 data-[vaul-drawer-direction=right]:sm:max-w-sm
+          "data-[vaul-drawer-direction=left]:inset-y-0 data-[vaul-drawer-direction=left]:left-0 data-[vaul-drawer-direction=left]:w-3/4 data-[vaul-drawer-direction=left]:border-r data-[vaul-drawer-direction=left]:sm:max-w-sm",
+
+          //
+          // "flex flex-col [&>div]:flex-1",
+          "touch-auto! select-text!",
+          className,
+        )}
+        // Keep the drawer open when the interaction is a Sonner toast, or when
+        // a Radix dialog/alert-modal is stacked on top (its own dismiss handles
+        // the close; see hasOpenDialogAbove). NOTE: Escape is NOT guarded here —
+        // preventing default on the Escape keydown would leak across to the
+        // stacked dialog's own copy of Radix (it checks event.defaultPrevented)
+        // and stop IT from closing too. The Escape path is guarded by the
+        // onOpenChange gate in drawer.tsx instead, which never touches the event.
+        onInteractOutside={(e) => {
+          if (
+            hasOpenDialogAbove(panelReference.current) ||
+            (e.target instanceof Element &&
+              e.target.closest("[data-sonner-toast]"))
+          ) {
+            e.preventDefault();
+          }
+          onInteractOutside?.(e);
+        }}
+        {...properties}
+      >
+        <div className="bg-muted mx-auto mt-4 hidden h-2 w-[100px] shrink-0 rounded-full group-data-[vaul-drawer-direction=bottom]/drawer-content:block" />
+        {children}
+      </Content>
+    </DrawerPortal>
+  );
+}
+
+const DrawerHeader = ({
+  className,
+  ...properties
+}: React.ComponentProps<typeof ShadcnDrawerHeader>) => {
+  return (
+    <ShadcnDrawerHeader
+      className={cn("flex flex-row items-center border-b p-4", className)}
+      {...properties}
+    />
+  );
+};
+
+// function DrawerHeader({
+//     className,
+//     children,
+//     extra,
+//     ...props
+//   }: React.ComponentProps<"div"> & {
+//     extra?: React.ReactNode;
+//   }) {
+//     return (
+//       <div
+//         data-slot="drawer-header"
+//         className={cn(
+//           "flex p-4",
+//           // "flex-col gap-1.5"
+//           // own
+//           "items-center gap-2 border-b px-6",
+//           className,
+//         )}
+//         {...props}
+//       >
+
+//       </div>
+//     );
+//   }
+
+const DrawerFooter = ({
+  className,
+  ...properties
+}: React.HTMLAttributes<HTMLDivElement>) => (
+  <div
+    className={cn(
+      "flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2",
+      "bg-muted/10 border-t p-4",
+      className,
+    )}
+    {...properties}
+  />
+);
+DrawerFooter.displayName = "DrawerFooter";
+
+export { DrawerContent, DrawerHeader, DrawerFooter, hasOpenDialogAbove };
+export {
+  Drawer as DrawerRoot,
+  DrawerDescription,
+  DrawerOverlay,
+  DrawerTitle,
+  DrawerTrigger,
+  DrawerClose,
+  DrawerPortal,
+} from "@acme/ui/shadcn/drawer";

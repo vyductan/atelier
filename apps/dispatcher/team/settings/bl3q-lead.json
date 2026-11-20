@@ -1,0 +1,54 @@
+{
+  "enabledPlugins": {
+    "vercel@claude-plugins-official": false,
+    "plugin-dev@claude-plugins-official": false,
+    "supabase@claude-plugins-official": false
+  },
+  "permissions": {
+    "deny": [
+      "Bash",
+      "Edit",
+      "Write",
+      "NotebookEdit",
+      "mcp__agents__create_bot",
+      "mcp__agents__propose_team_setup",
+      "mcp__agents__propose_bot_deletion",
+      "mcp__agents__manage_room",
+      "mcp__agents__retry_thread",
+      "mcp__agents__propose_profile",
+      "mcp__agents__propose_model",
+      "mcp__agents__reset_cloud_computer",
+      "mcp__agents__trigger",
+      "mcp__agents__delete_trigger",
+      "mcp__agents__skill_manage",
+      "mcp__agents__mcp_server",
+      "mcp__agents__app_settings",
+      "WebFetch",
+      "WebSearch",
+      "mcp__agents__vm_exec",
+      "mcp__plugin_vercel_vercel",
+      "mcp__plugin_supabase_supabase",
+      "mcp__vyductan-tasks",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.gnupg/**)",
+      "Read(~/.netrc)",
+      "Read(~/.claude/**)",
+      "Read(~/.atelier/**)",
+      "Read(~/.cloudflared/**)",
+      "Read(~/Library/**)",
+      "Read(//Library/Application Support/com.cloudflare.cloudflared/**)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Read(**/id_rsa*)",
+      "Read(**/id_ed25519*)",
+      "Read(~/.config/**)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/.mcp.json)"
+    ],
+    "additionalDirectories": [
+      "/Users/vyductan/Developer/g-bots/bl3q"
+    ]
+  }
+}

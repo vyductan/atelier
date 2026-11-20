@@ -1,0 +1,421 @@
+import type { LexicalEditor } from "lexical";
+import * as React from "react";
+import {
+  $createListItemNode,
+  $createListNode,
+  $isListItemNode,
+  $isListNode,
+} from "@lexical/list";
+import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
+import { $createHeadingNode, $isHeadingNode } from "@lexical/rich-text";
+import { render, waitFor } from "@testing-library/react";
+import {
+  $createParagraphNode,
+  $createTextNode,
+  $getRoot,
+  $isElementNode,
+  $isTextNode,
+} from "lexical";
+import { afterEach, expect, test } from "vitest";
+
+import { Editor } from "../editor";
+
+// A real ClipboardEvent carrying a real DataTransfer, through the shipped
+// editor, so its own copy handler and Lexical's paste both take part.
+
+Object.assign(globalThis, { React });
+
+function EditorRefPlugin({
+  onReady,
+}: {
+  onReady: (editor: LexicalEditor) => void;
+}) {
+  const [editor] = useLexicalComposerContext();
+
+  React.useEffect(() => {
+    onReady(editor);
+  }, [editor, onReady]);
+
+  return null;
+}
+
+afterEach(() => document.body.replaceChildren());
+
+const WORDS = "Tại sao có cái này";
+
+async function setUp() {
+  let editor: LexicalEditor | null = null;
+
+  render(
+    <Editor autoFocus={false}>
+      <EditorRefPlugin onReady={(next) => (editor = next)} />
+    </Editor>,
+  );
+
+  await waitFor(() => expect(editor).not.toBeNull());
+  const live = editor as unknown as LexicalEditor;
+
+  live.update(() => {
+    const root = $getRoot();
+    root.clear();
+    root.append(
+      $createListNode("bullet").append($createListItemNode()),
+      $createListNode("number").append(
+        $createListItemNode().append($createTextNode(`${WORDS}, tại sao?`)),
+      ),
+      $createParagraphNode().append($createTextNode("Last block")),
+    );
+  });
+
+  const contentEditable = await waitFor(() => {
+    const node = document.querySelector<HTMLElement>(
+      '[contenteditable="true"]',
+    );
+    expect(node?.textContent).toContain(WORDS);
+    return node!;
+  });
+  contentEditable.focus();
+
+  return { live, contentEditable };
+}
+
+function fire(target: HTMLElement, type: "copy" | "paste", data: DataTransfer) {
+  target.dispatchEvent(
+    new ClipboardEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: data,
+    }),
+  );
+}
+
+/** Each top-level block as [type, list type if any, text]. */
+const shape = (editor: LexicalEditor) =>
+  editor.getEditorState().read(() =>
+    $getRoot()
+      .getChildren()
+      .map((block) => [
+        block.getType(),
+        $isListNode(block) ? block.getListType() : null,
+        block.getTextContent(),
+      ]),
+  );
+
+/**
+ * Copying words from inside one numbered item and pasting them on a bullet
+ * turned the bullet into "1.": the copy carried the numbered list around the
+ * words, and the paste brought the list along. Notion brings only the words
+ * when the copy came from inside a single block.
+ */
+test("pastes words copied from inside a numbered item without its list", async () => {
+  const { live, contentEditable } = await setUp();
+
+  live.update(() => {
+    const numbered = $getRoot().getChildAtIndex(1);
+    const item = $isListNode(numbered) ? numbered.getFirstChild() : null;
+    const text = $isListItemNode(item) ? item.getFirstChild() : null;
+    if ($isTextNode(text)) text.select(0, WORDS.length);
+  });
+
+  const clipboard = new DataTransfer();
+  fire(contentEditable, "copy", clipboard);
+  expect(clipboard.getData("text/plain")).toBe(WORDS);
+
+  live.update(() => {
+    const bullet = $getRoot().getFirstChild();
+    const item = $isListNode(bullet) ? bullet.getFirstChild() : null;
+    if ($isListItemNode(item)) item.select();
+  });
+  fire(contentEditable, "paste", clipboard);
+
+  await waitFor(() =>
+    expect(shape(live)).toStrictEqual([
+      ["list", "bullet", WORDS],
+      ["list", "number", `${WORDS}, tại sao?`],
+      ["paragraph", null, "Last block"],
+    ]),
+  );
+});
+
+/** Copying across blocks is copying blocks: those still paste as blocks. */
+test("still pastes blocks when the copy spans more than one", async () => {
+  const { live, contentEditable } = await setUp();
+
+  live.update(() => {
+    const numbered = $getRoot().getChildAtIndex(1);
+    const item = $isListNode(numbered) ? numbered.getFirstChild() : null;
+    const from = $isListItemNode(item) ? item.getFirstChild() : null;
+    const last = $getRoot().getLastChild();
+    const to = $isElementNode(last) ? last.getFirstChild() : null;
+    if ($isTextNode(from) && $isTextNode(to)) {
+      const selection = from.select(0, 0);
+      selection.focus.set(to.getKey(), 4, "text");
+    }
+  });
+
+  const clipboard = new DataTransfer();
+  fire(contentEditable, "copy", clipboard);
+
+  live.update(() => {
+    $getRoot().getLastChild()?.selectEnd();
+  });
+  fire(contentEditable, "paste", clipboard);
+
+  await waitFor(() => {
+    const types = shape(live).map(([type, listType]) => `${type}:${listType}`);
+    // The numbered item came along as a numbered list.
+    expect(
+      types.filter((type) => type === "list:number").length,
+    ).toBeGreaterThan(0);
+    expect(shape(live).length).toBeGreaterThan(3);
+  });
+});
+
+/**
+ * Highlighting a whole line — a triple-click, or a drag to its end — carries
+ * the selection to the very start of the next line. Nothing of that next line
+ * is selected, so this is a copy of exactly one whole block: as in Notion it
+ * keeps its list, and the next line does not come along.
+ */
+test("copies a whole-line selection ending at the next line's start as that one block", async () => {
+  let editor: LexicalEditor | null = null;
+
+  render(
+    <Editor autoFocus={false}>
+      <EditorRefPlugin onReady={(next) => (editor = next)} />
+    </Editor>,
+  );
+  await waitFor(() => expect(editor).not.toBeNull());
+  const live = editor as unknown as LexicalEditor;
+
+  live.update(() => {
+    const root = $getRoot();
+    root.clear();
+    const nested = $createListNode("number").append(
+      $createListItemNode().append($createTextNode(WORDS)),
+      $createListItemNode().append($createTextNode("Next line")),
+    );
+    root.append(
+      $createListNode("bullet").append($createListItemNode()),
+      $createListNode("number").append(
+        $createListItemNode().append($createTextNode("Why")),
+        $createListItemNode().append(nested),
+      ),
+    );
+  });
+
+  const contentEditable = await waitFor(() => {
+    const node = document.querySelector<HTMLElement>(
+      '[contenteditable="true"]',
+    );
+    expect(node?.textContent).toContain("Next line");
+    return node!;
+  });
+  contentEditable.focus();
+
+  live.update(() => {
+    const texts = $getRoot()
+      .getAllTextNodes()
+      .filter(
+        (node) =>
+          node.getTextContent() === WORDS ||
+          node.getTextContent() === "Next line",
+      );
+    const [from, next] = texts;
+    if (from && next) {
+      const selection = from.select(0, 0);
+      selection.focus.set(next.getKey(), 0, "text");
+    }
+  });
+
+  const clipboard = new DataTransfer();
+  fire(contentEditable, "copy", clipboard);
+
+  live.update(() => {
+    const bullet = $getRoot().getFirstChild();
+    const item = $isListNode(bullet) ? bullet.getFirstChild() : null;
+    if ($isListItemNode(item)) item.select();
+  });
+  fire(contentEditable, "paste", clipboard);
+
+  expect(clipboard.getData("text/plain")).not.toContain("Next line");
+  await waitFor(() => {
+    // The pasted numbered item lands above the existing numbered list, which
+    // Lexical then merges with it.
+    const firstLine = live.getEditorState().read(() => {
+      const first = $getRoot().getFirstChild();
+      return $isListNode(first)
+        ? [first.getListType(), first.getFirstChild()?.getTextContent()]
+        : null;
+    });
+    expect(firstLine).toStrictEqual(["number", WORDS]);
+    expect(contentEditable.textContent?.match(/Next line/g)).toHaveLength(1);
+  });
+});
+
+/**
+ * Copying a whole numbered list and pasting it must bring back a numbered
+ * list. A selection that takes the list whole has both ends on the root, and
+ * taking the root for "one block" stripped the list off the copy: the items
+ * came back wrapped in a new list of the default kind, bullets.
+ */
+test("keeps a copied numbered list numbered, nested items and all", async () => {
+  let editor: LexicalEditor | null = null;
+
+  render(
+    <Editor autoFocus={false}>
+      <EditorRefPlugin onReady={(next) => (editor = next)} />
+    </Editor>,
+  );
+  await waitFor(() => expect(editor).not.toBeNull());
+  const live = editor as unknown as LexicalEditor;
+
+  const contentEditable = await waitFor(() => {
+    const node = document.querySelector<HTMLElement>(
+      '[contenteditable="true"]',
+    );
+    expect(node).not.toBeNull();
+    return node!;
+  });
+  contentEditable.focus();
+
+  live.update(() => {
+    const root = $getRoot();
+    root.clear();
+    const nested = $createListNode("number").append(
+      $createListItemNode().append($createTextNode("a")),
+      $createListItemNode().append($createTextNode("b")),
+    );
+    root.append(
+      $createListNode("number").append(
+        $createListItemNode().append($createTextNode("11")),
+        $createListItemNode().append(nested),
+        $createListItemNode().append($createTextNode("22")),
+      ),
+      $createParagraphNode(),
+    );
+    // The list, whole, and nothing after it.
+    root.select(0, 1);
+  });
+
+  const clipboard = new DataTransfer();
+  fire(contentEditable, "copy", clipboard);
+
+  // The copy itself must still say "numbered list" at its top.
+  const copied = JSON.parse(
+    clipboard.getData("application/x-lexical-editor"),
+  ) as { nodes: Array<{ type: string; listType?: string }> };
+  expect(copied.nodes.map((node) => [node.type, node.listType])).toStrictEqual([
+    ["list", "number"],
+  ]);
+
+  // Paste into the empty line below the list.
+  live.update(() => {
+    $getRoot().getLastChild()?.selectEnd();
+  });
+  fire(contentEditable, "paste", clipboard);
+
+  await waitFor(() => {
+    const lists = live.getEditorState().read(() =>
+      $getRoot()
+        .getChildren()
+        .filter((node) => $isListNode(node))
+        .map((node) =>
+          (node as ReturnType<typeof $createListNode>).getListType(),
+        ),
+    );
+    expect(lists).not.toContain("bullet");
+    expect(contentEditable.textContent?.match(/22/g)).toHaveLength(2);
+  });
+});
+
+async function setUpHeading() {
+  let editor: LexicalEditor | null = null;
+
+  render(
+    <Editor autoFocus={false}>
+      <EditorRefPlugin onReady={(next) => (editor = next)} />
+    </Editor>,
+  );
+  await waitFor(() => expect(editor).not.toBeNull());
+  const live = editor as unknown as LexicalEditor;
+
+  live.update(() => {
+    const root = $getRoot();
+    root.clear();
+    root.append(
+      $createHeadingNode("h2").append($createTextNode("[2026-09-23]")),
+      $createParagraphNode(),
+    );
+  });
+
+  const contentEditable = await waitFor(() => {
+    const node = document.querySelector<HTMLElement>(
+      '[contenteditable="true"]',
+    );
+    expect(node?.textContent).toContain("[2026-09-23]");
+    return node!;
+  });
+  contentEditable.focus();
+
+  return { live, contentEditable };
+}
+
+const selectHeadingText = (live: LexicalEditor, from: number, to: number) =>
+  live.update(() => {
+    const heading = $getRoot().getFirstChild();
+    const text = $isHeadingNode(heading) ? heading.getFirstChild() : null;
+    if ($isTextNode(text)) text.select(from, to);
+  });
+
+const pasteIntoEmptyLine = (
+  live: LexicalEditor,
+  contentEditable: HTMLElement,
+  clipboard: DataTransfer,
+) => {
+  live.update(() => {
+    $getRoot().getLastChild()?.selectEnd();
+  });
+  fire(contentEditable, "paste", clipboard);
+};
+
+/**
+ * As in Notion: every character of one block, start to end, copies as that
+ * block. A heading highlighted whole pastes back as a heading.
+ */
+test("pastes a heading copied whole as a heading", async () => {
+  const { live, contentEditable } = await setUpHeading();
+
+  selectHeadingText(live, 0, "[2026-09-23]".length);
+  const clipboard = new DataTransfer();
+  fire(contentEditable, "copy", clipboard);
+  expect(clipboard.getData("text/html")).toMatch(/<h2/);
+
+  pasteIntoEmptyLine(live, contentEditable, clipboard);
+
+  await waitFor(() =>
+    expect(shape(live)).toStrictEqual([
+      ["heading", null, "[2026-09-23]"],
+      ["heading", null, "[2026-09-23]"],
+    ]),
+  );
+});
+
+/** Part of a heading is still just words. */
+test("pastes part of a heading as plain words", async () => {
+  const { live, contentEditable } = await setUpHeading();
+
+  selectHeadingText(live, 1, 5);
+  const clipboard = new DataTransfer();
+  fire(contentEditable, "copy", clipboard);
+  expect(clipboard.getData("text/plain")).toBe("2026");
+
+  pasteIntoEmptyLine(live, contentEditable, clipboard);
+
+  await waitFor(() =>
+    expect(shape(live)).toStrictEqual([
+      ["heading", null, "[2026-09-23]"],
+      ["paragraph", null, "2026"],
+    ]),
+  );
+});

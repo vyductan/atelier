@@ -33,8 +33,12 @@ export default defineConfig({
   },
 
   resolve: {
+    // One React for the app and its UI libraries: a second copy (e.g. a stale
+    // hoisted one next to @dnd-kit) makes every hook call fail ("Invalid hook call").
+    dedupe: ["react", "react-dom"],
     alias: {
       "~": path.resolve(__dirname, "./src"),
+      "@acme/ui": path.resolve(__dirname, "../../@acme/ui/src"),
     },
   },
 
