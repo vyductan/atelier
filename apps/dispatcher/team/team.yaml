@@ -48,11 +48,14 @@ bots:
     cwd: /Users/vyductan/.atelier/openmausbot/workspaces/cos
     soul: { file: souls/cos.md }
 
+  # `full` by owner choice 2026-11-20 (cards stalled every unattended run).
+  # Its limits are team/settings/dev.json: OS sandbox on Bash, deny rules on
+  # Edit outside the worktree, on git internals and on OMB admin/tasks MCP.
   - name: Dev
     team: vyductan
     title: Dev vyductan
     model: claude/claude-sonnet-5-5
-    approval: edits
+    approval: full
     computer: off
     cwd: /Users/vyductan/Developer/vyductan-agent
     soul: { file: souls/dev.md }
