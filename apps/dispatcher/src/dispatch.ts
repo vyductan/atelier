@@ -572,7 +572,7 @@ export function reviewBrief(deps: Deps, task: Task, worker: string, reviewer: st
   ].join("\n");
 }
 
-function reworkBrief(task: Task, worker: string, reviewer: string, review: string, round: number): string {
+export function reworkBrief(task: Task, worker: string, reviewer: string, review: string, round: number): string {
   return [
     briefFor(task, worker),
     "",

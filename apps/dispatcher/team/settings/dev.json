@@ -66,9 +66,6 @@
       "Read(**/.env)",
       "Read(**/.env.*)",
       "Read(**/.mcp.json)",
-      "Bash(*--output*)",
-      "Bash(*--ext-diff*)",
-      "Bash(*--textconv*)",
       "Edit(~/Developer/vyductan/apps/vyductan.dev/.git/worktrees/vyductan-agent/commondir)",
       "Edit(~/Developer/vyductan/apps/vyductan.dev/.git/worktrees/vyductan-agent/gitdir)",
       "Edit(~/Developer/vyductan/apps/vyductan.dev/.git/worktrees/vyductan-agent/config.worktree)",
@@ -92,7 +89,11 @@
       "Edit(~/Developer/vyductan/apps/vyductan.dev/.git/hooks/**)",
       "Edit(~/Developer/vyductan/apps/vyductan.dev/.git/config)",
       "Edit(~/Developer/vyductan/apps/vyductan.dev/.git/HEAD)",
-      "Edit(~/Developer/vyductan/apps/vyductan.dev/.git/info/**)"
+      "Edit(~/Developer/vyductan/apps/vyductan.dev/.git/info/**)",
+      "Bash(*--ou*)",
+      "Bash(*--ext*)",
+      "Bash(*--tex*)",
+      "Edit(~/Developer/vyductan-agent/.git)"
     ]
   },
   "sandbox": {
