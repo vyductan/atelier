@@ -69,6 +69,13 @@ export interface Routine {
    * scrolling OpenMausBot. The task's status is never touched.
    */
   reportTask?: string;
+  /**
+   * A file whose presence runs the routine now, at any time of day (e.g. bl3q's
+   * daily run writes one when a chore still fails after its retry). The bridge
+   * deletes it as it starts the run, and the run counts as the day's run, so
+   * the timed one is skipped that day. Same one-run gate and daily budget.
+   */
+  triggerFile?: string;
 }
 
 export interface Config {
@@ -148,6 +155,8 @@ export interface Deps {
   collect?: (collector: Collector) => Promise<string>;
   /** Whether two files have identical contents (false if either is missing). */
   sameFile?: (a: string, b: string) => Promise<boolean>;
+  /** Routine trigger files: whether one is there, and removing it. */
+  trigger?: { pending: (path: string) => boolean; clear: (path: string) => void };
 }
 
 /**
@@ -170,11 +179,18 @@ async function settingsIntact(deps: Deps, state: State): Promise<boolean> {
   return true;
 }
 
-/** A routine due now: its time has come today and it has not run today. */
-export function dueRoutine(config: Config, state: State, now: Date): Routine | null {
+/**
+ * A routine due now: its trigger file is there (any time, even after today's
+ * run), or its time has come today and it has not run today.
+ */
+export function dueRoutine(config: Config, state: State, now: Date, pending: (path: string) => boolean = () => false): { routine: Routine; triggered: boolean } | null {
   const today = localDate(now);
   const hhmm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-  return (config.routines ?? []).find((r) => !r.disabled && state.routinesDone?.[r.name] !== today && hhmm >= r.at && r.bot in config.bots) ?? null;
+  const live = (config.routines ?? []).filter((r) => !r.disabled && r.bot in config.bots);
+  const triggered = live.find((r) => r.triggerFile && pending(r.triggerFile));
+  if (triggered) return { routine: triggered, triggered: true };
+  const timed = live.find((r) => state.routinesDone?.[r.name] !== today && hhmm >= r.at);
+  return timed ? { routine: timed, triggered: false } : null;
 }
 
 /** The start of a bot's reply on one line, short enough for a phone notification. */
@@ -429,10 +445,12 @@ export async function tick(deps: Deps, state: State): Promise<void> {
     return;
   }
 
-  const routine = dueRoutine(deps.config, state, now);
-  if (routine) {
+  const due = dueRoutine(deps.config, state, now, deps.trigger?.pending);
+  if (due) {
     if (!(await settingsIntact(deps, state))) return;
-    await startRoutine(deps, state, routine, now);
+    // Cleared before collecting: a trigger runs once, even if the collector fails.
+    if (due.triggered) deps.trigger?.clear(due.routine.triggerFile!);
+    await startRoutine(deps, state, due.routine, now, due.triggered);
     return;
   }
 
@@ -477,8 +495,10 @@ export async function tick(deps: Deps, state: State): Promise<void> {
  * failure still counts the routine as done for today (one ping, no retry loop
  * every minute).
  */
-async function startRoutine(deps: Deps, state: State, routine: Routine, now: Date): Promise<void> {
+async function startRoutine(deps: Deps, state: State, routine: Routine, now: Date, triggered = false): Promise<void> {
   const today = localDate(now);
+  // A triggered run may follow the day's run: its own ids, or OpenMausBot's idempotent send would drop it.
+  const day = triggered ? `${today}-${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}` : today;
   state.routinesDone = { ...state.routinesDone, [routine.name]: today };
   let data: string;
   try {
@@ -496,10 +516,10 @@ async function startRoutine(deps: Deps, state: State, routine: Routine, now: Dat
   }
   const brief = `${routine.instruction}\n\n\`\`\`json\n${data.trim()}\n\`\`\``;
   const run: Run = {
-    taskId: `routine:${routine.name}:${today}`,
+    taskId: `routine:${routine.name}:${day}`,
     bot: routine.bot,
     // OpenMausBot send ids are 16-80 of [A-Za-z0-9_-]: the name (any text) goes in as a hash.
-    sendId: `vdt-routine-${createHash("sha256").update(routine.name).digest("hex").slice(0, 12)}-${today}`,
+    sendId: `vdt-routine-${createHash("sha256").update(routine.name).digest("hex").slice(0, 12)}-${day}`,
     status: "sending",
     startedAt: now.toISOString(),
     title: routine.name,
@@ -509,7 +529,7 @@ async function startRoutine(deps: Deps, state: State, routine: Routine, now: Dat
   state.runs.push(run);
   run.threadId = await deps.bots.send(deps.config.bots[routine.bot]!.ombName, brief, run.sendId);
   run.status = "sent";
-  deps.log("routine-sent", { routine: routine.name, threadId: run.threadId });
+  deps.log("routine-sent", { routine: routine.name, threadId: run.threadId, triggered });
 }
 
 /** After a send (first or recovered): the task shows who has it and where. */

@@ -334,6 +334,51 @@ describe("tick", () => {
     assert.equal(state.routinesDone?.["bl3q tối"], "2026-11-18");
   });
 
+  it("a trigger file runs the routine now, once per file, and stands in for the timed run", async () => {
+    const w = world([]);
+    w.deps.config = {
+      ...config,
+      bots: { ...config.bots, "bl3q-lead": { ombName: "bl3q-lead" } },
+      routines: [{ name: "bl3q tối", bot: "bl3q-lead", at: "20:00", collector: { cmd: "x", args: [], cwd: "/" }, instruction: "S", triggerFile: "/flag" }],
+    };
+    const files = new Set<string>();
+    w.deps.trigger = { pending: (p) => files.has(p), clear: (p) => void files.delete(p) };
+    let calls = 0;
+    w.deps.collect = async () => (calls++, '{"chore_failures": [1]}');
+    const state: State = { runs: [] };
+
+    // 01:10, no file: nothing (the timed run is at 20:00).
+    w.setNow(new Date(2026, 10, 18, 1, 10));
+    await tick(w.deps, state);
+    assert.equal(w.sent.length, 0);
+
+    // The file appears: the routine runs now and the file is gone.
+    files.add("/flag");
+    await tick(w.deps, state);
+    assert.equal(w.sent.length, 1);
+    assert.equal(w.sent[0]!.bot, "bl3q-lead");
+    assert.match(w.sent[0]!.sendId, /^vdt-routine-[0-9a-f]{12}-2026-11-18-0110$/);
+    assert.equal(files.size, 0);
+    assert.equal(state.routinesDone?.["bl3q tối"], "2026-11-18");
+
+    // A second file while that run is in flight waits for it (one run at a time).
+    w.setNow(new Date(2026, 10, 18, 9, 30));
+    files.add("/flag");
+    await tick(w.deps, state); // settles the 01:10 run only
+    w.setJob({ status: "completed", outcome: "done", needsInput: false, result: null });
+    await tick(w.deps, state);
+    assert.equal(calls, 2);
+    assert.equal(w.sent.length, 2);
+    assert.match(w.sent[1]!.sendId, /-2026-11-18-0930$/);
+    assert.equal(files.size, 0);
+
+    // 20:00: the day's run already happened (triggered), so the timed one is skipped.
+    w.setNow(new Date(2026, 10, 18, 20, 5));
+    await tick(w.deps, state);
+    await tick(w.deps, state);
+    assert.equal(calls, 2);
+  });
+
   it("a disabled routine never runs", async () => {
     const w = world([]);
     w.deps.config = {

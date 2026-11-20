@@ -11,7 +11,7 @@
 // config.tokenFile names and never logged.
 
 import { execFile } from "node:child_process";
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -111,6 +111,10 @@ function deps(config: FileConfig): Deps {
       } catch {
         return false;
       }
+    },
+    trigger: {
+      pending: (path) => existsSync(expand(path)),
+      clear: (path) => rmSync(expand(path), { force: true }),
     },
     collect: async (collector) => {
       // execFile: no shell; the command and its arguments come from config.json.
