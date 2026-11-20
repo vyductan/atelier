@@ -17,7 +17,8 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 
 import { active, runsToday, tick, type Config, type Deps, type State, type Workspace } from "./dispatch.ts";
-import { mcpTaskStore } from "./mcp.ts";
+import { intakeDigest } from "./intake.ts";
+import { callTool, mcpTaskStore } from "./mcp.ts";
 import { ombBots } from "./omb.ts";
 
 const exec = promisify(execFile);
@@ -168,6 +169,16 @@ async function main() {
       }
       await new Promise((r) => setTimeout(r, config.intervalSeconds * 1000));
     }
+  } else if (command === "intake-digest") {
+    // A routine collector: prints the project's intake reports waiting in
+    // triage as JSON, or nothing on a quiet day (see src/intake.ts).
+    const project = rest[0];
+    if (!project) throw new Error("usage: intake-digest <project>");
+    const token = readFileSync(config.tokenFile, "utf8").trim();
+    const out = (await callTool(config.mcpUrl, token, "list_tasks", { projectSlug: project, status: "triage", limit: 100 })) as {
+      tasks: Parameters<typeof intakeDigest>[0];
+    };
+    process.stdout.write(intakeDigest(out.tasks, project, new Date()));
   } else {
     throw new Error(`unknown command ${command}`);
   }

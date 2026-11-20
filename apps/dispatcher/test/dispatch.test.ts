@@ -379,6 +379,34 @@ describe("tick", () => {
     assert.equal(calls, 2);
   });
 
+  // Ops' error digest and CoS's intake triage are both due at 08:00, and
+  // bl3q-lead's digest and triage both at 20:00: the second of a pair waits
+  // for the first and goes next, in config order, one run at a time.
+  it("two routines due at the same time run one after the other, in config order", async () => {
+    const w = world([]);
+    w.deps.config = {
+      ...config,
+      bots: { ...config.bots, Ops: { ombName: "Ops" } },
+      routines: [
+        { name: "ops", bot: "Ops", at: "08:00", collector: { cmd: "ops", args: [], cwd: "/" }, instruction: "O" },
+        { name: "triage", bot: "CoS", at: "08:00", collector: { cmd: "triage", args: [], cwd: "/" }, instruction: "T" },
+      ],
+    };
+    w.deps.collect = async (c) => `{"from":"${c.cmd}"}`;
+    const state: State = { runs: [] };
+    w.setNow(new Date(2026, 10, 21, 8, 0));
+    await tick(w.deps, state);
+    assert.deepEqual(w.sent.map((s) => s.bot), ["Ops"]);
+    await tick(w.deps, state); // Ops still running: the one-run gate holds CoS back
+    assert.equal(w.sent.length, 1);
+    w.setJob({ status: "completed", outcome: "success", needsInput: false, result: "ok" });
+    await tick(w.deps, state); // Ops' run closes
+    w.setJob({ status: "running", outcome: null, needsInput: false, result: null });
+    await tick(w.deps, state);
+    assert.deepEqual(w.sent.map((s) => s.bot), ["Ops", "CoS"]);
+    assert.match(w.sent[1]!.text, /"from":"triage"/);
+  });
+
   it("a disabled routine never runs", async () => {
     const w = world([]);
     w.deps.config = {

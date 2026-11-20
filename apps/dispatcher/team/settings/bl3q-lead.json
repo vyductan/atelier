@@ -99,7 +99,9 @@
       "mcp__agents__vm_exec",
       "mcp__plugin_vercel_vercel",
       "mcp__plugin_supabase_supabase",
-      "mcp__vyductan-tasks",
+      "mcp__vyductan-tasks__delete_task",
+      "mcp__vyductan-tasks__pick_task",
+      "mcp__vyductan-tasks__set_flow_step_blocker",
       "Read(~/.ssh/**)",
       "Read(~/.aws/**)",
       "Read(~/.gnupg/**)",
@@ -143,7 +145,8 @@
         "~/.gnupg",
         "~/.netrc",
         "~/.ssh",
-        "~/Library"
+        "~/Library",
+        "~/.bl3q-team/lead/.mcp.json"
       ]
     },
     "network": {
