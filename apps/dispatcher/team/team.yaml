@@ -121,10 +121,14 @@ bots:
 
   # Bash auto-allowed only inside the sandbox (autoAllowBashIfSandboxed):
   # writes limited to the worktree and refs/heads/agent/*, no network.
+  # Owner of each item (owner's choice 2026-11-20, pstack style): loops until
+  # bl3q-review approves, calls bl3q-review itself (coordinate_bots, no SOUL
+  # limit on whom), escalates to a fable subagent after two failed attempts.
+  # Opus by owner choice; review is Opus too (a different family is a later step).
   - name: bl3q-fix
     team: bl3q
-    title: bl3q fix (sửa trên nhánh agent/*)
-    model: claude/claude-sonnet-5-5
+    title: bl3q fix (owner, sửa trên nhánh agent/*)
+    model: claude/claude-opus-5-5
     # full: the owner's choice (2026-11-19); the lead hands its level down anyway.
     # Bash stays in the OS sandbox; Write/Edit do not. The merge gate still guards main.
     approval: full
