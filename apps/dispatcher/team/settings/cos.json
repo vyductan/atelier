@@ -49,7 +49,28 @@
       "Read(**/id_rsa*)",
       "Read(**/id_ed25519*)",
       "Read(**/.mcp.json)",
-      "Read(~/.config/**)"
+      "Read(~/.config/**)",
+      "mcp__vyductan-tasks__add_task_attachment",
+      "mcp__vyductan-tasks__canvas_apply_ops",
+      "mcp__vyductan-tasks__canvas_create_board",
+      "mcp__vyductan-tasks__canvas_create_folder",
+      "mcp__vyductan-tasks__canvas_history",
+      "mcp__vyductan-tasks__canvas_list_boards",
+      "mcp__vyductan-tasks__canvas_move_board",
+      "mcp__vyductan-tasks__canvas_read_board",
+      "mcp__vyductan-tasks__canvas_rename_board",
+      "mcp__vyductan-tasks__canvas_render_board",
+      "mcp__vyductan-tasks__canvas_undo",
+      "mcp__vyductan-tasks__english_answer_quiz",
+      "mcp__vyductan-tasks__english_create_note",
+      "mcp__vyductan-tasks__english_create_word",
+      "mcp__vyductan-tasks__english_get_learner_profile",
+      "mcp__vyductan-tasks__english_get_weak_words",
+      "mcp__vyductan-tasks__english_search_dictionary",
+      "mcp__vyductan-tasks__english_start_quiz",
+      "mcp__vyductan-tasks__pick_task",
+      "mcp__vyductan-tasks__set_flow_step_blocker",
+      "mcp__vyductan-tasks__start_task_attachment"
     ]
   }
 }
