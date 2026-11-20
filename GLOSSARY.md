@@ -22,6 +22,22 @@ _Avoid_: prompt, popup, confirmation
 An approval mode chosen for one conversation thread only, kept until changed back; the bot's own approval mode and its other threads are unchanged.
 _Avoid_: session allow, temporary mode
 
+### Teams
+
+**Chief**:
+The bot in each team that sorts and routes the team's work but never does it: CoS in vyductan, bl3q-lead in bl3q.
+_Avoid_: lead, CoS (as a role name), manager
+
+### Intake
+
+**Report**:
+Something the owner sends in to be remembered for one project: a bug, an idea or request, or a remark on work a bot already did. An order to act now (stop a flow, restart a service) is not a report, and neither is a note with nothing to do.
+_Avoid_: feedback, ticket, comment (alone)
+
+**Intake bot**:
+The bot in each team that the owner chats with to file a report; it records the report as a task in that team's project but never decides the work is ready for a bot. Not the Chief.
+_Avoid_: triage bot, inbox bot, receptionist
+
 ### bl3q team
 
 **Merge gate**:
