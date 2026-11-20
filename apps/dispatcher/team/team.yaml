@@ -91,7 +91,7 @@ bots:
   - name: Intake
     team: vyductan
     title: Intake (ghi nhận báo cáo)
-    model: claude/claude-sonnet-5-5
+    model: claude/claude-opus-5-5
     approval: full
     computer: off
     cwd: /Users/vyductan/.atelier/openmausbot/workspaces/intake
@@ -147,7 +147,7 @@ bots:
   - name: bl3q-intake
     team: bl3q
     title: bl3q intake (ghi nhận báo cáo)
-    model: claude/claude-sonnet-5-5
+    model: claude/claude-opus-5-5
     approval: full
     computer: off
     cwd: /Users/vyductan/.atelier/openmausbot/workspaces/bl3q-intake
