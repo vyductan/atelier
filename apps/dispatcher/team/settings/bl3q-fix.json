@@ -45,7 +45,17 @@
       "Read(**/.env)",
       "Read(**/.env.*)",
       "Read(**/.mcp.json)",
-      "mcp__agents__coordinate_bots"
+      "mcp__agents__coordinate_bots",
+      "Edit(~/.bl3q-team/review)",
+      "Edit(~/.bl3q-team/review/**)",
+      "Edit(~/.bl3q-team/lead)",
+      "Edit(~/.bl3q-team/lead/**)",
+      "Edit(~/.bl3q-team/baseline)",
+      "Edit(~/.bl3q-team/baseline/**)",
+      "Edit(~/.bl3q-team/gate.log)",
+      "Edit(~/.bl3q-team/gate.log/**)",
+      "Edit(~/.bl3q-team/gate.lock)",
+      "Edit(~/.bl3q-team/gate.lock/**)"
     ]
   },
   "sandbox": {
