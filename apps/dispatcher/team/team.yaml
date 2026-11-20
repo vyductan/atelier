@@ -121,9 +121,10 @@ bots:
 
   # Bash auto-allowed only inside the sandbox (autoAllowBashIfSandboxed):
   # writes limited to the worktree and refs/heads/agent/*, no network.
-  # Owner of each item (owner's choice 2026-11-20, pstack style): loops until
-  # bl3q-review approves, calls bl3q-review itself (coordinate_bots, no SOUL
-  # limit on whom), escalates to a fable subagent after two failed attempts.
+  # Owner of each item (owner's choice 2026-11-20, pstack autopilot): loops to
+  # code-ready, never asks for review (coordinate_bots denied in its settings);
+  # bl3q-lead runs bl3q-review and owns the verdicts. Escalates to a fable
+  # subagent after two rejected attempts on one idea.
   # Opus by owner choice; review is Opus too (a different family is a later step).
   - name: bl3q-fix
     team: bl3q

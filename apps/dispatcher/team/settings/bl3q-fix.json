@@ -44,7 +44,8 @@
       "Read(~/.config/**)",
       "Read(**/.env)",
       "Read(**/.env.*)",
-      "Read(**/.mcp.json)"
+      "Read(**/.mcp.json)",
+      "mcp__agents__coordinate_bots"
     ]
   },
   "sandbox": {
