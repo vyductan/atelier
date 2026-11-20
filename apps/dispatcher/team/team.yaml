@@ -4,7 +4,8 @@
 #
 # Rules (spec "Atelier Dispatcher" on vyductan.dev tasks):
 # - No bot is `full` (a Chief's level is passed down to the bots it hands work to),
-#   except bl3q-lead, bl3q-fix, CoS (2026-11-19) and Review (2026-11-20), by the owner's explicit choice.
+#   except bl3q-lead, bl3q-fix, CoS (2026-11-19), Review (2026-11-20) and the two intake
+#   bots (2026-11-20, spec e14d2c6b), by the owner's explicit choice.
 # - Every bot sits in a team with a Chief (CoS for vyductan, bl3q-lead for bl3q):
 #   OpenMausBot auto-retries a failed run and sends incident turns to the Chief
 #   (server/host/chief-notices.ts), which costs model turns. Workers used to have no
@@ -82,6 +83,20 @@ bots:
     cwd: /Users/vyductan/.atelier/openmausbot/workspaces/ops
     soul: { file: souls/ops.md }
 
+  # Records the owner's reports as tasks in project vyductan (spec e14d2c6b,
+  # Atelier ADR 0001). `full` so a report from the phone has no cards; safety
+  # is its settings (no shell, no writes, no coordinate_bots) plus the tasks
+  # server's write policy for its token (label `intake`): only triage, idea or
+  # blocked, no priority, no Bot:/Plan: line. Not the Chief.
+  - name: Intake
+    team: vyductan
+    title: Intake (ghi nhận báo cáo)
+    model: claude/claude-sonnet-5-5
+    approval: full
+    computer: off
+    cwd: /Users/vyductan/.atelier/openmausbot/workspaces/intake
+    soul: { file: souls/intake.md }
+
   # g-bots (read-only investigator) was removed 2026-11-19: bl3q has its own
   # team now. The bot is hidden in OpenMausBot, not deleted (its threads stay).
 
@@ -126,3 +141,14 @@ bots:
     computer: off
     cwd: /Users/vyductan/.bl3q-team/review
     soul: { file: souls/bl3q-review.md }
+
+  # Records the owner's bl3q reports as tasks in project bl3q (token label
+  # `bl3q-intake`); same limits as Intake, plus it reads the game bot's logs.
+  - name: bl3q-intake
+    team: bl3q
+    title: bl3q intake (ghi nhận báo cáo)
+    model: claude/claude-sonnet-5-5
+    approval: full
+    computer: off
+    cwd: /Users/vyductan/.atelier/openmausbot/workspaces/bl3q-intake
+    soul: { file: souls/bl3q-intake.md }
