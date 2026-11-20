@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 
 import { active, runsToday, tick, type Config, type Deps, type State, type Workspace } from "./dispatch.ts";
+import { backlogDigest, type BacklogTask } from "./backlog.ts";
 import { intakeDigest } from "./intake.ts";
 import { callTool, mcpTaskStore } from "./mcp.ts";
 import { ombBots } from "./omb.ts";
@@ -179,6 +180,18 @@ async function main() {
       tasks: Parameters<typeof intakeDigest>[0];
     };
     process.stdout.write(intakeDigest(out.tasks, project, new Date()));
+  } else if (command === "backlog-digest") {
+    // A routine collector: prints the project's tasks still waiting for a
+    // triage decision as JSON, or nothing when there are none (src/backlog.ts).
+    const project = rest[0];
+    if (!project) throw new Error("usage: backlog-digest <project>");
+    const token = readFileSync(config.tokenFile, "utf8").trim();
+    const tasks: BacklogTask[] = [];
+    for (const status of ["triage", "todo", "blocked", "in-progress"]) {
+      const out = (await callTool(config.mcpUrl, token, "list_tasks", { projectSlug: project, status, limit: 100 })) as { tasks: BacklogTask[] };
+      tasks.push(...out.tasks);
+    }
+    process.stdout.write(backlogDigest(tasks, project, new Date()));
   } else {
     throw new Error(`unknown command ${command}`);
   }
