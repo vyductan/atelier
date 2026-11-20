@@ -49,6 +49,38 @@ const MUST_DENY = [
   "Read(**/.mcp.json)",
 ];
 
+/*
+ * OpenMausBot's sandbox binds Bash only and these bots have no Bash, so the
+ * Read tool is fenced by deny rules alone. Claude Code cannot say "read only
+ * X" (deny beats allow), so every other project under ~/Developer (clients'
+ * code among them), personal folders and shell history are denied by name.
+ */
+const MUST_DENY_READ = [
+  "Read(~/Developer/QBase/**)",
+  "Read(~/Developer/Thinh/**)",
+  "Read(~/Developer/vyductan-agent/**)",
+  "Read(~/Documents/**)",
+  "Read(~/Desktop/**)",
+  "Read(~/Downloads/**)",
+  "Read(~/Pictures/**)",
+  "Read(~/.zsh_history)",
+  "Read(~/.local/share/fish/**)",
+  "Read(~/.npmrc)",
+  "Read(~/.kube/**)",
+  "Read(~/.docker/**)",
+  "Read(**/.dev.vars)",
+  "Read(**/*.p12)",
+];
+
+const OWN_REPO: Record<string, string> = {
+  intake: "Read(~/Developer/vyductan/**)",
+  "bl3q-intake": "Read(~/Developer/g-bots/**)",
+};
+const OTHER_REPO: Record<string, string> = {
+  intake: "Read(~/Developer/g-bots/**)",
+  "bl3q-intake": "Read(~/Developer/vyductan/**)",
+};
+
 for (const bot of ["intake", "bl3q-intake"]) {
   describe(`${bot} settings`, () => {
     const { allow, deny } = settings(bot).permissions;
@@ -59,6 +91,13 @@ for (const bot of ["intake", "bl3q-intake"]) {
 
     it("denies the shell, file writes, the web, other bots and secret paths", () => {
       for (const rule of MUST_DENY) assert.ok(deny.includes(rule), `${bot} must deny ${rule}`);
+    });
+
+    it("fences Read to its own repo: other projects, personal folders and secrets are denied", () => {
+      for (const rule of [...MUST_DENY_READ, OTHER_REPO[bot]!]) {
+        assert.ok(deny.includes(rule), `${bot} must deny ${rule}`);
+      }
+      assert.ok(!deny.includes(OWN_REPO[bot]!), `${bot} must still read its own repo`);
     });
 
     it("never both allows and denies a rule", () => {
