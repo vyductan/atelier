@@ -785,7 +785,9 @@
       "Edit(~/Library/Application Support)",
       "Edit(~/Library/Application Support/**)",
       "Edit(~/.pypirc)",
-      "Edit(~/.pypirc/**)"
+      "Edit(~/.pypirc/**)",
+      "Edit(~/.bl3q-team/verify)",
+      "Edit(~/.bl3q-team/verify/**)"
     ]
   },
   "sandbox": {
@@ -793,7 +795,10 @@
     "failIfUnavailable": true,
     "allowUnsandboxedCommands": false,
     "autoAllowBashIfSandboxed": true,
-    "excludedCommands": [],
+    "excludedCommands": [
+      "/bin/zsh -f /Users/vyductan/Developer/g-bots/bl3q/tools/repro_web.sh doctor",
+      "/bin/zsh -f /Users/vyductan/Developer/g-bots/bl3q/tools/repro_web.sh dang_nhap"
+    ],
     "filesystem": {
       "allowWrite": [
         "~/Developer/g-bots/bl3q/.git/objects",
@@ -819,6 +824,9 @@
       ],
       "allowRead": [
         "~/.config/git"
+      ],
+      "denyWrite": [
+        "~/.bl3q-team/verify"
       ]
     },
     "network": {
