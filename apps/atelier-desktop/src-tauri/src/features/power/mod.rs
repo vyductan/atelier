@@ -222,10 +222,14 @@ pub async fn get_routine_wake() -> Result<Option<RoutineWake>, String> {
 /// bl3q `tools/ngu_may.sh` (started after the 00:00 daily run) puts the Mac to sleep once
 /// every bot, the merge gate and the owner are quiet, and logs each change of state.
 const NIGHT_SLEEP_LOG: &str = "Developer/g-bots/bl3q/reports/ngu-may.log";
+/// Present = off. `ngu_may.sh` checks it every round, so it also stops a night already waiting.
+const NIGHT_SLEEP_OFF: &str = "Developer/g-bots/bl3q/.state/ngu-may-tat";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NightSleep {
+    /// The switch: off means the Mac is never put to sleep after the night runs.
+    pub enabled: bool,
     /// The script is still waiting for quiet tonight.
     pub running: bool,
     /// "YYYY-MM-DD HH:MM:SS" and text of its last log line: what it is waiting on, "ngủ"
@@ -243,9 +247,34 @@ pub fn last_sleep_event(log: &str) -> Option<(String, String)> {
     })
 }
 
+pub fn sleep_enabled(flag: &std::path::Path) -> bool {
+    !flag.exists()
+}
+
+pub fn set_sleep_flag(flag: &std::path::Path, enabled: bool) -> std::io::Result<()> {
+    if enabled {
+        match std::fs::remove_file(flag) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+            _ => Ok(()),
+        }
+    } else {
+        std::fs::write(flag, b"")
+    }
+}
+
+/// Turns sleeping after the night runs on or off. No root: it is bl3q's own state file.
+#[tauri::command]
+pub async fn set_night_sleep(enabled: bool) -> Result<NightSleep, String> {
+    let flag = dirs::home_dir().ok_or("no home directory")?.join(NIGHT_SLEEP_OFF);
+    set_sleep_flag(&flag, enabled).map_err(|e| e.to_string())?;
+    get_night_sleep().await
+}
+
 #[tauri::command]
 pub async fn get_night_sleep() -> Result<NightSleep, String> {
-    let path = dirs::home_dir().ok_or("no home directory")?.join(NIGHT_SLEEP_LOG);
+    let home = dirs::home_dir().ok_or("no home directory")?;
+    let enabled = sleep_enabled(&home.join(NIGHT_SLEEP_OFF));
+    let path = home.join(NIGHT_SLEEP_LOG);
     // Only the tail matters; the log grows a few lines a night.
     let log = std::fs::read_to_string(&path).unwrap_or_default();
     // Vietnamese text: cut on a char boundary, never mid-character (that would panic).
@@ -258,7 +287,7 @@ pub async fn get_night_sleep() -> Result<NightSleep, String> {
         .output()
         .is_ok_and(|o| o.status.success());
     let (at, line) = last_sleep_event(tail).unzip();
-    Ok(NightSleep { running, at, line })
+    Ok(NightSleep { enabled, running, at, line })
 }
 
 #[cfg(test)]
@@ -352,6 +381,19 @@ mod tests {
         );
         assert_eq!(last_sleep_event("Sleeping now...\n"), None);
         assert_eq!(last_sleep_event(""), None);
+    }
+
+    #[test]
+    fn the_switch_is_a_file_that_means_off() {
+        let dir = std::env::temp_dir().join(format!("night-sleep-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let flag = dir.join("ngu-may-tat");
+        set_sleep_flag(&flag, false).unwrap();
+        assert!(flag.exists() && !sleep_enabled(&flag));
+        set_sleep_flag(&flag, true).unwrap();
+        assert!(!flag.exists() && sleep_enabled(&flag));
+        set_sleep_flag(&flag, true).unwrap(); // already on: no error
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

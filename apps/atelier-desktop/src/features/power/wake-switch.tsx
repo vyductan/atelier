@@ -41,6 +41,11 @@ export function WakeButton() {
     queryFn: powerClient.getNightSleep,
     refetchInterval: 60_000,
   });
+  const nightSave = useMutation({
+    mutationFn: powerClient.setNightSleep,
+    onSuccess: (next) => queryClient.setQueryData(NIGHT_SLEEP_QUERY_KEY, next),
+    onError: (error) => addToast(`Night sleep: ${String(error)}`, "error"),
+  });
   const routineTime = routine.data?.time;
   const [draftTime, setDraftTime] = useState<string | null>(null);
   const time =
@@ -137,21 +142,25 @@ export function WakeButton() {
           Use {routineTime}
         </Button>
       ) : null}
+      <label className="flex items-center justify-between gap-3">
+        <span>Sleep after the night runs</span>
+        <Switch
+          size="small"
+          aria-label="Sleep this Mac after the night runs"
+          checked={night.data?.enabled ?? false}
+          loading={nightSave.isPending || night.isLoading}
+          onChange={(checked) => nightSave.mutate(checked)}
+        />
+      </label>
       {night.data?.line ? (
-        <div className="flex flex-col gap-0.5 text-xs">
-          <span className="text-muted-foreground">
-            {night.data.running
-              ? "Sleep after the night runs: waiting"
-              : "Sleep after the night runs: last time"}
-          </span>
-          <span
-            className={night.data.running ? "text-warning" : "text-foreground"}
-            title={night.data.at ?? undefined}
-          >
-            <span className="font-mono">{night.data.at?.slice(5, 16)}</span>{" "}
-            {night.data.line}
-          </span>
-        </div>
+        <p
+          className={`text-xs ${night.data.running && night.data.enabled ? "text-warning" : "text-muted-foreground"}`}
+          title={night.data.at ?? undefined}
+        >
+          {night.data.running && night.data.enabled ? "Waiting: " : "Last: "}
+          <span className="font-mono">{night.data.at?.slice(5, 16)}</span>{" "}
+          {night.data.line}
+        </p>
       ) : null}
       <p className="text-xs text-muted-foreground">
         {wake.data?.raw ?? "No daily wake set."} Changing it asks for the admin
