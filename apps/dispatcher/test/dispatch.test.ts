@@ -99,6 +99,18 @@ describe("pick", () => {
     ];
     assert.equal(pick(tasks, config, { runs: [] })?.task.id, "bb");
   });
+
+  // A bot whose work a Chief hands out itself (owner's choice 2026-11-21: CoS
+  // gives Dev its tasks the way bl3q-lead does): the bridge must not also send
+  // it, or the task runs twice in one worktree. Plans may still name the bot.
+  it("skips a bot whose tasks a Chief hands out, and sends it nothing", async () => {
+    const chiefHandsOut: Config = { ...config, bots: { ...config.bots, Dev: { ...config.bots.Dev!, handedOutBy: "CoS" } } };
+    assert.equal(pick([task("bb", "Bot: Dev\nwork")], chiefHandsOut, { runs: [] }), null);
+    const w = world([task("bb", "Bot: Dev\nwork")], { config: chiefHandsOut });
+    await tick(w.deps, { runs: [] });
+    assert.equal(w.sent.length, 0);
+    assert.equal(w.prepared.length, 0);
+  });
 });
 
 describe("tick", () => {

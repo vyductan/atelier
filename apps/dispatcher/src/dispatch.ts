@@ -40,6 +40,13 @@ export interface BotConfig {
   settings?: { template: string; installed: string };
   /** A bot (key of `bots`) that reviews this bot's finished work before the person sees it. */
   reviewer?: string;
+  /**
+   * A Chief (OpenMausBot name) that hands this bot its tasks itself, with
+   * coordinate_bots, the way bl3q-lead runs bl3q-fix. The bridge then never
+   * sends it a task (two senders would run one task twice in one worktree),
+   * but a plan may still name it and the split still creates its tasks.
+   */
+  handedOutBy?: string;
 }
 
 /** A command that prints the data a routine bot works on (no model involved). */
@@ -229,7 +236,7 @@ export function candidates(tasks: Task[], config: Config, state: State): { task:
     // A task carrying a plan is the plan's parent: its work happens in the children.
     .filter((t) => t.status_code === "todo" && !hasTriage(t.description) && planMark(t.description) === null)
     .map((t) => ({ task: t, bot: botOf(t.description) }))
-    .filter((c): c is { task: Task; bot: string } => c.bot !== null && c.bot in config.bots)
+    .filter((c): c is { task: Task; bot: string } => c.bot !== null && c.bot in config.bots && !config.bots[c.bot]!.handedOutBy)
     .filter((c) => !state.runs.some((r) => r.taskId === c.task.id && (r.status === "sending" || r.status === "sent")))
     .sort((a, b) => a.task.created_at.localeCompare(b.task.created_at));
 }

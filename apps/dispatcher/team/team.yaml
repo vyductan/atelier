@@ -19,10 +19,12 @@ version: 1
 teams:
   # The vyductan.dev team (owner's choice 2026-11-19): CoS is its Chief, so it
   # hears about Dev/Review/Ops failures and OpenMausBot retries their failed runs.
-  # The bridge, not CoS, hands out work: Dev, then Review on Dev's branch, once
-  # back to Dev on a fail, then the person merges.
+  # Since 2026-11-21 (owner's choice) CoS hands out the work itself with
+  # coordinate_bots, the way bl3q-lead does: Dev, then Review on Dev's branch,
+  # once back to Dev on a fail, then the person merges. The bridge only splits
+  # approved plans (Dev has `handedOutBy: CoS` in its config) and runs routines.
   - name: vyductan
-    brief: vyductan.dev work. CoS triages and briefs tasks, the bridge hands them to Dev, Review checks Dev's branch against the brief, the person merges. Ops sums up the morning's errors.
+    brief: vyductan.dev work. CoS triages and briefs tasks and hands them to Dev, Review checks Dev's branch against the brief for CoS, the person merges. Ops sums up the morning's errors.
   # Spec "Nhóm bot bl3q" (vyductan-tasks, project bl3q). Lead is this team's Chief
   # by the owner's choice (2026-11-19): it hands work to fix and review with
   # coordinate_bots. Its settings deny the Chief's admin tools. It runs `full` by
