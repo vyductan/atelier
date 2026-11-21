@@ -30,6 +30,13 @@ for name in ${(f)"$(typeset +x)"}; do
   unset "$name" 2>/dev/null
 done
 export HOME=/Users/vyductan USER=vyductan LANG=en_US.UTF-8 PATH=/usr/bin:/bin:/usr/sbin:/sbin
+# Belt and braces (the loop above already dropped them): the variables that make git or
+# ssh run a program of the caller's choosing, named one by one.
+unset GIT_SSH GIT_SSH_COMMAND GIT_SSH_VARIANT GIT_EXEC_PATH GIT_ASKPASS SSH_ASKPASS \
+  SSH_ASKPASS_REQUIRE GIT_EDITOR GIT_PAGER GIT_PROXY_COMMAND GIT_EXTERNAL_DIFF \
+  GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_TEMPLATE_DIR GIT_TRACE GIT_TRACE2 \
+  GIT_TRACE2_EVENT GIT_TRACE2_PERF GIT_ALLOW_PROTOCOL GIT_PROTOCOL_FROM_USER \
+  LD_PRELOAD DYLD_INSERT_LIBRARIES DYLD_LIBRARY_PATH ZDOTDIR BASH_ENV ENV 2>/dev/null
 WT=/Users/vyductan/Developer/vyductan-agent
 ADMIN=/Users/vyductan/Developer/vyductan/apps/vyductan.dev/.git/worktrees/vyductan-agent
 TEMPLATE=${0:A:h:h}/settings/dev.json
