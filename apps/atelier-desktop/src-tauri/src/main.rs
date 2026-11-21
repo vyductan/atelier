@@ -34,7 +34,7 @@ use features::skills::content::{get_skill_files, open_skill_path, read_skill_fil
 use features::skills::meta::get_skill_meta;
 use features::skills::plugins::{get_plugin_skills, set_plugin_enabled};
 use features::skills::updates::{check_skill_updates, update_skill};
-use features::power::{get_wake_schedule, set_wake_schedule};
+use features::power::{get_routine_wake, get_wake_schedule, set_wake_schedule};
 use features::services::commands::{
     get_services_order, list_services, open_services_config, read_service_log, restart_service,
     save_services_order, start_service, stop_service,
@@ -122,6 +122,7 @@ fn main() {
             get_services_order,
             save_services_order,
             get_wake_schedule,
+            get_routine_wake,
             set_wake_schedule,
         ])
         .setup(|app| {

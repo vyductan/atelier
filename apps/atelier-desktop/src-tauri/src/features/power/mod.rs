@@ -126,6 +126,80 @@ pub async fn set_wake_schedule(enabled: bool, time: String) -> Result<WakeSchedu
     read_schedule()
 }
 
+/// How long before the routine the Mac is woken, so it is up when the routine fires.
+const LEAD_MINUTES: u32 = 5;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoutineWake {
+    /// "HH:MM": a few minutes before `routine_time`.
+    pub time: String,
+    /// The routine the Mac is woken for, and its time.
+    pub routine_name: String,
+    pub routine_time: String,
+}
+
+/// Minutes after midnight of an enabled daily routine, with its name.
+fn daily_times(routines: &serde_json::Value) -> Vec<(u32, String)> {
+    let mut out = Vec::new();
+    for r in routines["routines"].as_array().into_iter().flatten() {
+        if r["enabled"] != serde_json::Value::Bool(true) || r["schedule"]["type"] != "daily" {
+            continue;
+        }
+        let Some(time) = r["schedule"]["time"].as_str().filter(|t| valid_time(t)) else {
+            continue;
+        };
+        let minutes = time[..2].parse::<u32>().unwrap() * 60 + time[3..].parse::<u32>().unwrap();
+        out.push((minutes, r["name"].as_str().unwrap_or("?").to_string()));
+    }
+    out.sort();
+    out
+}
+
+/// Night runs end before this (bl3q `ngu_may.sh` stops trying to sleep at 06:00).
+const NIGHT_END_MINUTES: u32 = 6 * 60;
+
+/// bl3q `ngu_may.sh` puts the Mac to sleep after the night's runs
+/// (00:00–06:00); the rest of the day it stays awake. So the routine that
+/// needs a wake is the first one after the last night run (the 09:00 run
+/// after the 00:00 one), or the earliest one when nothing runs at night.
+pub fn routine_wake(routines: &serde_json::Value) -> Option<RoutineWake> {
+    let times = daily_times(routines);
+    let last_night = times.iter().rposition(|(m, _)| *m < NIGHT_END_MINUTES);
+    let (at, name) = match last_night {
+        Some(i) => times.get(i + 1).or(times.first())?,
+        None => times.first()?,
+    };
+    let wake = (at + 24 * 60 - LEAD_MINUTES) % (24 * 60);
+    Some(RoutineWake {
+        time: format!("{:02}:{:02}", wake / 60, wake % 60),
+        routine_name: name.clone(),
+        routine_time: format!("{:02}:{:02}", at / 60, at % 60),
+    })
+}
+
+/// The wake time the OpenMausBot routines need, or None when none is daily.
+#[tauri::command]
+pub async fn get_routine_wake() -> Result<Option<RoutineWake>, String> {
+    let token_path = dirs::home_dir()
+        .ok_or("no home directory")?
+        .join(".atelier/openmausbot/secrets/omb-client-token");
+    let token = std::fs::read_to_string(&token_path)
+        .map_err(|_| "cannot read the OpenMausBot client token".to_string())?;
+    let body: serde_json::Value = reqwest::Client::new()
+        .get("http://127.0.0.1:28799/api/routines")
+        .bearer_auth(token.trim())
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+        .map_err(|e| format!("OpenMausBot: {}", e.status().map_or("not reachable".into(), |s| s.to_string())))?
+        .json()
+        .await
+        .map_err(|_| "OpenMausBot: unreadable routines".to_string())?;
+    Ok(routine_wake(&body))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -161,6 +235,47 @@ mod tests {
         assert_eq!(to_24h("12:30PM").as_deref(), Some("12:30"));
         assert_eq!(to_24h("1:30PM").as_deref(), Some("13:30"));
         assert_eq!(to_24h("8:55").as_deref(), Some("08:55"));
+    }
+
+    fn routines(list: &[(&str, &str, bool)]) -> serde_json::Value {
+        serde_json::json!({ "routines": list.iter().map(|(name, time, enabled)| serde_json::json!({
+            "name": name, "enabled": enabled, "schedule": { "type": "daily", "time": time },
+        })).collect::<Vec<_>>() })
+    }
+
+    #[test]
+    fn wakes_before_the_first_routine_after_the_night_runs() {
+        let r = routines(&[
+            ("cos 21", "21:00", true),
+            ("cos 10", "10:00", true),
+            ("gom 20", "20:00", true),
+            ("bl3q 09", "09:00", true),
+            ("bl3q 00", "00:00", true),
+        ]);
+        let w = routine_wake(&r).unwrap();
+        assert_eq!((w.time.as_str(), w.routine_name.as_str()), ("08:55", "bl3q 09"));
+    }
+
+    #[test]
+    fn disabled_and_non_daily_routines_do_not_count() {
+        let mut r = routines(&[("a", "09:00", true), ("off", "05:00", false)]);
+        r["routines"].as_array_mut().unwrap().push(serde_json::json!({
+            "name": "weekly", "enabled": true, "schedule": { "type": "weekly", "time": "04:00" },
+        }));
+        assert_eq!(routine_wake(&r).unwrap().time, "08:55");
+        assert_eq!(routine_wake(&routines(&[])), None);
+    }
+
+    #[test]
+    fn without_night_runs_the_earliest_routine_counts() {
+        let r = routines(&[("b", "10:00", true), ("a", "07:30", true)]);
+        assert_eq!(routine_wake(&r).unwrap().time, "07:25");
+    }
+
+    #[test]
+    fn only_night_runs_wrap_back_to_the_first() {
+        let r = routines(&[("late", "00:03", true)]);
+        assert_eq!(routine_wake(&r).unwrap().time, "23:58");
     }
 
     #[test]

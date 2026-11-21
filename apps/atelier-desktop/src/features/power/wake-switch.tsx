@@ -12,13 +12,16 @@ import { powerClient } from "../../lib/power-client";
 import { useToastStore } from "../../store/toast-store";
 
 const WAKE_QUERY_KEY = ["power", "wake"] as const;
-/** Before the 08:00 dispatcher routines and the 09:00 bl3q run. */
-const DEFAULT_WAKE_TIME = "07:55";
+const ROUTINE_WAKE_QUERY_KEY = ["power", "routine-wake"] as const;
+/** Used only when OpenMausBot cannot be asked. */
+const FALLBACK_WAKE_TIME = "08:55";
 
 /**
  * Daily wake of this Mac (`pmset repeat wakeorpoweron`), so routines due while
- * it sleeps after the 00:00 run start on time. Turning it on, off or changing
- * the time asks for the admin password in macOS's own dialog.
+ * it sleeps after the 00:00 run start on time. The time follows the
+ * OpenMausBot routines (a few minutes before the first one after the night
+ * runs); pmset cannot change without the admin password, so when the routines
+ * move, the popover offers the new time instead of applying it silently.
  */
 export function WakeButton() {
   const queryClient = useQueryClient();
@@ -27,8 +30,15 @@ export function WakeButton() {
     queryKey: WAKE_QUERY_KEY,
     queryFn: powerClient.getWake,
   });
+  const routine = useQuery({
+    queryKey: ROUTINE_WAKE_QUERY_KEY,
+    queryFn: powerClient.getRoutineWake,
+    refetchInterval: 5 * 60_000,
+  });
+  const routineTime = routine.data?.time;
   const [draftTime, setDraftTime] = useState<string | null>(null);
-  const time = draftTime ?? wake.data?.time ?? DEFAULT_WAKE_TIME;
+  const time =
+    draftTime ?? wake.data?.time ?? routineTime ?? FALLBACK_WAKE_TIME;
 
   const save = useMutation({
     mutationFn: ({ enabled, at }: { enabled: boolean; at: string }) =>
@@ -45,6 +55,15 @@ export function WakeButton() {
   });
 
   const enabled = wake.data?.enabled ?? false;
+  /** The routines moved since the wake was set. */
+  const drifted = enabled && !!routineTime && wake.data?.time !== routineTime;
+  const routineLine = routine.data
+    ? `Routines: wake at ${routine.data.time}, before "${routine.data.routineName}" (${routine.data.routineTime}).`
+    : routine.isError
+      ? `Routines: ${String(routine.error)}`
+      : routine.isSuccess
+        ? "Routines: no daily OpenMausBot routine."
+        : null;
   const settings = (
     <div className="flex w-56 flex-col gap-3 text-sm">
       <label className="flex items-center justify-between gap-3">
@@ -54,7 +73,9 @@ export function WakeButton() {
           aria-label="Wake this Mac every day"
           checked={enabled}
           loading={save.isPending || wake.isLoading}
-          onChange={(checked) => save.mutate({ enabled: checked, at: time })}
+          onChange={(checked) =>
+            save.mutate({ enabled: checked, at: routineTime ?? time })
+          }
         />
       </label>
       <div className="flex items-center justify-between gap-3">
@@ -72,6 +93,18 @@ export function WakeButton() {
           }}
         />
       </div>
+      {routineLine ? (
+        <p className="text-xs text-muted-foreground">{routineLine}</p>
+      ) : null}
+      {drifted && routineTime ? (
+        <Button
+          size="small"
+          loading={save.isPending}
+          onClick={() => save.mutate({ enabled: true, at: routineTime })}
+        >
+          Use {routineTime}
+        </Button>
+      ) : null}
       <p className="text-xs text-muted-foreground">
         {wake.data?.raw ?? "No daily wake set."} Changing it asks for the admin
         password.
@@ -93,10 +126,16 @@ export function WakeButton() {
           type="text"
           size="small"
           aria-label="Daily wake settings"
-          title={enabled ? `Wakes daily at ${time}` : "Daily wake off"}
+          title={
+            drifted
+              ? `Wakes daily at ${time}, routines need ${routineTime}`
+              : enabled
+                ? `Wakes daily at ${time}`
+                : "Daily wake off"
+          }
           icon={
             <AlarmClock
-              className={`size-3.5 ${enabled ? "text-primary" : "text-muted-foreground"}`}
+              className={`size-3.5 ${drifted ? "text-warning" : enabled ? "text-primary" : "text-muted-foreground"}`}
             />
           }
         >

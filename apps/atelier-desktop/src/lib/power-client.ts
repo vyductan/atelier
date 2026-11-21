@@ -11,7 +11,16 @@ export interface WakeSchedule {
   raw: string | null;
 }
 
+/** The wake the OpenMausBot routines need: a few minutes before `routineTime`. */
+export interface RoutineWake {
+  time: string;
+  routineName: string;
+  routineTime: string;
+}
+
 export const powerClient = {
+  /** null when no enabled daily routine exists. */
+  getRoutineWake: () => invoke<RoutineWake | null>("get_routine_wake"),
   getWake: () => invoke<WakeSchedule>("get_wake_schedule"),
   /** Asks for the admin password in macOS's own dialog; rejects with "cancelled" on Cancel. */
   setWake: (enabled: boolean, time: string) =>
