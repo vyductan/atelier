@@ -1521,7 +1521,7 @@
     "allowUnsandboxedCommands": false,
     "autoAllowBashIfSandboxed": false,
     "excludedCommands": [
-      "/bin/zsh /Users/vyductan/Developer/vyductan/apps/atelier/apps/dispatcher/team/bin/fresh-worktree.sh"
+      "/bin/zsh -f /Users/vyductan/Developer/vyductan/apps/atelier/apps/dispatcher/team/bin/fresh-worktree.sh"
     ],
     "filesystem": {
       "allowWrite": [
@@ -1529,6 +1529,9 @@
         "~/Developer/vyductan/apps/vyductan.dev/.git/refs/heads/agent",
         "~/Developer/vyductan/apps/vyductan.dev/.git/logs/refs/heads/agent",
         "~/Developer/vyductan/apps/vyductan.dev/.git/worktrees/vyductan-agent"
+      ],
+      "denyWrite": [
+        "~/Developer/vyductan-agent/.claude"
       ],
       "denyRead": [
         "~/.ssh",

@@ -2,7 +2,7 @@
 # Puts Dev's worktree on a fresh origin/main before a NEW task (owner 2026-11-21: CoS hands
 # Dev its tasks itself, so the bridge no longer prepares the worktree). Dev calls exactly
 #
-#     /bin/zsh /Users/vyductan/Developer/vyductan/apps/atelier/apps/dispatcher/team/bin/fresh-worktree.sh
+#     /bin/zsh -f /Users/vyductan/Developer/vyductan/apps/atelier/apps/dispatcher/team/bin/fresh-worktree.sh
 #
 # as its one command outside the sandbox (excludedCommands in team/settings/dev.json): the
 # fetch needs the main repo's git data, which the sandbox does not let Dev write. No
@@ -22,6 +22,13 @@
 # the admin dir could carry) is refused. The main repo's .git/config stays out of Dev's
 # reach (not in its allowWrite).
 set -u
+# `-f` skips zsh startup files; then start over with an empty environment, so nothing Dev
+# could put in front of the command (PATH, HOME, ZDOTDIR, GIT_*, SSH_*) reaches git or ssh.
+# HOME is fixed, not inherited: git reads the owner's global config (credentials) from it.
+if [[ "${FRESH_WORKTREE_CLEAN:-}" != 1 ]]; then
+  exec /usr/bin/env -i HOME=/Users/vyductan USER=vyductan LANG=en_US.UTF-8 \
+    PATH=/usr/bin:/bin:/usr/sbin:/sbin FRESH_WORKTREE_CLEAN=1 /bin/zsh -f "${0:A}"
+fi
 WT=/Users/vyductan/Developer/vyductan-agent
 ADMIN=/Users/vyductan/Developer/vyductan/apps/vyductan.dev/.git/worktrees/vyductan-agent
 TEMPLATE=${0:A:h:h}/settings/dev.json
@@ -38,7 +45,9 @@ export GIT_DIR=$ADMIN GIT_WORK_TREE=$WT GIT_CONFIG_NOSYSTEM=1
 unset GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
 git() {
   /usr/bin/git -c core.fsmonitor= -c core.hooksPath=/dev/null -c core.sshCommand=ssh \
-    -c protocol.allow=never -c protocol.https.allow=always -c protocol.ssh.allow=always "$@"
+    -c protocol.allow=never -c protocol.https.allow=always -c protocol.ssh.allow=always \
+    -c submodule.recurse=false -c fetch.recurseSubmodules=false -c diff.ignoreSubmodules=all \
+    -c core.attributesFile=/dev/null -c core.pager=cat "$@"
 }
 
 if ! /usr/bin/cmp -s "$TEMPLATE" "$WT/.claude/settings.json"; then
