@@ -4,8 +4,10 @@
 `full` skips every card and the OS sandbox binds Bash only, so bl3q-fix's Edit
 tool could write the MAIN bl3q checkout (~/Developer/g-bots/bl3q), whose
 tools/*.sh bl3q-lead runs outside its sandbox (excludedCommands) and whose
-tools/agent_merge.py is the merge gate. This fences every entry that exists
-NOW in the main checkout, the parts of its .git that `git commit` in the
+tools/agent_merge.py is the merge gate (and ~/Developer/vyductan holds Dev's
+unsandboxed fresh-worktree.sh). This fences every entry that exists NOW under
+~, ~/Developer and ~/Developer/g-bots outside the two bl3q checkouts, every
+entry in the main checkout, the parts of its .git that `git commit` in the
 bl3q-agent worktree does not write, and the shell startup files under ~
 (whether or not they exist yet). Edit denies also merge into the sandbox
 write-deny, so the .git paths the worktree's git needs stay open.
@@ -34,6 +36,18 @@ def fence(b, keep, rel):
         if n in keep or special.search(n): continue
         deny(f'{rel}/{n}')
 
+# ~ and ~/Developer down to the two bl3q checkouts. Kept open: ~/.cache (uv, in
+# the sandbox allowWrite) and ~/.bl3q-team (fenced per folder in the base rules).
+fence(H, {'Developer', '.cache', '.bl3q-team'}, '~')
+fence(f'{H}/Developer', {'g-bots'}, '~/Developer')
+fence(f'{H}/Developer/g-bots', {'bl3q', 'bl3q-agent'}, '~/Developer/g-bots')
+for r in ['//Applications', '//Library', '//usr', '//opt', '//etc', '//private/etc']:
+    add(f'Edit({r}/**)')
+# Files a later session or shell in a folder above the checkouts would load.
+for r in ['~', '~/Developer', '~/Developer/g-bots']:
+    for n in ['.mcp.json', 'CLAUDE.md', 'CLAUDE.local.md', 'AGENTS.md', '.claude', '.claude-plugin', '.envrc']:
+        deny(f'{r}/{n}')
+
 main, mrel = f'{H}/Developer/g-bots/bl3q', '~/Developer/g-bots/bl3q'
 fence(main, {'.git'}, mrel)
 # Files that would load into a session or shell in the main checkout later.
@@ -50,11 +64,14 @@ fence(f'{g}/logs/refs/heads', {'agent'}, f'{gr}/logs/refs/heads')
 fence(f'{g}/worktrees', {'bl3q-agent'}, f'{gr}/worktrees')
 for n in ['commondir', 'gitdir', 'config.worktree', 'info', 'hooks']:
     deny(f'{gr}/worktrees/bl3q-agent/{n}')
-for n in ['hooks', 'config', 'config.worktree', 'info', 'commondir', 'objects/info', 'refs/heads/main', 'packed-refs']:
+for n in ['hooks', 'config', 'config.worktree', 'info', 'commondir', 'objects/info', 'objects/pack', 'refs/heads/main', 'packed-refs',
+          'refs/replace', 'refs/notes', 'refs/tags', 'refs/remotes', 'refs/stash', 'refs/bisect', 'refs/original', 'refs/rewritten',
+          'modules', 'shallow']:
     deny(f'{gr}/{n}')
 # Startup files and agents that would run code later, whether or not they exist yet.
 for n in ['.zshrc', '.zshenv', '.zprofile', '.zlogin', '.zlogout', '.bashrc', '.bash_profile', '.bash_login', '.profile', '.inputrc',
-          '.config', '.ssh', 'Library/LaunchAgents', '.gitconfig', '.git-credentials', '.atelier', '.claude', '.claude.json']:
+          '.config', '.local', '.ssh', 'Library/LaunchAgents', 'Library/Application Support', '.gitconfig', '.git-credentials',
+          '.npmrc', '.pypirc', '.atelier', '.claude', '.claude.json']:
     deny(f'~/{n}')
 
 open(path, 'w').write(json.dumps(cfg, ensure_ascii=False, indent=2) + '\n')
