@@ -149,7 +149,8 @@
     "allowUnsandboxedCommands": false,
     "autoAllowBashIfSandboxed": true,
     "excludedCommands": [
-      "/bin/zsh /Users/vyductan/Developer/g-bots/bl3q/tools/khoi_dong_hang_ngay.sh"
+      "/bin/zsh /Users/vyductan/Developer/g-bots/bl3q/tools/khoi_dong_hang_ngay.sh",
+      "/bin/zsh /Users/vyductan/Developer/g-bots/bl3q/tools/gom_loi.sh"
     ],
     "filesystem": {
       "allowWrite": [],
