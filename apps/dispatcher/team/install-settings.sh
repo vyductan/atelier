@@ -48,5 +48,19 @@ for bot dir in ${(kv)cwd}; do
     done
   fi
 done
+# Shared worker rules (team/worker.md, after pstack's worker.md) -> cwd .claude/worker.md of
+# every bot that does handed-out work; each SOUL's first line points there. Coordinators
+# (CoS, bl3q-lead) and the intake/ops bots do not get it. In a git worktree the copy is
+# untracked, so it goes in the repo's info/exclude, never in a commit.
+for bot in dev review bl3q-fix bl3q-review; do
+  dir=${cwd[$bot]}
+  cp "${here:h}/worker.md" "$dir/.claude/worker.md.new" && mv "$dir/.claude/worker.md.new" "$dir/.claude/worker.md"
+  print "installed $bot worker.md"
+  if git -C "$dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    exclude=$(git -C "$dir" rev-parse --path-format=absolute --git-path info/exclude)
+    mkdir -p "${exclude:h}"
+    grep -qxF '.claude/worker.md' "$exclude" 2>/dev/null || print '.claude/worker.md' >> "$exclude"
+  fi
+done
 # Dev's worktree tracks the repo's own .claude/settings.json; keep ours out of commits.
 git -C "${cwd[dev]}" update-index --skip-worktree .claude/settings.json
