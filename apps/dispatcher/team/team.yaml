@@ -31,7 +31,7 @@ teams:
   # the owner's choice, which also raises fix to full. Merging is NOT a bot: the
   # merge gate (bl3q tools/agent_merge.py) reads review's verdict files.
   - name: bl3q
-    brief: Daily upkeep of the bl3q game bot. Lead triages the evening digest, fix repairs on agent/* branches in a worktree, review checks independently; a code gate merges.
+    brief: Daily upkeep of the bl3q game bot. Lead triages the error digest after each daily game run (00:00 and 09:00), fix repairs on agent/* branches in a worktree, review checks independently; a code gate merges.
 
 bots:
   - name: MausBot
