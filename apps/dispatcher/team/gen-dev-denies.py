@@ -52,6 +52,11 @@ if 'static' in levels:
     for n in ['.zshrc','.zshenv','.zprofile','.zlogin','.zlogout','.bashrc','.bash_profile','.bash_login','.profile','.inputrc',
               '.config','.local','.ssh','Library/LaunchAgents','Library/Application Support','.gitconfig','.git-credentials','.npmrc','.pypirc']:
         add(f'Edit(~/{n})'); add(f'Edit(~/{n}/**)')
+    # Files a later session or shell in the main checkout (or a folder above it) would load,
+    # whether or not they exist yet: the `fence` levels above only cover what exists now.
+    for r in ['~/Developer','~/Developer/vyductan','~/Developer/vyductan/apps','~/Developer/vyductan/apps/vyductan.dev']:
+        for n in ['.mcp.json','CLAUDE.md','CLAUDE.local.md','AGENTS.md','.claude','.claude-plugin','.envrc','.tool-versions']:
+            add(f'Edit({r}/{n})'); add(f'Edit({r}/{n}/**)')
 if 'secrets' in levels:
     # Secret and token stores: Read (the tool is not sandboxed) and the sandbox's own denyRead (Bash).
     stores=['.claude.json','.claude.json.backup','.claude.json.antigravity.bak','.gitlab-mcp-token.json','.npmrc','.pypirc','.git-credentials',

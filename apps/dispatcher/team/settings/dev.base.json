@@ -101,7 +101,9 @@
     "failIfUnavailable": true,
     "allowUnsandboxedCommands": false,
     "autoAllowBashIfSandboxed": false,
-    "excludedCommands": [],
+    "excludedCommands": [
+      "/bin/zsh -f /Users/vyductan/Developer/vyductan/apps/atelier/apps/dispatcher/team/bin/fresh-worktree.sh"
+    ],
     "filesystem": {
       "allowWrite": [
         "~/Developer/vyductan/apps/vyductan.dev/.git/objects",
@@ -122,6 +124,9 @@
       ],
       "allowRead": [
         "~/.config/git"
+      ],
+      "denyWrite": [
+        "~/Developer/vyductan-agent/.claude"
       ]
     },
     "network": {
