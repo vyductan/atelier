@@ -13,10 +13,33 @@
 #   2. the worktree must be clean;
 #   3. fetch origin main and detach at it. Dev then creates agent/<task id> itself.
 # A rework stays on its branch and never runs this.
+#
+# Unsandboxed git must not FIND its repo through files Dev can write: `$WT/.git` and the
+# worktree's admin dir (`.git/worktrees/vyductan-agent`, in Dev's allowWrite) could point
+# it at a config of Dev's making (core.sshCommand, a filter, an alias), which would run
+# here outside the sandbox. So the repo is pinned with GIT_DIR/GIT_WORK_TREE, the pointer
+# files must hold exactly what `git worktree add` wrote, and a per-worktree config (which
+# the admin dir could carry) is refused. The main repo's .git/config stays out of Dev's
+# reach (not in its allowWrite).
 set -u
 WT=/Users/vyductan/Developer/vyductan-agent
+ADMIN=/Users/vyductan/Developer/vyductan/apps/vyductan.dev/.git/worktrees/vyductan-agent
 TEMPLATE=${0:A:h:h}/settings/dev.json
-git() { /usr/bin/git -C "$WT" -c core.fsmonitor= -c core.hooksPath=/dev/null "$@"; }
+
+stop() { echo "STOP: $1"; exit "${2:-6}"; }
+[[ -f "$WT/.git" && ! -L "$WT/.git" && "$(<"$WT/.git")" == "gitdir: $ADMIN" ]] ||
+  stop "$WT/.git does not point at $ADMIN; the owner must check the worktree."
+[[ -d "$ADMIN" && ! -L "$ADMIN" && -f "$ADMIN/commondir" && ! -L "$ADMIN/commondir" && "$(<"$ADMIN/commondir")" == "../.." ]] ||
+  stop "the worktree's commondir is not ../..; the owner must check the worktree."
+[[ ! -e "$ADMIN/config" && ! -e "$ADMIN/config.worktree" ]] ||
+  stop "the worktree carries its own git config; the owner must check it."
+
+export GIT_DIR=$ADMIN GIT_WORK_TREE=$WT GIT_CONFIG_NOSYSTEM=1
+unset GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
+git() {
+  /usr/bin/git -c core.fsmonitor= -c core.hooksPath=/dev/null -c core.sshCommand=ssh \
+    -c protocol.allow=never -c protocol.https.allow=always -c protocol.ssh.allow=always "$@"
+}
 
 if ! /usr/bin/cmp -s "$TEMPLATE" "$WT/.claude/settings.json"; then
   echo "STOP: Dev's installed settings differ from team/settings/dev.json; the owner must run install-settings.sh."
