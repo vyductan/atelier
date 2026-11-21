@@ -45,17 +45,17 @@ export function WakeSwitch() {
   const enabled = wake.data?.enabled ?? false;
   return (
     <div
-      className="flex items-center gap-2 text-xs text-muted-foreground"
+      className="flex shrink-0 items-center gap-2 text-xs whitespace-nowrap text-muted-foreground"
       title={wake.data?.raw ?? "No daily wake set"}
     >
-      <AlarmClock className="size-3.5" />
+      <AlarmClock className="size-3.5 shrink-0" />
       <span>Wake daily</span>
       <TimePicker
         size="small"
         format="HH:mm"
         value={time}
         disabled={save.isPending}
-        className="w-20"
+        className="w-24 shrink-0"
         onChange={(_value, text) => {
           if (!text) return;
           setDraftTime(text);
