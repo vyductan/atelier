@@ -150,6 +150,8 @@ pub struct RoutineWake {
     /// The routine the Mac is woken for, and its time.
     pub routine_name: String,
     pub routine_time: String,
+    /// Every enabled daily routine, earliest first, as ("HH:MM", name).
+    pub daily: Vec<(String, String)>,
 }
 
 /// Minutes after midnight of an enabled daily routine, with its name.
@@ -188,6 +190,10 @@ pub fn routine_wake(routines: &serde_json::Value) -> Option<RoutineWake> {
         time: format!("{:02}:{:02}", wake / 60, wake % 60),
         routine_name: name.clone(),
         routine_time: format!("{:02}:{:02}", at / 60, at % 60),
+        daily: times
+            .iter()
+            .map(|(m, n)| (format!("{:02}:{:02}", m / 60, m % 60), n.clone()))
+            .collect(),
     })
 }
 
@@ -267,6 +273,8 @@ mod tests {
         ]);
         let w = routine_wake(&r).unwrap();
         assert_eq!((w.time.as_str(), w.routine_name.as_str()), ("08:55", "bl3q 09"));
+        let names: Vec<_> = w.daily.iter().map(|(t, n)| format!("{t} {n}")).collect();
+        assert_eq!(names, ["00:00 bl3q 00", "09:00 bl3q 09", "10:00 cos 10", "20:00 gom 20", "21:00 cos 21"]);
     }
 
     #[test]

@@ -16,6 +16,8 @@ export interface RoutineWake {
   time: string;
   routineName: string;
   routineTime: string;
+  /** Every enabled daily routine, earliest first, as [time, name]. */
+  daily: [string, string][];
 }
 
 export const powerClient = {

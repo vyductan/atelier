@@ -58,14 +58,14 @@ export function WakeButton() {
   /** The routines moved since the wake was set. */
   const drifted = enabled && !!routineTime && wake.data?.time !== routineTime;
   const routineLine = routine.data
-    ? `Routines: wake at ${routine.data.time}, before "${routine.data.routineName}" (${routine.data.routineTime}).`
+    ? `Wake at ${routine.data.time}, before the first routine after the night runs:`
     : routine.isError
       ? `Routines: ${String(routine.error)}`
       : routine.isSuccess
         ? "Routines: no daily OpenMausBot routine."
         : null;
   const settings = (
-    <div className="flex w-56 flex-col gap-3 text-sm">
+    <div className="flex w-64 flex-col gap-3 text-sm">
       <label className="flex items-center justify-between gap-3">
         <span>Wake this Mac daily</span>
         <Switch
@@ -95,6 +95,32 @@ export function WakeButton() {
       </div>
       {routineLine ? (
         <p className="text-xs text-muted-foreground">{routineLine}</p>
+      ) : null}
+      {routine.data?.daily.length ? (
+        <ul className="flex flex-col gap-0.5 text-xs">
+          {routine.data.daily.map(([at, name]) => {
+            const wakesFor =
+              at === routine.data?.routineTime &&
+              name === routine.data.routineName;
+            return (
+              <li
+                key={`${at} ${name}`}
+                className={`flex gap-2 ${wakesFor ? "font-medium text-foreground" : "text-muted-foreground"}`}
+              >
+                <span className="font-mono">{at}</span>
+                <span className="min-w-0 flex-1 truncate" title={name}>
+                  {name}
+                </span>
+                {wakesFor ? (
+                  <AlarmClock
+                    className="size-3 shrink-0 self-center text-primary"
+                    aria-label="The wake is set for this routine"
+                  />
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
       ) : null}
       {drifted && routineTime ? (
         <Button
