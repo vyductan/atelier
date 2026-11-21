@@ -40,7 +40,7 @@ import type { ServiceHealth } from "./service-health";
 import type { ServiceAction, Transition } from "./service-transition";
 import type { OrderedGroup, ServicesOrder } from "./services-order";
 import { servicesClient } from "../../lib/services-client";
-import { WakeSwitch } from "../power/wake-switch";
+import { WakeButton } from "../power/wake-switch";
 import { useToastStore } from "../../store/toast-store";
 import { groupListeners } from "./listener-info";
 import { deriveServiceHealth } from "./service-health";
@@ -366,6 +366,8 @@ function ServiceRow({
             </span>
           )}
           <span className="text-xs text-muted-foreground">{def.kind}</span>
+          {/* Its routines are what the daily wake is for. */}
+          {def.id === "openmausbot" ? <WakeButton /> : null}
         </div>
       </div>
 
@@ -674,7 +676,6 @@ export function ServicesPanel() {
             {snapshot.data?.configPath}
           </span>
           <div className="ml-auto flex items-center gap-1">
-            <WakeSwitch />
             <Button
               type="text"
               size="small"
