@@ -38,11 +38,17 @@ stop() { echo "STOP: $1"; exit "${2:-6}"; }
   stop "$WT/.git does not point at $ADMIN; the owner must check the worktree."
 [[ -d "$ADMIN" && ! -L "$ADMIN" && -f "$ADMIN/commondir" && ! -L "$ADMIN/commondir" && "$(<"$ADMIN/commondir")" == "../.." ]] ||
   stop "the worktree's commondir is not ../..; the owner must check the worktree."
-[[ ! -e "$ADMIN/config" && ! -e "$ADMIN/config.worktree" ]] ||
+[[ ! -e "$ADMIN/config" && ! -L "$ADMIN/config" && ! -e "$ADMIN/config.worktree" && ! -L "$ADMIN/config.worktree" ]] ||
   stop "the worktree carries its own git config; the owner must check it."
 
-export GIT_DIR=$ADMIN GIT_WORK_TREE=$WT GIT_CONFIG_NOSYSTEM=1
-unset GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
+# The checks above can race a Dev process still running in the background, so git is
+# told every location outright instead: GIT_COMMON_DIR means it never reads `commondir`,
+# and with it set (and extensions.worktreeConfig off in the main repo) no config file in
+# the admin dir is read. What git still reads from Dev-writable places (the admin dir's
+# HEAD and index, the worktree's files) is data, not configuration.
+export GIT_DIR=$ADMIN GIT_COMMON_DIR=/Users/vyductan/Developer/vyductan/apps/vyductan.dev/.git
+export GIT_WORK_TREE=$WT GIT_CONFIG_NOSYSTEM=1
+unset GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
 git() {
   /usr/bin/git -c core.fsmonitor= -c core.hooksPath=/dev/null -c core.sshCommand=ssh \
     -c protocol.allow=never -c protocol.https.allow=always -c protocol.ssh.allow=always \
@@ -50,6 +56,8 @@ git() {
     -c core.attributesFile=/dev/null -c core.pager=cat "$@"
 }
 
+[[ "$(/usr/bin/git --git-dir="$GIT_COMMON_DIR" config --get extensions.worktreeConfig)" != true ]] ||
+  stop "the main repo enables per-worktree config; the owner must check it."
 if ! /usr/bin/cmp -s "$TEMPLATE" "$WT/.claude/settings.json"; then
   echo "STOP: Dev's installed settings differ from team/settings/dev.json; the owner must run install-settings.sh."
   exit 2
