@@ -22,13 +22,14 @@
 # the admin dir could carry) is refused. The main repo's .git/config stays out of Dev's
 # reach (not in its allowWrite).
 set -u
-# `-f` skips zsh startup files; then start over with an empty environment, so nothing Dev
-# could put in front of the command (PATH, HOME, ZDOTDIR, GIT_*, SSH_*) reaches git or ssh.
-# HOME is fixed, not inherited: git reads the owner's global config (credentials) from it.
-if [[ "${FRESH_WORKTREE_CLEAN:-}" != 1 ]]; then
-  exec /usr/bin/env -i HOME=/Users/vyductan USER=vyductan LANG=en_US.UTF-8 \
-    PATH=/usr/bin:/bin:/usr/sbin:/sbin FRESH_WORKTREE_CLEAN=1 /bin/zsh -f "${0:A}"
-fi
+# `-f` skips zsh startup files. Then every exported variable is dropped and only a fixed
+# set is exported again, unconditionally: nothing the caller sets (PATH, HOME, ZDOTDIR,
+# GIT_*, SSH_*, or a marker meant to skip this step) reaches git or ssh. HOME is fixed,
+# not inherited: git reads the owner's global config (credentials) from it.
+for name in ${(f)"$(typeset +x)"}; do
+  unset "$name" 2>/dev/null
+done
+export HOME=/Users/vyductan USER=vyductan LANG=en_US.UTF-8 PATH=/usr/bin:/bin:/usr/sbin:/sbin
 WT=/Users/vyductan/Developer/vyductan-agent
 ADMIN=/Users/vyductan/Developer/vyductan/apps/vyductan.dev/.git/worktrees/vyductan-agent
 TEMPLATE=${0:A:h:h}/settings/dev.json
