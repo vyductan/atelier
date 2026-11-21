@@ -20,7 +20,7 @@ const FALLBACK_WAKE_TIME = "08:55";
  * Daily wake of this Mac (`pmset repeat wakeorpoweron`), so routines due while
  * it sleeps after the 00:00 run start on time. The time follows the
  * OpenMausBot routines (a few minutes before the first one after the night
- * runs); pmset cannot change without the admin password, so when the routines
+ * runs); pmset needs root (a sudoers rule or the admin password), so when the routines
  * move, the popover offers the new time instead of applying it silently.
  */
 export function WakeButton() {
@@ -107,7 +107,7 @@ export function WakeButton() {
       ) : null}
       <p className="text-xs text-muted-foreground">
         {wake.data?.raw ?? "No daily wake set."} Changing it asks for the admin
-        password.
+        password unless /etc/sudoers.d/atelier-wake allows it.
       </p>
     </div>
   );

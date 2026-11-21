@@ -4,6 +4,8 @@
 //! needs no privilege; setting or cancelling it needs root, so `set_wake_schedule`
 //! goes through `osascript ... with administrator privileges`: macOS shows its
 //! own password dialog and the person types the password there, never the app.
+//! When /etc/sudoers.d/atelier-wake allows the two pmset commands, `sudo -n`
+//! runs them with no dialog at all.
 //!
 //! `pmset repeat cancel` drops every repeating event, a repeating shutdown or
 //! sleep included. The wake switch owns that slot.
@@ -109,6 +111,17 @@ pub async fn set_wake_schedule(enabled: bool, time: String) -> Result<WakeSchedu
     } else {
         "/usr/bin/pmset repeat cancel".to_string()
     };
+    // /etc/sudoers.d/atelier-wake (set up by the owner) lets exactly these two
+    // pmset commands run without a password; without it, `sudo -n` fails at
+    // once and macOS's password dialog takes over.
+    let sudo = Command::new("/usr/bin/sudo")
+        .arg("-n")
+        .args(command.split(' '))
+        .output()
+        .map_err(|e| e.to_string())?;
+    if sudo.status.success() {
+        return read_schedule();
+    }
     let script = format!("do shell script \"{command}\" with administrator privileges");
     let out = Command::new("/usr/bin/osascript")
         .args(["-e", &script])
