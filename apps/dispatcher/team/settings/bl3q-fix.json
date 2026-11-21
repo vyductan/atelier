@@ -787,7 +787,15 @@
       "Edit(~/.pypirc)",
       "Edit(~/.pypirc/**)",
       "Edit(~/.bl3q-team/verify)",
-      "Edit(~/.bl3q-team/verify/**)"
+      "Edit(~/.bl3q-team/verify/**)",
+      "Edit(~/Developer/g-bots/bl3q/.git/sg-hook-once-toolu_01CYqnLPT17FW3DQZPMZ7gy8)",
+      "Edit(~/Developer/g-bots/bl3q/.git/sg-hook-once-toolu_01CYqnLPT17FW3DQZPMZ7gy8/**)",
+      "Edit(~/Developer/g-bots/bl3q/.git/sg-hook-once-toolu_01Ez4EW7owWM5TWx6bqQMfuy)",
+      "Edit(~/Developer/g-bots/bl3q/.git/sg-hook-once-toolu_01Ez4EW7owWM5TWx6bqQMfuy/**)",
+      "Edit(~/Developer/g-bots/bl3q/.git/logs/refs/stash)",
+      "Edit(~/Developer/g-bots/bl3q/.git/logs/refs/stash/**)",
+      "Edit(~/Developer/g-bots/bl3q/.git/worktrees/wt)",
+      "Edit(~/Developer/g-bots/bl3q/.git/worktrees/wt/**)"
     ]
   },
   "sandbox": {

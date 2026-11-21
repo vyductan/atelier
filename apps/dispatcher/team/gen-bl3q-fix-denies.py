@@ -12,7 +12,7 @@ bl3q-agent worktree does not write, and the shell startup files under ~
 (whether or not they exist yet). Edit denies also merge into the sandbox
 write-deny, so the .git paths the worktree's git needs stay open.
 
-Idempotent: only adds rules. Rerun after adding top-level entries to the main
+Idempotent: only adds deny rules; rewrites the repro_web.sh excludedCommands from KICH_BAN. Rerun after adding top-level entries to the main
 checkout, then install-settings.sh. Usage: python3 team/gen-bl3q-fix-denies.py
 """
 import json, os, re
@@ -74,5 +74,18 @@ for n in ['.zshrc', '.zshenv', '.zprofile', '.zlogin', '.zlogout', '.bashrc', '.
           '.npmrc', '.pypirc', '.atelier', '.claude', '.claude.json']:
     deny(f'~/{n}')
 
+# The only commands bl3q-fix runs outside its sandbox: `tools/repro_web.sh <scenario>`, one per
+# scenario in KICH_BAN of tools/verify_web.py (read from the file, not imported) plus `doctor`.
+# Generated so a new scenario cannot be missed; a missed one makes repro_web.sh exit 2 and name
+# this script. Other excludedCommands are kept.
+import ast
+src = ast.parse(open(f'{main}/tools/verify_web.py').read())
+kb = next(n.value for n in src.body if isinstance(n, ast.Assign)
+          and any(isinstance(t, ast.Name) and t.id == 'KICH_BAN' for t in n.targets))
+names = ['doctor'] + [k.value for k in kb.keys if isinstance(k, ast.Constant) and re.fullmatch(r'[a-z_]+', str(k.value))]
+repro = '/bin/zsh -f /Users/vyductan/Developer/g-bots/bl3q/tools/repro_web.sh'
+ex = cfg['sandbox'].setdefault('excludedCommands', [])
+ex[:] = [c for c in ex if not c.startswith(repro + ' ')] + [f'{repro} {n}' for n in names]
+
 open(path, 'w').write(json.dumps(cfg, ensure_ascii=False, indent=2) + '\n')
-print(f'{len(d)} deny rules ({len(d) - before} added)')
+print(f'{len(d)} deny rules ({len(d) - before} added); repro: {", ".join(names)}')
