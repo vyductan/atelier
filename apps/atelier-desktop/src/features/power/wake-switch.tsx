@@ -13,6 +13,7 @@ import { useToastStore } from "../../store/toast-store";
 
 const WAKE_QUERY_KEY = ["power", "wake"] as const;
 const ROUTINE_WAKE_QUERY_KEY = ["power", "routine-wake"] as const;
+const NIGHT_SLEEP_QUERY_KEY = ["power", "night-sleep"] as const;
 /** Used only when OpenMausBot cannot be asked. */
 const FALLBACK_WAKE_TIME = "08:55";
 
@@ -34,6 +35,11 @@ export function WakeButton() {
     queryKey: ROUTINE_WAKE_QUERY_KEY,
     queryFn: powerClient.getRoutineWake,
     refetchInterval: 5 * 60_000,
+  });
+  const night = useQuery({
+    queryKey: NIGHT_SLEEP_QUERY_KEY,
+    queryFn: powerClient.getNightSleep,
+    refetchInterval: 60_000,
   });
   const routineTime = routine.data?.time;
   const [draftTime, setDraftTime] = useState<string | null>(null);
@@ -130,6 +136,22 @@ export function WakeButton() {
         >
           Use {routineTime}
         </Button>
+      ) : null}
+      {night.data?.line ? (
+        <div className="flex flex-col gap-0.5 text-xs">
+          <span className="text-muted-foreground">
+            {night.data.running
+              ? "Sleep after the night runs: waiting"
+              : "Sleep after the night runs: last time"}
+          </span>
+          <span
+            className={night.data.running ? "text-warning" : "text-foreground"}
+            title={night.data.at ?? undefined}
+          >
+            <span className="font-mono">{night.data.at?.slice(5, 16)}</span>{" "}
+            {night.data.line}
+          </span>
+        </div>
       ) : null}
       <p className="text-xs text-muted-foreground">
         {wake.data?.raw ?? "No daily wake set."} Changing it asks for the admin

@@ -20,7 +20,16 @@ export interface RoutineWake {
   daily: [string, string][];
 }
 
+/** bl3q `ngu_may.sh`: sleeps the Mac after the night runs once everything is quiet. */
+export interface NightSleep {
+  running: boolean;
+  /** "YYYY-MM-DD HH:MM:SS" and text of its last log line. */
+  at: string | null;
+  line: string | null;
+}
+
 export const powerClient = {
+  getNightSleep: () => invoke<NightSleep>("get_night_sleep"),
   /** null when no enabled daily routine exists. */
   getRoutineWake: () => invoke<RoutineWake | null>("get_routine_wake"),
   getWake: () => invoke<WakeSchedule>("get_wake_schedule"),

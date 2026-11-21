@@ -219,6 +219,48 @@ pub async fn get_routine_wake() -> Result<Option<RoutineWake>, String> {
     Ok(routine_wake(&body))
 }
 
+/// bl3q `tools/ngu_may.sh` (started after the 00:00 daily run) puts the Mac to sleep once
+/// every bot, the merge gate and the owner are quiet, and logs each change of state.
+const NIGHT_SLEEP_LOG: &str = "Developer/g-bots/bl3q/reports/ngu-may.log";
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NightSleep {
+    /// The script is still waiting for quiet tonight.
+    pub running: bool,
+    /// "YYYY-MM-DD HH:MM:SS" and text of its last log line: what it is waiting on, "ngủ"
+    /// (slept), or "quá 6 giờ sáng… thôi không ngủ" (gave up).
+    pub at: Option<String>,
+    pub line: Option<String>,
+}
+
+/// The last `[YYYY-MM-DD HH:MM:SS] text` line; pmset's own output has no timestamp.
+pub fn last_sleep_event(log: &str) -> Option<(String, String)> {
+    log.lines().rev().find_map(|l| {
+        let rest = l.strip_prefix('[')?;
+        let (at, text) = rest.split_once("] ")?;
+        (at.len() == 19).then(|| (at.to_string(), text.trim().to_string()))
+    })
+}
+
+#[tauri::command]
+pub async fn get_night_sleep() -> Result<NightSleep, String> {
+    let path = dirs::home_dir().ok_or("no home directory")?.join(NIGHT_SLEEP_LOG);
+    // Only the tail matters; the log grows a few lines a night.
+    let log = std::fs::read_to_string(&path).unwrap_or_default();
+    // Vietnamese text: cut on a char boundary, never mid-character (that would panic).
+    let start = (log.len().saturating_sub(8192)..=log.len())
+        .find(|&i| log.is_char_boundary(i))
+        .unwrap_or(0);
+    let tail = &log[start..];
+    let running = Command::new("/usr/bin/pgrep")
+        .args(["-f", "tools/ngu_may.sh"])
+        .output()
+        .is_ok_and(|o| o.status.success());
+    let (at, line) = last_sleep_event(tail).unzip();
+    Ok(NightSleep { running, at, line })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -297,6 +339,19 @@ mod tests {
     fn only_night_runs_wrap_back_to_the_first() {
         let r = routines(&[("late", "00:03", true)]);
         assert_eq!(routine_wake(&r).unwrap().time, "23:58");
+    }
+
+    #[test]
+    fn night_sleep_reads_the_last_timestamped_line() {
+        let log = "[2026-11-21 02:14:58] yên 3/3\n[2026-11-21 02:14:58] ngủ\nSleeping now...\n\
+                   [2026-11-22 02:19:00] bắt đầu chờ yên để ngủ\n\
+                   [2026-11-22 02:19:00] bận: phán quyết approve chờ gate: agent__x\n";
+        assert_eq!(
+            last_sleep_event(log),
+            Some(("2026-11-22 02:19:00".into(), "bận: phán quyết approve chờ gate: agent__x".into()))
+        );
+        assert_eq!(last_sleep_event("Sleeping now...\n"), None);
+        assert_eq!(last_sleep_event(""), None);
     }
 
     #[test]
