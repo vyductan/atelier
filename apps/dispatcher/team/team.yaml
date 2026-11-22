@@ -152,6 +152,23 @@ bots:
     cwd: /Users/vyductan/.bl3q-team/review
     soul: { file: souls/bl3q-review.md }
 
+  # Owner 22/11 (pstack: only a verdict from an agent that did not write the code
+  # counts; CI and a bot review are not verdicts): runs an approved branch on the
+  # REAL game and writes PASS / PASS+NOTES / FAIL / KHONG_KIEM. The merge gate
+  # refuses FAIL and still merges an unverified branch (owner's choice).
+  # Sonnet, not fix's/review's Opus: a different model checks the same change.
+  # Bash is sandboxed; it drives the game only through tools/lai_game.sh (its one
+  # excludedCommand), which runs its lai.py under a second sandbox that allows the
+  # bridge but no secrets.
+  - name: bl3q-verify
+    team: bl3q
+    title: "bl3q verify (chạy thử trên game thật)"
+    model: claude/claude-sonnet-5-5
+    approval: full
+    computer: off
+    cwd: /Users/vyductan/.bl3q-team/verifier
+    soul: { file: souls/bl3q-verify.md }
+
   # Records the owner's bl3q reports as tasks in project bl3q (token label
   # `bl3q-intake`); same limits as Intake, plus it reads the game bot's logs.
   - name: bl3q-intake

@@ -68,7 +68,9 @@
       "Edit(~/.bl3q-team/gate.log)",
       "Edit(~/.bl3q-team/gate.log/**)",
       "Edit(~/.bl3q-team/gate.lock)",
-      "Edit(~/.bl3q-team/gate.lock/**)"
+      "Edit(~/.bl3q-team/gate.lock/**)",
+      "Edit(~/.bl3q-team/verifier)",
+      "Edit(~/.bl3q-team/verifier/**)"
     ]
   },
   "sandbox": {

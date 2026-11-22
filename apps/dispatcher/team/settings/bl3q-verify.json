@@ -1,0 +1,99 @@
+{
+  "enabledPlugins": {
+    "vercel@claude-plugins-official": false,
+    "plugin-dev@claude-plugins-official": false,
+    "supabase@claude-plugins-official": false
+  },
+  "permissions": {
+    "deny": [
+      "Edit",
+      "Write",
+      "NotebookEdit",
+      "WebFetch",
+      "WebSearch",
+      "Monitor",
+      "PowerShell",
+      "mcp__agents__create_bot",
+      "mcp__agents__propose_team_setup",
+      "mcp__agents__propose_bot_deletion",
+      "mcp__agents__manage_room",
+      "mcp__agents__retry_thread",
+      "mcp__agents__propose_profile",
+      "mcp__agents__propose_model",
+      "mcp__agents__reset_cloud_computer",
+      "mcp__agents__trigger",
+      "mcp__agents__delete_trigger",
+      "mcp__agents__skill_manage",
+      "mcp__agents__mcp_server",
+      "mcp__agents__app_settings",
+      "mcp__agents__vm_exec",
+      "mcp__vyductan-tasks",
+      "Bash(git push *)",
+      "Bash(git commit *)",
+      "Bash(git merge *)",
+      "Bash(git reset *)",
+      "Bash(git checkout *)",
+      "Bash(git branch *)",
+      "Bash(git tag *)",
+      "Bash(git worktree *)",
+      "Bash(git rebase *)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.gnupg/**)",
+      "Read(~/.netrc)",
+      "Read(~/.claude/**)",
+      "Read(~/.atelier/**)",
+      "Read(~/.cloudflared/**)",
+      "Read(~/Library/**)",
+      "Read(~/.config/**)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Read(**/id_rsa*)",
+      "Read(**/id_ed25519*)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/.mcp.json)"
+    ],
+    "additionalDirectories": [
+      "/Users/vyductan/Developer/g-bots/bl3q",
+      "/Users/vyductan/.bl3q-team/verify"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false,
+    "autoAllowBashIfSandboxed": true,
+    "filesystem": {
+      "allowWrite": [
+        "~/Developer/g-bots/bl3q/.state",
+        "~/.bl3q-team/verify",
+        "~/.cache/uv"
+      ],
+      "denyRead": [
+        "~/.ssh",
+        "~/.aws",
+        "~/.gnupg",
+        "~/.netrc",
+        "~/.atelier",
+        "~/.cloudflared",
+        "~/Library",
+        "~/.claude",
+        "~/.config"
+      ],
+      "allowRead": [
+        "~/.config/git"
+      ]
+    },
+    "network": {
+      "allowedDomains": [
+        "localhost",
+        "127.0.0.1"
+      ],
+      "allowLocalBinding": true
+    },
+    "excludedCommands": [
+      "/bin/zsh -f /Users/vyductan/Developer/g-bots/bl3q/tools/lai_game.sh"
+    ]
+  }
+}

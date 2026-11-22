@@ -795,7 +795,9 @@
       "Edit(~/Developer/g-bots/bl3q/.git/logs/refs/stash)",
       "Edit(~/Developer/g-bots/bl3q/.git/logs/refs/stash/**)",
       "Edit(~/Developer/g-bots/bl3q/.git/worktrees/wt)",
-      "Edit(~/Developer/g-bots/bl3q/.git/worktrees/wt/**)"
+      "Edit(~/Developer/g-bots/bl3q/.git/worktrees/wt/**)",
+      "Edit(~/.bl3q-team/verifier)",
+      "Edit(~/.bl3q-team/verifier/**)"
     ]
   },
   "sandbox": {

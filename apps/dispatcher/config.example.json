@@ -52,6 +52,13 @@
         "template": "~/Developer/vyductan/apps/atelier/apps/dispatcher/team/settings/bl3q-review.json",
         "installed": "~/.bl3q-team/review/.claude/settings.json"
       }
+    },
+    "bl3q-verify": {
+      "ombName": "bl3q-verify",
+      "settings": {
+        "template": "~/Developer/vyductan/apps/atelier/apps/dispatcher/team/settings/bl3q-verify.json",
+        "installed": "~/.bl3q-team/verifier/.claude/settings.json"
+      }
     }
   },
   "routines": [

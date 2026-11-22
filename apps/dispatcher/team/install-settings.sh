@@ -17,6 +17,7 @@ typeset -A cwd=(
   bl3q-lead   "$HOME/.bl3q-team/lead"
   bl3q-fix    "$HOME/Developer/g-bots/bl3q-agent"
   bl3q-review "$HOME/.bl3q-team/review"
+  bl3q-verify "$HOME/.bl3q-team/verifier"
   intake      "$HOME/.atelier/openmausbot/workspaces/intake"
   bl3q-intake "$HOME/.atelier/openmausbot/workspaces/bl3q-intake"
 )
@@ -52,7 +53,7 @@ done
 # every bot that does handed-out work; each SOUL's first line points there. Coordinators
 # (CoS, bl3q-lead) and the intake/ops bots do not get it. In a git worktree the copy is
 # untracked, so it goes in the repo's info/exclude, never in a commit.
-for bot in dev review bl3q-fix bl3q-review; do
+for bot in dev review bl3q-fix bl3q-review bl3q-verify; do
   dir=${cwd[$bot]}
   cp "${here:h}/worker.md" "$dir/.claude/worker.md.new" && mv "$dir/.claude/worker.md.new" "$dir/.claude/worker.md"
   print "installed $bot worker.md"
