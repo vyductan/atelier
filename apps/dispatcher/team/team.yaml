@@ -4,8 +4,9 @@
 #
 # Rules (spec "Atelier Dispatcher" on vyductan.dev tasks):
 # - No bot is `full` (a Chief's level is passed down to the bots it hands work to),
-#   except bl3q-lead, bl3q-fix, CoS (2026-11-19), Review (2026-11-20) and the two intake
-#   bots (2026-11-20, spec e14d2c6b), by the owner's explicit choice.
+#   except bl3q-lead, bl3q-fix, CoS (2026-11-19), Review (2026-11-20), the two intake
+#   bots (2026-11-20, spec e14d2c6b) and bl3q-verifier (2026-11-22), by the owner's
+#   explicit choice.
 # - Every bot sits in a team with a Chief (CoS for vyductan, bl3q-lead for bl3q):
 #   OpenMausBot auto-retries a failed run and sends incident turns to the Chief
 #   (server/host/chief-notices.ts), which costs model turns. Workers used to have no
@@ -29,9 +30,9 @@ teams:
   # by the owner's choice (2026-11-19): it hands work to fix and review with
   # coordinate_bots. Its settings deny the Chief's admin tools. It runs `full` by
   # the owner's choice, which also raises fix to full. Merging is NOT a bot: the
-  # merge gate (bl3q tools/agent_merge.py) reads review's verdict files.
+  # merge gate (bl3q tools/agent_merge.py, run by the lead) reads bl3q-verifier's verdicts.
   - name: bl3q
-    brief: Daily upkeep of the bl3q game bot. Lead triages the error digest after each daily game run (00:00 and 09:00), fix repairs on agent/* branches in a worktree, review checks independently; a code gate merges.
+    brief: Daily upkeep of the bl3q game bot. Lead triages the error digest after each daily game run (00:00 and 09:00), fix repairs on agent/* branches in a worktree, verifier checks the code and the real game independently; a code gate the lead runs merges.
 
 bots:
   - name: MausBot
@@ -125,7 +126,7 @@ bots:
   # writes limited to the worktree and refs/heads/agent/*, no network.
   # Owner of each item (owner's choice 2026-11-20, pstack autopilot): loops to
   # code-ready, never asks for review (coordinate_bots denied in its settings);
-  # bl3q-lead runs bl3q-review and owns the verdicts. Escalates to a fable
+  # bl3q-lead runs bl3q-verifier and owns the verdicts. Escalates to a fable
   # subagent after two rejected attempts on one idea.
   # Opus by owner choice; review is Opus too (a different family is a later step).
   - name: bl3q-fix
@@ -139,35 +140,25 @@ bots:
     cwd: /Users/vyductan/Developer/g-bots/bl3q-agent
     soul: { file: souls/bl3q-fix.md }
 
-  # `auto` so it can read the worktree and run tests without a card; the
-  # sandbox cannot write to any repo, so its only output is a verdict file.
-  - name: bl3q-review
+  # The one checker of each branch (owner 22/11, after pstack: one verifier per
+  # PR, and only a verdict from an agent that did not write the code counts). It
+  # was two bots (bl3q-review read the code, bl3q-verify drove the game); merged
+  # into one verdict file in its folder ~/.bl3q-team/review/verdicts, whose `game`
+  # part (PASS / PASS+NOTES / FAIL / KHONG_KIEM) the merge gate reads: FAIL is
+  # refused, an unverified branch still merges (owner's choice).
+  # Opus: it alone judges edited tests, so a strong model is harder for fix's own
+  # explanations to talk round. `full` (owner's choice 22/11) so its one
+  # excludedCommand, tools/lai_game.sh, runs without a card; Bash stays in the
+  # sandbox, which cannot write any repo or its own verdicts, and lai_game.sh runs
+  # its lai.py under a second sandbox that reaches the bridge but no secrets.
+  - name: bl3q-verifier
     team: bl3q
-    title: "bl3q đọc code (duyệt nhánh, không chạy game)"
-    # Opus, not fix's Sonnet: review alone judges edited tests, so a different
-    # (stronger) model is harder for fix's own explanations to talk round.
+    title: "bl3q kiểm (đọc code + chạy thử game)"
     model: claude/claude-opus-5-5
-    approval: auto
-    computer: off
-    cwd: /Users/vyductan/.bl3q-team/review
-    soul: { file: souls/bl3q-review.md }
-
-  # Owner 22/11 (pstack: only a verdict from an agent that did not write the code
-  # counts; CI and a bot review are not verdicts): runs an approved branch on the
-  # REAL game and writes PASS / PASS+NOTES / FAIL / KHONG_KIEM. The merge gate
-  # refuses FAIL and still merges an unverified branch (owner's choice).
-  # Sonnet, not fix's/review's Opus: a different model checks the same change.
-  # Bash is sandboxed; it drives the game only through tools/lai_game.sh (its one
-  # excludedCommand), which runs its lai.py under a second sandbox that allows the
-  # bridge but no secrets.
-  - name: bl3q-verify
-    team: bl3q
-    title: "bl3q chạy thử (lái game thật, ghi phiếu)"
-    model: claude/claude-sonnet-5-5
     approval: full
     computer: off
-    cwd: /Users/vyductan/.bl3q-team/verifier
-    soul: { file: souls/bl3q-verify.md }
+    cwd: /Users/vyductan/.bl3q-team/review
+    soul: { file: souls/bl3q-verifier.md }
 
   # Records the owner's bl3q reports as tasks in project bl3q (token label
   # `bl3q-intake`); same limits as Intake, plus it reads the game bot's logs.

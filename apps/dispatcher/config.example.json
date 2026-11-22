@@ -46,18 +46,11 @@
         "installed": "~/Developer/g-bots/bl3q-agent/.claude/settings.json"
       }
     },
-    "bl3q-review": {
-      "ombName": "bl3q-review",
+    "bl3q-verifier": {
+      "ombName": "bl3q-verifier",
       "settings": {
-        "template": "~/Developer/vyductan/apps/atelier/apps/dispatcher/team/settings/bl3q-review.json",
+        "template": "~/Developer/vyductan/apps/atelier/apps/dispatcher/team/settings/bl3q-verifier.json",
         "installed": "~/.bl3q-team/review/.claude/settings.json"
-      }
-    },
-    "bl3q-verify": {
-      "ombName": "bl3q-verify",
-      "settings": {
-        "template": "~/Developer/vyductan/apps/atelier/apps/dispatcher/team/settings/bl3q-verify.json",
-        "installed": "~/.bl3q-team/verifier/.claude/settings.json"
       }
     }
   },

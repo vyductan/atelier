@@ -8,12 +8,16 @@
     "additionalDirectories": [
       "~/Developer/g-bots/bl3q-agent",
       "~/Developer/g-bots/bl3q/.state",
-      "~/Developer/g-bots/bl3q/shots"
+      "~/Developer/g-bots/bl3q/shots",
+      "~/Developer/g-bots/bl3q",
+      "~/.bl3q-team/verify"
     ],
     "allow": [
       "Read(~/Developer/g-bots/bl3q-agent/**)",
       "Read(~/Developer/g-bots/bl3q/.state/**)",
-      "Read(~/Developer/g-bots/bl3q/shots/**)"
+      "Read(~/Developer/g-bots/bl3q/shots/**)",
+      "Read(~/Developer/g-bots/bl3q/**)",
+      "Read(~/.bl3q-team/verify/**)"
     ],
     "deny": [
       "Bash(git push:*)",
@@ -69,8 +73,21 @@
       "Edit(~/.bl3q-team/gate.log/**)",
       "Edit(~/.bl3q-team/gate.lock)",
       "Edit(~/.bl3q-team/gate.lock/**)",
-      "Edit(~/.bl3q-team/verifier)",
-      "Edit(~/.bl3q-team/verifier/**)"
+      "Monitor",
+      "PowerShell",
+      "mcp__agents__create_bot",
+      "mcp__agents__propose_team_setup",
+      "mcp__agents__propose_bot_deletion",
+      "mcp__agents__manage_room",
+      "mcp__agents__retry_thread",
+      "mcp__agents__propose_profile",
+      "mcp__agents__propose_model",
+      "mcp__agents__reset_cloud_computer",
+      "mcp__agents__trigger",
+      "mcp__agents__delete_trigger",
+      "mcp__agents__skill_manage",
+      "mcp__agents__mcp_server",
+      "mcp__agents__app_settings"
     ]
   },
   "sandbox": {
@@ -78,7 +95,9 @@
     "failIfUnavailable": true,
     "allowUnsandboxedCommands": false,
     "autoAllowBashIfSandboxed": true,
-    "excludedCommands": [],
+    "excludedCommands": [
+      "/bin/zsh -f /Users/vyductan/Developer/g-bots/bl3q/tools/lai_game.sh"
+    ],
     "filesystem": {
       "allowWrite": [
         "~/.cache/uv",

@@ -7,7 +7,7 @@ description: How bl3q-fix owns one item from brief to a code-ready branch, the w
 
 Adapted from pstack (poteto, MIT): the autopilot playbook, show-me-your-work, and the attack-the-premise principle. Everything you need is in this file. The way you fix is in your `fix-root-cause` skill; this file is how you carry the item.
 
-You own the branch. You never own the verdict: bl3q-lead decides when bl3q-review checks your branch and gives you its reasons when it rejects. You never ask for a review and never contact bl3q-review or any other bot. Nobody is watching: do not ask the person anything, decide, log the decision, and keep going.
+You own the branch. You never own the verdict: bl3q-lead decides when bl3q-verifier checks your branch and gives you its reasons when it rejects. You never ask for a review and never contact bl3q-verifier or any other bot. Nobody is watching: do not ask the person anything, decide, log the decision, and keep going.
 
 ## Code-ready
 
