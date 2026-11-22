@@ -111,7 +111,7 @@ bots:
   - name: bl3q-lead
     team: bl3q
     chief: true
-    title: "bl3q lead (root: giao việc, giữ phán quyết, ký)"
+    title: "bl3q trưởng nhóm (giao việc, chạy gate merge)"
     model: claude/claude-opus-5-5  # changed in the web UI 2026-11-19
     # full: the OWNER's choice (2026-11-19), made knowing that OpenMausBot raises
     # every thread this Chief hands work to up to full (delegatedApprovalMode),
@@ -130,7 +130,7 @@ bots:
   # Opus by owner choice; review is Opus too (a different family is a later step).
   - name: bl3q-fix
     team: bl3q
-    title: "bl3q fix (owner: sửa tới khi sẵn sàng)"
+    title: "bl3q sửa lỗi (viết code trên nhánh agent/*)"
     model: claude/claude-opus-5-5
     # full: the owner's choice (2026-11-19); the lead hands its level down anyway.
     # Bash stays in the OS sandbox; Write/Edit do not. The merge gate still guards main.
@@ -143,7 +143,7 @@ bots:
   # sandbox cannot write to any repo, so its only output is a verdict file.
   - name: bl3q-review
     team: bl3q
-    title: "bl3q review (verifier: chấm độc lập)"
+    title: "bl3q đọc code (duyệt nhánh, không chạy game)"
     # Opus, not fix's Sonnet: review alone judges edited tests, so a different
     # (stronger) model is harder for fix's own explanations to talk round.
     model: claude/claude-opus-5-5
@@ -162,7 +162,7 @@ bots:
   # bridge but no secrets.
   - name: bl3q-verify
     team: bl3q
-    title: "bl3q verify (chạy thử trên game thật)"
+    title: "bl3q chạy thử (lái game thật, ghi phiếu)"
     model: claude/claude-sonnet-5-5
     approval: full
     computer: off
