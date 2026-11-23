@@ -18,6 +18,7 @@
 # `pnpm dev` on :3000 uses that same stack, so "up" also wipes what was entered there.
 emulate -L zsh
 setopt pipe_fail
+umask 077  # logs, pid files, the browser's config and the generated Playwright config: owner only
 export PATH=/Users/vyductan/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 REPO=/Users/vyductan/Developer/vyductan/apps/vyductan.dev
 SRV=/Users/vyductan/Developer/vyductan-e2e
@@ -160,7 +161,7 @@ const server = await chromium.launchServer({
   host: "127.0.0.1", port: 3111, wsPath: process.env.WSPATH, headless: true,
   args: ["--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1"],
 });
-console.log("Listening on " + server.wsEndpoint());
+console.log("Listening"); // never the endpoint: its random path is the only thing guarding the browser
 JS
 rm -rf -- $RUN/browser-home && mkdir -p $RUN/browser-home/tmp
 (HOME=$RUN/browser-home TMPDIR=$RUN/browser-home/tmp WSPATH=$WSPATH PLAYWRIGHT_BROWSERS_PATH=/Users/vyductan/Library/Caches/ms-playwright PW_CORE=${PWCORE[1]} nohup sandbox-exec -f $RUN/browser.sb ${$(command -v node):A} $RUN/browser-server.mjs > $RUN/browser.log 2>&1 & print $! > $RUN/browser.pid)
