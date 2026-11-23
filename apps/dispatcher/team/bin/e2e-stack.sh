@@ -65,6 +65,9 @@ git -C $SRV clean -fdq -e node_modules -e .next-e2e -e .turbo
 # into a folder the bot controls (a symlink there would redirect the write anywhere).
 BOT=$TST/apps/e2e/scenarios/_bot
 FIX=$TST/apps/e2e/scenarios/_botfix
+# A fresh random ws path each run: only the generated config knows it, so no other local process
+# can guess the browser's address (it is never printed).
+WSPATH=$(uuidgen | tr A-Z a-z)
 [[ -L $BOT || -L $FIX ]] && { print -u2 "_bot/_botfix là symlink — dừng"; exit 1 }
 [[ -d $BOT ]] || mkdir $BOT
 rm -rf -- $FIX && mkdir $FIX || exit 1
@@ -79,7 +82,7 @@ export async function query<T extends object>(_text: string, _params: unknown[] 
   throw new Error("query(): no direct DB access for the Tester bot — assert through the UI");
 }
 TS
-cat > $FIX/playwright.config.ts <<'TS'
+cat > $FIX/playwright.config.ts <<TS
 // Written by atelier team/bin/e2e-stack.sh for the Tester bot (rewritten on every "up").
 // The repo's config, but tests come from ../_bot, the app (:3100) and the browser (ws :3111/e2e)
 // run outside the bot's sandbox, the DB was reset by the script, and results go to ../_bot/.results.
@@ -97,7 +100,7 @@ export default {
     ["json", { outputFile: "../_bot/.results/results.json" }],
     ["html", { open: "never", outputFolder: "../_bot/.results/report" }],
   ],
-  use: { ...base.use, connectOptions: { wsEndpoint: "ws://127.0.0.1:3111/e2e" } },
+  use: { ...base.use, connectOptions: { wsEndpoint: "ws://127.0.0.1:3111/$WSPATH" } },
 };
 TS
 
@@ -146,24 +149,25 @@ cat > $RUN/browser.sb <<SB
 (allow file-read* (literal "/Users/vyductan") (literal "/Users/vyductan/Library") (literal "/Users/vyductan/Library/Caches")
   (literal "/Users/vyductan/Developer") (literal "$SRV") (literal "/Users/vyductan/.vyductan-team"))
 (allow file-read* (subpath "/Users/vyductan/Library/Caches/ms-playwright") (subpath "$SRV/node_modules") (subpath "$RUN"))
-(allow file-write* (subpath "$RUN/browser-home"))
+(deny file-write*)
+(allow file-write* (subpath "$RUN/browser-home") (literal "/dev/null") (subpath "/dev/fd") (literal "/dev/dtracehelper"))
 (deny network-outbound (remote ip "*:*"))
 (allow network-outbound (remote ip "localhost:3100"))
 SB
 cat > $RUN/browser-server.mjs <<'JS'
 const { chromium } = await import(process.env.PW_CORE);
 const server = await chromium.launchServer({
-  host: "127.0.0.1", port: 3111, wsPath: "e2e", headless: true,
+  host: "127.0.0.1", port: 3111, wsPath: process.env.WSPATH, headless: true,
   args: ["--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1"],
 });
 console.log("Listening on " + server.wsEndpoint());
 JS
-mkdir -p $RUN/browser-home
-(HOME=$RUN/browser-home PLAYWRIGHT_BROWSERS_PATH=/Users/vyductan/Library/Caches/ms-playwright PW_CORE=${PWCORE[1]} nohup sandbox-exec -f $RUN/browser.sb ${$(command -v node):A} $RUN/browser-server.mjs > $RUN/browser.log 2>&1 & print $! > $RUN/browser.pid)
+rm -rf -- $RUN/browser-home && mkdir -p $RUN/browser-home/tmp
+(HOME=$RUN/browser-home TMPDIR=$RUN/browser-home/tmp WSPATH=$WSPATH PLAYWRIGHT_BROWSERS_PATH=/Users/vyductan/Library/Caches/ms-playwright PW_CORE=${PWCORE[1]} nohup sandbox-exec -f $RUN/browser.sb ${$(command -v node):A} $RUN/browser-server.mjs > $RUN/browser.log 2>&1 & print $! > $RUN/browser.pid)
 
 for i in {1..90}; do
   code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3100/sign-in)
-  [[ $code == 200 ]] && grep -q Listening $RUN/browser.log && { print "e2e stack: ready (app :3100, browser ws://127.0.0.1:3111/e2e, DB reset, origin/main ${MAIN:0:9}); config: scenarios/_botfix/playwright.config.ts"; exit 0 }
+  [[ $code == 200 ]] && grep -q Listening $RUN/browser.log && { print "e2e stack: ready (app :3100, browser on :3111, DB reset, origin/main ${MAIN:0:9}); config: scenarios/_botfix/playwright.config.ts"; exit 0 }
   sleep 2
 done
 print -u2 "e2e stack: chưa lên sau 180s (xem $RUN/app.log, $RUN/browser.log)"
