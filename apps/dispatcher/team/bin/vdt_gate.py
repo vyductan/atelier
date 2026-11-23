@@ -61,7 +61,7 @@ ALLOWED_PREFIX = ("apps/web/src/", "apps/web/tests/", "@acme/ui/src/", "docs/")
 #: Inside the allowlist still for the person: vendored shadcn, env files, runtime entry points
 #: and any build/tool config.
 FORBIDDEN_IN_ALLOWED = re.compile(
-    r"(^@acme/ui/src/shadcn/|(^|/)\.env|(^|/)(middleware|instrumentation(-client)?)\.[a-z]+$|(^|/)[^/]*\.config\.[a-z]+$|"
+    r"(^@acme/ui/src/shadcn/|(^|/)\.env|(^|/)(middleware|proxy|instrumentation(-client)?)\.[a-z]+$|(^|/)[^/]*\.config\.[a-z]+$|"
     r"(^|/)tsconfig[^/]*\.json$|(^|/)\.claude(/|$)|(^|/)\.git(/|$)|(^|/)migrations(/|$))")
 
 

@@ -102,7 +102,7 @@ def test_fail_verdicts_and_odd_branches_are_not_pushed(world) -> None:
                                   "apps/web/next.config.ts", ".github/workflows/ci.yml", "AGENTS.md", "Apps/Web/.ENV",
                                   # allowlist, not a denylist: anything outside the app's code needs the person
                                   "apps/web/tsconfig.json", ".pnpmfile.cjs", "vercel.ts", "apps/web/.vercelignore",
-                                  "apps/web/src/middleware.ts", "apps/web/src/instrumentation.ts",
+                                  "apps/web/src/middleware.ts", "apps/web/src/proxy.ts", "apps/web/src/instrumentation.ts",
                                   "apps/web/src/lib/vite.config.ts", "packages/db/src/x.ts", "apps/other/src/x.ts",
                                   "APPS/WEB/SRC/.env", "apps/web/src/../../../x.ts"])
 def test_dangerous_paths_are_refused(world, path: str) -> None:

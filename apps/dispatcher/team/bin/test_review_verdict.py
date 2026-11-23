@@ -36,15 +36,15 @@ def run(wt: Path, tmp: Path, *args: str, env: dict | None = None) -> subprocess.
 
 def test_writes_the_worktrees_own_branch_and_sha(wt: Path, tmp_path: Path) -> None:
     sha = subprocess.run(["git", "-C", str(wt), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
-    r = run(wt, tmp_path, "pass", "49724d86-aaaa-bbbb-cccc-000000000000", sha[:9])
+    r = run(wt, tmp_path, "pass", "49724d86-aaaa-bbbb-cccc-000000000000", sha)
     assert r.returncode == 0, r.stderr
     d = json.loads((tmp_path / "v" / "agent__49724d86.json").read_text())
     sha = subprocess.run(["git", "-C", str(wt), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
     assert (d["branch"], d["sha"], d["verdict"]) == ("agent/49724d86", sha, "pass")
 
 
-@pytest.mark.parametrize("args", [("ok", "49724d86", "abcdef1"), ("pass",), ("pass", "49724d86"), ("pass", "1bd684dc", "abcdef1"),
-                                  ("pass", "49724d86;x", "abcdef1"), ("fail", "49724d86", "x"), ("pass", "49724d86", "abc")])
+@pytest.mark.parametrize("args", [("ok", "49724d86", "a" * 40), ("pass",), ("pass", "49724d86"), ("pass", "1bd684dc", "a" * 40),
+                                  ("pass", "49724d86;x", "a" * 40), ("fail", "49724d86", "x"), ("pass", "49724d86", "abc")])
 def test_bad_input_or_another_tasks_branch_is_refused(wt: Path, tmp_path: Path, args: tuple[str, ...]) -> None:
     r = run(wt, tmp_path, *args)
     assert r.returncode == 2 and not (tmp_path / "v").exists()
@@ -64,3 +64,10 @@ def test_the_environment_cannot_redirect_it(wt: Path, tmp_path: Path) -> None:
     elsewhere = tmp_path / "elsewhere"
     r = run(wt, tmp_path, "pass", "49724d86", sha, env={"REVIEW_VERDICTS": str(elsewhere), "REVIEW_WORKTREE": "/tmp"})
     assert r.returncode == 0 and not elsewhere.exists() and (tmp_path / "v" / "agent__49724d86.json").exists()
+
+
+def test_a_sha_prefix_is_not_enough(wt: Path, tmp_path: Path) -> None:
+    # 7 hex chars are 28 bits: a commit sharing the reviewed prefix can be brute-forced.
+    sha = subprocess.run(["git", "-C", str(wt), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    r = run(wt, tmp_path, "pass", "49724d86", sha[:12])
+    assert r.returncode == 2 and not (tmp_path / "v").exists()

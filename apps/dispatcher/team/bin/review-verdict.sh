@@ -14,7 +14,7 @@ emulate -L zsh
 # sets may redirect it (tests run a copy with these two lines swapped).
 W=/Users/vyductan/Developer/vyductan-agent
 D=/Users/vyductan/.vyductan-team/verdicts
-if [[ $# -ne 3 || ! "$1" =~ '^(pass|fail)$' || ! "$2" =~ '^[0-9a-f]{8}(-[0-9a-f-]+)?$' || ! "$3" =~ '^[0-9a-f]{7,40}$' ]]; then
+if [[ $# -ne 3 || ! "$1" =~ '^(pass|fail)$' || ! "$2" =~ '^[0-9a-f]{8}(-[0-9a-f-]+)?$' || ! "$3" =~ '^[0-9a-f]{40}$' ]]; then
   print -u2 "dùng: review-verdict.sh <pass|fail> <task id> <sha đã review>"
   exit 2
 fi
@@ -24,11 +24,11 @@ if [[ "$B" != "agent/${2[1,8]}" ]]; then
   print -u2 "worktree đang ở '$B', không phải agent/${2[1,8]} của task $2"
   exit 2
 fi
-if [[ "$S" != "$3"* ]]; then
+if [[ "$S" != "$3" ]]; then  # full 40-char sha, exact: a prefix can be brute-forced
   print -u2 "HEAD là $S, Review đọc $3: có commit mới sau khi review — review lại"
   exit 2
 fi
 mkdir -p "$D" || exit 2
 F="$D/${B//\//__}.json"
-print -r -- "{\"branch\": \"$B\", \"sha\": \"$S\", \"verdict\": \"$1\", \"task\": \"$2\", \"at\": \"$(date '+%Y-%m-%d %H:%M')\"}" > "$F.tmp" \
+print -r -- "{\"branch\": \"$B\", \"sha\": \"$3\", \"verdict\": \"$1\", \"task\": \"$2\", \"at\": \"$(date '+%Y-%m-%d %H:%M')\"}" > "$F.tmp" \
   && mv "$F.tmp" "$F" && print "đã ghi: $1 cho $B @ $S"
