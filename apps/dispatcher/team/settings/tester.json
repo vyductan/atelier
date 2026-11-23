@@ -1,0 +1,135 @@
+{
+  "enabledPlugins": {
+    "vercel@claude-plugins-official": false,
+    "plugin-dev@claude-plugins-official": false,
+    "supabase@claude-plugins-official": false
+  },
+  "permissions": {
+    "additionalDirectories": [
+      "~/Developer/vyductan-tester",
+      "~/Developer/vyductan/apps/vyductan.dev/.git"
+    ],
+    "allow": [
+      "Read(~/Developer/vyductan-tester/**)",
+      "Read(~/Developer/vyductan/apps/vyductan.dev/.git/**)"
+    ],
+    "deny": [
+      "Edit",
+      "Write",
+      "Bash(git push:*)",
+      "Bash(*git push*)",
+      "Bash(git remote:*)",
+      "Bash(git merge:*)",
+      "Bash(git worktree:*)",
+      "Bash(git checkout main:*)",
+      "Bash(git switch main:*)",
+      "Bash(git branch -f:*)",
+      "Bash(git branch -D:*)",
+      "Bash(git update-ref:*)",
+      "Bash(git tag:*)",
+      "Bash(gh:*)",
+      "Bash(curl:*)",
+      "Bash(wget:*)",
+      "Bash(git commit:*)",
+      "Bash(git rebase:*)",
+      "Bash(git reset:*)",
+      "Bash(git switch:*)",
+      "Bash(git checkout:*)",
+      "NotebookEdit",
+      "WebFetch",
+      "WebSearch",
+      "mcp__agents__vm_exec",
+      "mcp__plugin_vercel_vercel",
+      "mcp__plugin_supabase_supabase",
+      "mcp__vyductan-tasks",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.gnupg/**)",
+      "Read(~/.netrc)",
+      "Read(~/.claude/**)",
+      "Read(~/.atelier/**)",
+      "Read(~/.cloudflared/**)",
+      "Read(~/Library/**)",
+      "Read(//Library/Application Support/com.cloudflare.cloudflared/**)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Read(**/id_rsa*)",
+      "Read(**/id_ed25519*)",
+      "Read(~/.config/**)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/.mcp.json)",
+      "Bash(supabase:*)",
+      "Bash(*supabase db*)",
+      "Bash(vercel:*)",
+      "Bash(npx vercel:*)",
+      "Bash(pnpm dev:*)",
+      "Bash(*psql*)",
+      "mcp__agents__create_bot",
+      "mcp__agents__propose_team_setup",
+      "mcp__agents__propose_bot_deletion",
+      "mcp__agents__manage_room",
+      "mcp__agents__retry_thread",
+      "mcp__agents__propose_profile",
+      "mcp__agents__propose_model",
+      "mcp__agents__reset_cloud_computer",
+      "mcp__agents__trigger",
+      "mcp__agents__delete_trigger",
+      "mcp__agents__skill_manage",
+      "mcp__agents__mcp_server",
+      "mcp__agents__app_settings",
+      "mcp__agents__coordinate_bots",
+      "Edit(~/.vyductan-team/gate)",
+      "Edit(~/.vyductan-team/gate/**)",
+      "Edit(~/.vyductan-team/verdicts)",
+      "Edit(~/.vyductan-team/verdicts/**)"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false,
+    "autoAllowBashIfSandboxed": true,
+    "excludedCommands": [
+      "/bin/zsh -f /Users/vyductan/Developer/vyductan/apps/atelier/apps/dispatcher/team/bin/e2e-stack.sh",
+      "/bin/zsh -f /Users/vyductan/Developer/vyductan/apps/atelier/apps/dispatcher/team/bin/e2e-stack.sh down"
+    ],
+    "filesystem": {
+      "allowWrite": [
+        "~/Developer/vyductan-tester/apps/e2e/scenarios/_bot",
+        "~/.vyductan-team/tester/runs"
+      ],
+      "denyRead": [
+        "~/.ssh",
+        "~/.aws",
+        "~/.gnupg",
+        "~/.netrc",
+        "~/.atelier",
+        "~/.cloudflared",
+        "~/Library",
+        "~/.claude",
+        "~/.config",
+        "~/Developer",
+        "~/Developer/vyductan-tester/.env.local-db"
+      ],
+      "allowRead": [
+        "~/.config/git",
+        "~/Developer/vyductan-tester",
+        "~/Developer/vyductan/apps/vyductan.dev/.git",
+        "~/Developer/vyductan/apps/atelier/apps/dispatcher/team/bin/e2e-stack.sh"
+      ],
+      "denyWrite": [
+        "~/.vyductan-team/tester/.claude",
+        "~/.vyductan-team/gate",
+        "~/.vyductan-team/verdicts"
+      ]
+    },
+    "network": {
+      "allowedDomains": [
+        "localhost",
+        "127.0.0.1"
+      ],
+      "allowLocalBinding": true
+    }
+  }
+}

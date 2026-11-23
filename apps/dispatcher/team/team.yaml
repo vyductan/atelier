@@ -78,6 +78,21 @@ bots:
     cwd: /Users/vyductan/.vyductan-team/review
     soul: { file: souls/review.md }
 
+  # Tests tasks in `testing` in a real browser against a local copy of the app
+  # (origin/main, seeded DB). CoS hands it one task at a time in the daily
+  # routine. No Edit/Write: its sandbox writes only scenarios/_bot of its
+  # worktree; app + browser run outside the sandbox via team/bin/e2e-stack.sh
+  # (Chrome and Turbopack cannot start inside it). allowLocalBinding: owner's
+  # choice 2026-11-23, knowing it opens every localhost port (like bl3q-fix).
+  - name: Tester
+    team: vyductan
+    title: Tester vyductan (thử task đang Testing)
+    model: claude/claude-opus-5-5
+    approval: full
+    computer: off
+    cwd: /Users/vyductan/.vyductan-team/tester
+    soul: { file: souls/tester.md }
+
   # No tools at all (cwd settings deny everything): the bridge runs the
   # read-only `ops-digest` collector each morning and hands Ops the JSON.
   - name: Ops
