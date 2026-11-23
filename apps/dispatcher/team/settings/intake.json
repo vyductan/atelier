@@ -123,17 +123,17 @@
       "Read(**/*.keystore)",
       "Read(**/credentials*.json)",
       "Read(**/service-account*.json)",
-      "Edit(~/.vyductan-team/review/runs/verdicts)",
-      "Edit(~/.vyductan-team/review/runs/verdicts/**)",
       "Edit(~/.vyductan-team/gate)",
-      "Edit(~/.vyductan-team/gate/**)"
+      "Edit(~/.vyductan-team/gate/**)",
+      "Edit(~/.vyductan-team/verdicts)",
+      "Edit(~/.vyductan-team/verdicts/**)"
     ]
   },
   "sandbox": {
     "filesystem": {
       "denyWrite": [
-        "~/.vyductan-team/review/runs/verdicts",
-        "~/.vyductan-team/gate"
+        "~/.vyductan-team/gate",
+        "~/.vyductan-team/verdicts"
       ]
     }
   }

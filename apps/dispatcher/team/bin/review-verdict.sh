@@ -1,23 +1,29 @@
 #!/bin/zsh -f
 # Review's verdict, as a file the vyductan gate (vdt_gate.py) reads:
 #
-#     /bin/zsh -f /Users/vyductan/Developer/vyductan/apps/atelier/apps/dispatcher/team/bin/review-verdict.sh <pass|fail> <task id>
+#     /bin/zsh -f /Users/vyductan/Developer/vyductan/apps/atelier/apps/dispatcher/team/bin/review-verdict.sh <pass|fail> <task id> <reviewed sha>
 #
-# Branch and sha come from Dev's worktree itself, never from a brief, so the gate pushes
-# exactly what Review read. The task id must match the branch (`agent/<first 8 of the id>`).
-# Writes `~/.vyductan-team/review/runs/verdicts/<branch>.json` (Review's sandbox writes runs/;
-# CoS and Ops are denied that folder, Dev cannot read it). A pass there DEPLOYS production.
+# The branch comes from Dev's worktree, and its HEAD must still be the sha Review pinned when it
+# started reading (Dev committing meanwhile = refused). The task id must match the branch.
+# Writes `~/.vyductan-team/verdicts/<branch>.json`, a folder no bot's sandbox can write: Review
+# runs Dev's code (tests, installs) in its sandbox, so a verdict there could be forged by the
+# branch itself. This script is Review's `excludedCommands` entry and the ONLY writer. A pass
+# there DEPLOYS production (team/bin/vdt_gate.py).
 emulate -L zsh
 W="${REVIEW_WORKTREE:-/Users/vyductan/Developer/vyductan-agent}"
-D="${REVIEW_VERDICTS:-/Users/vyductan/.vyductan-team/review/runs/verdicts}"
-if [[ $# -ne 2 || ! "$1" =~ '^(pass|fail)$' || ! "$2" =~ '^[0-9a-f]{8}(-[0-9a-f-]+)?$' ]]; then
-  print -u2 "dùng: review-verdict.sh <pass|fail> <task id>"
+D="${REVIEW_VERDICTS:-/Users/vyductan/.vyductan-team/verdicts}"
+if [[ $# -ne 3 || ! "$1" =~ '^(pass|fail)$' || ! "$2" =~ '^[0-9a-f]{8}(-[0-9a-f-]+)?$' || ! "$3" =~ '^[0-9a-f]{7,40}$' ]]; then
+  print -u2 "dùng: review-verdict.sh <pass|fail> <task id> <sha đã review>"
   exit 2
 fi
 B="$(git -C "$W" branch --show-current)"
 S="$(git -C "$W" rev-parse HEAD)"
 if [[ "$B" != "agent/${2[1,8]}" ]]; then
   print -u2 "worktree đang ở '$B', không phải agent/${2[1,8]} của task $2"
+  exit 2
+fi
+if [[ "$S" != "$3"* ]]; then
+  print -u2 "HEAD là $S, Review đọc $3: có commit mới sau khi review — review lại"
   exit 2
 fi
 mkdir -p "$D" || exit 2

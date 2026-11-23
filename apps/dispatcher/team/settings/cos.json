@@ -71,17 +71,17 @@
       "mcp__vyductan-tasks__pick_task",
       "mcp__vyductan-tasks__set_flow_step_blocker",
       "mcp__vyductan-tasks__start_task_attachment",
-      "Edit(~/.vyductan-team/review/runs/verdicts)",
-      "Edit(~/.vyductan-team/review/runs/verdicts/**)",
       "Edit(~/.vyductan-team/gate)",
-      "Edit(~/.vyductan-team/gate/**)"
+      "Edit(~/.vyductan-team/gate/**)",
+      "Edit(~/.vyductan-team/verdicts)",
+      "Edit(~/.vyductan-team/verdicts/**)"
     ]
   },
   "sandbox": {
     "filesystem": {
       "denyWrite": [
-        "~/.vyductan-team/review/runs/verdicts",
-        "~/.vyductan-team/gate"
+        "~/.vyductan-team/gate",
+        "~/.vyductan-team/verdicts"
       ]
     }
   }

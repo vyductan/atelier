@@ -30,14 +30,25 @@ def run(wt: Path, tmp: Path, *args: str) -> subprocess.CompletedProcess:
 
 
 def test_writes_the_worktrees_own_branch_and_sha(wt: Path, tmp_path: Path) -> None:
-    r = run(wt, tmp_path, "pass", "49724d86-aaaa-bbbb-cccc-000000000000")
+    sha = subprocess.run(["git", "-C", str(wt), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    r = run(wt, tmp_path, "pass", "49724d86-aaaa-bbbb-cccc-000000000000", sha[:9])
     assert r.returncode == 0, r.stderr
     d = json.loads((tmp_path / "v" / "agent__49724d86.json").read_text())
     sha = subprocess.run(["git", "-C", str(wt), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
     assert (d["branch"], d["sha"], d["verdict"]) == ("agent/49724d86", sha, "pass")
 
 
-@pytest.mark.parametrize("args", [("ok", "49724d86"), ("pass",), ("pass", "1bd684dc"), ("pass", "49724d86;x"), ("fail", "49724d86", "x")])
+@pytest.mark.parametrize("args", [("ok", "49724d86", "abcdef1"), ("pass",), ("pass", "49724d86"), ("pass", "1bd684dc", "abcdef1"),
+                                  ("pass", "49724d86;x", "abcdef1"), ("fail", "49724d86", "x"), ("pass", "49724d86", "abc")])
 def test_bad_input_or_another_tasks_branch_is_refused(wt: Path, tmp_path: Path, args: tuple[str, ...]) -> None:
     r = run(wt, tmp_path, *args)
+    assert r.returncode == 2 and not (tmp_path / "v").exists()
+
+
+def test_a_commit_dev_added_after_the_review_is_refused(wt: Path, tmp_path: Path) -> None:
+    # Review pins the sha it read; a later commit by Dev must not ride on that pass.
+    reviewed = subprocess.run(["git", "-C", str(wt), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    (wt / "a").write_text("2")
+    subprocess.run(["git", "-C", str(wt), "commit", "-qam", "after review"], check=True)
+    r = run(wt, tmp_path, "pass", "49724d86", reviewed)
     assert r.returncode == 2 and not (tmp_path / "v").exists()

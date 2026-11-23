@@ -80,7 +80,9 @@
       "mcp__agents__app_settings",
       "mcp__agents__coordinate_bots",
       "Edit(~/.vyductan-team/gate)",
-      "Edit(~/.vyductan-team/gate/**)"
+      "Edit(~/.vyductan-team/gate/**)",
+      "Edit(~/.vyductan-team/verdicts)",
+      "Edit(~/.vyductan-team/verdicts/**)"
     ]
   },
   "sandbox": {
@@ -88,7 +90,9 @@
     "failIfUnavailable": true,
     "allowUnsandboxedCommands": false,
     "autoAllowBashIfSandboxed": true,
-    "excludedCommands": [],
+    "excludedCommands": [
+      "/bin/zsh -f /Users/vyductan/Developer/vyductan/apps/atelier/apps/dispatcher/team/bin/review-verdict.sh *"
+    ],
     "filesystem": {
       "allowWrite": [
         "~/.vyductan-team/review/runs",
@@ -118,7 +122,8 @@
       ],
       "denyWrite": [
         "~/.vyductan-team/review/.claude",
-        "~/.vyductan-team/gate"
+        "~/.vyductan-team/gate",
+        "~/.vyductan-team/verdicts"
       ]
     },
     "network": {

@@ -7,14 +7,14 @@
 launchd runs it every 5 minutes (com.vyductan.vdt-gate). Pushing `main` deploys production
 (Vercel), so this is the only thing that does it on the bots' behalf.
 
-Input: `~/.vyductan-team/review/runs/verdicts/<branch>.json`, written by Review itself with
-`team/bin/review-verdict.sh` (it reads branch and sha from Dev's worktree; CoS and Ops are
-denied that folder, Dev cannot read it). Only `verdict: pass` is acted on. Then, cheapest first:
+Input: `~/.vyductan-team/verdicts/<branch>.json`, written ONLY by `team/bin/review-verdict.sh`
+(Review's excludedCommands entry; HEAD must equal the sha Review pinned). No bot's sandbox can
+write that folder, and every other bot is denied it. Only `verdict: pass` is acted on. Then, cheapest first:
 
 1. the branch is `agent/<8 hex>` and its head is the reviewed sha, or Dev's rebase of it that
    leaves exactly the same bytes (mode + blob per changed file);
-2. it touches none of `FORBIDDEN` (vendored shadcn, agent config, env, migrations, CI,
-   dependencies, build config): those need the person;
+2. it only changes regular files under `ALLOWED_PREFIX` (the app's own code), and none of
+   `FORBIDDEN_IN_ALLOWED` there (shadcn, env, middleware, configs): the rest needs the person;
 3. `origin/main` is an ancestor (push as is), or main moved in OTHER files only and the
    reviewed commits are replayed on it in a temp worktree with exactly the same bytes;
 4. `git push origin <sha>:main` without force: if someone pushed in between, git refuses and
@@ -46,7 +46,7 @@ from pathlib import Path
 
 HOME = Path.home()
 REPO = HOME / "Developer" / "vyductan" / "apps" / "vyductan.dev"
-VERDICTS = HOME / ".vyductan-team" / "review" / "runs" / "verdicts"
+VERDICTS = HOME / ".vyductan-team" / "verdicts"
 STATE = HOME / ".vyductan-team" / "gate"
 GH_REPO = "vyductan/vyductan.dev"
 NTFY_TOPIC = HOME / ".atelier" / "openmausbot" / "secrets" / "ntfy-topic"
@@ -55,10 +55,14 @@ BRANCH = re.compile(r"^agent/[0-9a-f]{8}$")
 SHA = re.compile(r"^[0-9a-f]{40}$")
 WATCH_LIMIT_S = 45 * 60
 
-#: Paths (lower case) a bot change may never ship by itself.
-FORBIDDEN_PREFIX = ("@acme/ui/src/shadcn/", ".claude/", ".github/", "supabase/", "database/", ".husky/", ".vscode/")
-FORBIDDEN_NAME = {"claude.md", "claude.local.md", "agents.md", ".mcp.json", "package.json", "pnpm-lock.yaml",
-                  "pnpm-workspace.yaml", ".npmrc", ".nvmrc", "vercel.json", "turbo.json", ".gitignore", ".gitattributes"}
+#: What a bot change MAY ship by itself (lower case): the app's own code. An allowlist, not a
+#: denylist: a denylist always misses something (tsconfig, .pnpmfile.cjs, vercel.ts…).
+ALLOWED_PREFIX = ("apps/web/src/", "apps/web/tests/", "@acme/ui/src/", "docs/")
+#: Inside the allowlist still for the person: vendored shadcn, env files, runtime entry points
+#: and any build/tool config.
+FORBIDDEN_IN_ALLOWED = re.compile(
+    r"(^@acme/ui/src/shadcn/|(^|/)\.env|(^|/)(middleware|instrumentation(-client)?)\.[a-z]+$|(^|/)[^/]*\.config\.[a-z]+$|"
+    r"(^|/)tsconfig[^/]*\.json$|(^|/)\.claude(/|$)|(^|/)\.git(/|$)|(^|/)migrations(/|$))")
 
 
 class Refuse(Exception):
@@ -71,10 +75,9 @@ class Busy(Exception):
 
 def forbidden(path: str) -> bool:
     p = path.lower()
-    name = p.rsplit("/", 1)[-1]
-    parts = p.split("/")
-    return (p.startswith(FORBIDDEN_PREFIX) or name in FORBIDDEN_NAME or name.startswith(".env")
-            or name.startswith("next.config.") or "migrations" in parts or ".git" in parts or ".claude" in parts)
+    if ".." in p.split("/") or not p.startswith(ALLOWED_PREFIX):
+        return True
+    return bool(FORBIDDEN_IN_ALLOWED.search(p))
 
 
 def git(*args: str, cwd: Path | None = None, check: bool = True) -> str:
@@ -172,6 +175,9 @@ def checks(verdict: dict) -> tuple[str, list[str]]:
         raise Refuse("nhánh không đổi file nào")
     if bad := [p for p in changed if forbidden(p)]:
         raise Refuse(f"chạm chỗ cần người duyệt: {', '.join(bad[:4])}")
+    # Only regular files: a symlink (120000) or submodule (160000) can point outside the app.
+    if odd := [p for p, v in change(git("merge-base", main, sha), sha).items() if v and v.split()[0] not in ("100644", "100755")]:
+        raise Refuse(f"symlink/submodule cần người duyệt: {', '.join(odd[:4])}")
     if subprocess.run(["git", "-C", str(REPO), "merge-base", "--is-ancestor", main, sha]).returncode != 0:
         new = rebase_exact(main, sha)
         log(f"  rebase {sha[:9]} lên origin/main {main[:9]} -> {new[:9]} (đúng từng byte)")

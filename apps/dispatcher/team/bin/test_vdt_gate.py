@@ -25,9 +25,9 @@ def world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     subprocess.run(["git", "clone", "-q", str(origin), str(repo)], check=True, capture_output=True)
     sh(repo, "config", "user.email", "t@t")
     sh(repo, "config", "user.name", "t")
-    (repo / "apps" / "web").mkdir(parents=True)
-    (repo / "apps" / "web" / "a.ts").write_text("a\nb\nc\nd\ne\nf\ng\nh\n")
-    (repo / "apps" / "web" / "b.ts").write_text("1\n")
+    (repo / "apps" / "web" / "src").mkdir(parents=True)
+    (repo / "apps" / "web" / "src" / "a.ts").write_text("a\nb\nc\nd\ne\nf\ng\nh\n")
+    (repo / "apps" / "web" / "src" / "b.ts").write_text("1\n")
     sh(repo, "add", "-A")
     sh(repo, "commit", "-qm", "base")
     sh(repo, "push", "-q", "origin", "main")
@@ -80,7 +80,7 @@ def outcome(state: Path) -> list[str]:
 
 def test_a_passed_branch_on_top_of_main_is_pushed(world) -> None:
     repo, verdicts, state, pings, statuses, branch, verdict, remote_main, move_origin = world
-    sha = branch("agent/0123abcd", {"apps/web/b.ts": "2\n"})
+    sha = branch("agent/0123abcd", {"apps/web/src/b.ts": "2\n"})
     verdict("agent/0123abcd", sha)
     G.main([])
     assert remote_main() == sha and outcome(state) == ["deployed"]
@@ -91,15 +91,20 @@ def test_a_passed_branch_on_top_of_main_is_pushed(world) -> None:
 def test_fail_verdicts_and_odd_branches_are_not_pushed(world) -> None:
     repo, verdicts, state, pings, statuses, branch, verdict, remote_main, move_origin = world
     before = remote_main()
-    verdict("agent/0123abcd", branch("agent/0123abcd", {"apps/web/b.ts": "2\n"}), "fail")
-    verdict("feature/x", branch("feature/x", {"apps/web/b.ts": "3\n"}))
+    verdict("agent/0123abcd", branch("agent/0123abcd", {"apps/web/src/b.ts": "2\n"}), "fail")
+    verdict("feature/x", branch("feature/x", {"apps/web/src/b.ts": "3\n"}))
     G.main([])
     assert remote_main() == before and outcome(state) == ["refused"]
 
 
 @pytest.mark.parametrize("path", ["@acme/ui/src/shadcn/button.tsx", ".claude/settings.json", "apps/web/.env.local",
                                   "supabase/migrations/1.sql", "apps/web/package.json", "pnpm-lock.yaml",
-                                  "apps/web/next.config.ts", ".github/workflows/ci.yml", "AGENTS.md", "Apps/Web/.ENV"])
+                                  "apps/web/next.config.ts", ".github/workflows/ci.yml", "AGENTS.md", "Apps/Web/.ENV",
+                                  # allowlist, not a denylist: anything outside the app's code needs the person
+                                  "apps/web/tsconfig.json", ".pnpmfile.cjs", "vercel.ts", "apps/web/.vercelignore",
+                                  "apps/web/src/middleware.ts", "apps/web/src/instrumentation.ts",
+                                  "apps/web/src/lib/vite.config.ts", "packages/db/src/x.ts", "apps/other/src/x.ts",
+                                  "APPS/WEB/SRC/.env", "apps/web/src/../../../x.ts"])
 def test_dangerous_paths_are_refused(world, path: str) -> None:
     repo, verdicts, state, pings, statuses, branch, verdict, remote_main, move_origin = world
     before = remote_main()
@@ -111,9 +116,9 @@ def test_dangerous_paths_are_refused(world, path: str) -> None:
 def test_a_commit_added_after_review_is_refused(world) -> None:
     repo, verdicts, state, pings, statuses, branch, verdict, remote_main, move_origin = world
     before = remote_main()
-    sha = branch("agent/0123abcd", {"apps/web/b.ts": "2\n"})
+    sha = branch("agent/0123abcd", {"apps/web/src/b.ts": "2\n"})
     sh(repo, "switch", "-q", "agent/0123abcd")
-    (repo / "apps" / "web" / "b.ts").write_text("2 \n")  # whitespace only still counts
+    (repo / "apps" / "web" / "src" / "b.ts").write_text("2 \n")  # whitespace only still counts
     sh(repo, "commit", "-qam", "after review")
     sh(repo, "switch", "-q", "main")
     verdict("agent/0123abcd", sha)
@@ -123,21 +128,21 @@ def test_a_commit_added_after_review_is_refused(world) -> None:
 
 def test_origin_moved_elsewhere_the_reviewed_bytes_are_rebased_and_pushed(world) -> None:
     repo, verdicts, state, pings, statuses, branch, verdict, remote_main, move_origin = world
-    sha = branch("agent/0123abcd", {"apps/web/b.ts": "2\n"})
-    moved = move_origin({"apps/web/a.ts": "A\nb\nc\nd\ne\nf\ng\nh\n"})
+    sha = branch("agent/0123abcd", {"apps/web/src/b.ts": "2\n"})
+    moved = move_origin({"apps/web/src/a.ts": "A\nb\nc\nd\ne\nf\ng\nh\n"})
     verdict("agent/0123abcd", sha)
     G.main([])
     head = remote_main()
     assert outcome(state) == ["deployed"] and head != sha
     sh(repo, "fetch", "-q", "origin")
     assert sh(repo, "rev-parse", "origin/main~1") == moved
-    assert sh(repo, "show", "origin/main:apps/web/b.ts") == "2"
+    assert sh(repo, "show", "origin/main:apps/web/src/b.ts") == "2"
 
 
 def test_origin_moved_in_the_same_file_is_refused(world) -> None:
     repo, verdicts, state, pings, statuses, branch, verdict, remote_main, move_origin = world
-    sha = branch("agent/0123abcd", {"apps/web/a.ts": "a\nb\nc\nd\ne\nf\ng\nH\n"})
-    moved = move_origin({"apps/web/a.ts": "A\nb\nc\nd\ne\nf\ng\nh\n"})
+    sha = branch("agent/0123abcd", {"apps/web/src/a.ts": "a\nb\nc\nd\ne\nf\ng\nH\n"})
+    moved = move_origin({"apps/web/src/a.ts": "A\nb\nc\nd\ne\nf\ng\nh\n"})
     verdict("agent/0123abcd", sha)
     G.main([])
     assert remote_main() == moved and outcome(state) == ["refused"]
@@ -145,7 +150,7 @@ def test_origin_moved_in_the_same_file_is_refused(world) -> None:
 
 def test_the_deploy_is_watched_until_vercel_answers(world) -> None:
     repo, verdicts, state, pings, statuses, branch, verdict, remote_main, move_origin = world
-    sha = branch("agent/0123abcd", {"apps/web/b.ts": "2\n"})
+    sha = branch("agent/0123abcd", {"apps/web/src/b.ts": "2\n"})
     verdict("agent/0123abcd", sha)
     G.main([])
     pings.clear()
@@ -156,3 +161,27 @@ def test_the_deploy_is_watched_until_vercel_answers(world) -> None:
     assert len(pings) == 1 and "LỖI" in pings[0]
     G.main([])
     assert len(pings) == 1  # told once
+
+
+@pytest.mark.parametrize("path", ["apps/web/src/app/x.tsx", "apps/web/tests/x.test.ts", "@acme/ui/src/components/x.tsx", "docs/x.md"])
+def test_the_apps_own_code_is_allowed(world, path: str) -> None:
+    repo, verdicts, state, pings, statuses, branch, verdict, remote_main, move_origin = world
+    sha = branch("agent/0123abcd", {path: "x\n"})
+    verdict("agent/0123abcd", sha)
+    G.main([])
+    assert remote_main() == sha
+
+
+def test_a_symlink_is_refused_even_inside_the_allowlist(world) -> None:
+    repo, verdicts, state, pings, statuses, branch, verdict, remote_main, move_origin = world
+    before = remote_main()
+    sh(repo, "switch", "-q", "-c", "agent/0123abcd", "origin/main")
+    (repo / "apps" / "web" / "src").mkdir(parents=True, exist_ok=True)
+    (repo / "apps" / "web" / "src" / "link.ts").symlink_to("/etc/hosts")
+    sh(repo, "add", "-A")
+    sh(repo, "commit", "-qm", "link")
+    sha = sh(repo, "rev-parse", "HEAD")
+    sh(repo, "switch", "-q", "main")
+    verdict("agent/0123abcd", sha)
+    G.main([])
+    assert remote_main() == before and outcome(state) == ["refused"]

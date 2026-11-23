@@ -138,10 +138,10 @@
       "mcp__vyductan-tasks__english_search_dictionary",
       "mcp__vyductan-tasks__english_start_quiz",
       "mcp__vyductan-tasks__start_task_attachment",
-      "Edit(~/.vyductan-team/review/runs/verdicts)",
-      "Edit(~/.vyductan-team/review/runs/verdicts/**)",
       "Edit(~/.vyductan-team/gate)",
-      "Edit(~/.vyductan-team/gate/**)"
+      "Edit(~/.vyductan-team/gate/**)",
+      "Edit(~/.vyductan-team/verdicts)",
+      "Edit(~/.vyductan-team/verdicts/**)"
     ],
     "additionalDirectories": [
       "/Users/vyductan/Developer/g-bots/bl3q"
@@ -174,8 +174,8 @@
         "~/.bl3q-team/lead/.mcp.json"
       ],
       "denyWrite": [
-        "~/.vyductan-team/review/runs/verdicts",
-        "~/.vyductan-team/gate"
+        "~/.vyductan-team/gate",
+        "~/.vyductan-team/verdicts"
       ]
     },
     "network": {
