@@ -84,5 +84,8 @@
         "~/.vyductan-team/verdicts"
       ]
     }
+  },
+  "env": {
+    "MAX_MCP_OUTPUT_TOKENS": "120000"
   }
 }
