@@ -27,7 +27,19 @@
       "Read(**/id_rsa*)",
       "Read(**/id_ed25519*)",
       "Read(**/.mcp.json)",
-      "Read(~/.config/**)"
+      "Read(~/.config/**)",
+      "Edit(~/.vyductan-team/review/runs/verdicts)",
+      "Edit(~/.vyductan-team/review/runs/verdicts/**)",
+      "Edit(~/.vyductan-team/gate)",
+      "Edit(~/.vyductan-team/gate/**)"
     ]
+  },
+  "sandbox": {
+    "filesystem": {
+      "denyWrite": [
+        "~/.vyductan-team/review/runs/verdicts",
+        "~/.vyductan-team/gate"
+      ]
+    }
   }
 }

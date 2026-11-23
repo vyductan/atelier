@@ -78,7 +78,9 @@
       "mcp__agents__skill_manage",
       "mcp__agents__mcp_server",
       "mcp__agents__app_settings",
-      "mcp__agents__coordinate_bots"
+      "mcp__agents__coordinate_bots",
+      "Edit(~/.vyductan-team/gate)",
+      "Edit(~/.vyductan-team/gate/**)"
     ]
   },
   "sandbox": {
@@ -111,10 +113,12 @@
       "allowRead": [
         "~/.config/git",
         "~/Developer/vyductan-agent",
-        "~/Developer/vyductan/apps/vyductan.dev/.git"
+        "~/Developer/vyductan/apps/vyductan.dev/.git",
+        "~/Developer/vyductan/apps/atelier/apps/dispatcher/team/bin/review-verdict.sh"
       ],
       "denyWrite": [
-        "~/.vyductan-team/review/.claude"
+        "~/.vyductan-team/review/.claude",
+        "~/.vyductan-team/gate"
       ]
     },
     "network": {

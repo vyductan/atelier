@@ -137,7 +137,11 @@
       "mcp__vyductan-tasks__english_get_weak_words",
       "mcp__vyductan-tasks__english_search_dictionary",
       "mcp__vyductan-tasks__english_start_quiz",
-      "mcp__vyductan-tasks__start_task_attachment"
+      "mcp__vyductan-tasks__start_task_attachment",
+      "Edit(~/.vyductan-team/review/runs/verdicts)",
+      "Edit(~/.vyductan-team/review/runs/verdicts/**)",
+      "Edit(~/.vyductan-team/gate)",
+      "Edit(~/.vyductan-team/gate/**)"
     ],
     "additionalDirectories": [
       "/Users/vyductan/Developer/g-bots/bl3q"
@@ -168,6 +172,10 @@
         "~/.ssh",
         "~/Library",
         "~/.bl3q-team/lead/.mcp.json"
+      ],
+      "denyWrite": [
+        "~/.vyductan-team/review/runs/verdicts",
+        "~/.vyductan-team/gate"
       ]
     },
     "network": {

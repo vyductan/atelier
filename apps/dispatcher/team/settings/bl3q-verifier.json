@@ -202,7 +202,11 @@
       "Edit(~/.bl3q-team/review/verdicts/.claude-plugin)",
       "Edit(~/.bl3q-team/review/verdicts/.claude-plugin/**)",
       "Edit(~/.bl3q-team/review/verdicts/.envrc)",
-      "Edit(~/.bl3q-team/review/verdicts/.envrc/**)"
+      "Edit(~/.bl3q-team/review/verdicts/.envrc/**)",
+      "Edit(~/.vyductan-team/review/runs/verdicts)",
+      "Edit(~/.vyductan-team/review/runs/verdicts/**)",
+      "Edit(~/.vyductan-team/gate)",
+      "Edit(~/.vyductan-team/gate/**)"
     ]
   },
   "sandbox": {
@@ -238,7 +242,9 @@
       "denyWrite": [
         "~/.bl3q-team/review/verdicts",
         "~/.bl3q-team/review/.claude",
-        "~/.bl3q-team/baseline"
+        "~/.bl3q-team/baseline",
+        "~/.vyductan-team/review/runs/verdicts",
+        "~/.vyductan-team/gate"
       ]
     },
     "network": {
