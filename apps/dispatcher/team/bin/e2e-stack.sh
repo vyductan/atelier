@@ -27,6 +27,7 @@ TST=/Users/vyductan/Developer/vyductan-tester
 RUN=/Users/vyductan/.vyductan-team/e2e-stack
 mkdir -p $RUN
 [[ -d $RUN && ! -L $RUN && -O $RUN ]] || { print -u2 "$RUN không phải thư mục thật của chủ"; exit 1 }
+chmod -R go-rwx $RUN  # files from before umask 077 keep their old mode otherwise
 
 stop() {
   local f p
