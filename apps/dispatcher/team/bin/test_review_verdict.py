@@ -23,9 +23,14 @@ def wt(tmp_path: Path) -> Path:
     return w
 
 
-def run(wt: Path, tmp: Path, *args: str) -> subprocess.CompletedProcess:
-    env = {**os.environ, "REVIEW_WORKTREE": str(wt), "REVIEW_VERDICTS": str(tmp / "v")}
-    return subprocess.run(["/bin/zsh", "-f", str(HERE / "review-verdict.sh"), *args], env=env,
+def run(wt: Path, tmp: Path, *args: str, env: dict | None = None) -> subprocess.CompletedProcess:
+    # The script has no env overrides (it runs unsandboxed); test a copy with its paths swapped.
+    src = (HERE / "review-verdict.sh").read_text()
+    src = src.replace("W=/Users/vyductan/Developer/vyductan-agent", f"W={wt}")
+    src = src.replace("D=/Users/vyductan/.vyductan-team/verdicts", f"D={tmp / 'v'}")
+    copy = tmp / "review-verdict.sh"
+    copy.write_text(src)
+    return subprocess.run(["/bin/zsh", "-f", str(copy), *args], env={**os.environ, **(env or {})},
                           capture_output=True, text=True, check=False)
 
 
@@ -52,3 +57,10 @@ def test_a_commit_dev_added_after_the_review_is_refused(wt: Path, tmp_path: Path
     subprocess.run(["git", "-C", str(wt), "commit", "-qam", "after review"], check=True)
     r = run(wt, tmp_path, "pass", "49724d86", reviewed)
     assert r.returncode == 2 and not (tmp_path / "v").exists()
+
+
+def test_the_environment_cannot_redirect_it(wt: Path, tmp_path: Path) -> None:
+    sha = subprocess.run(["git", "-C", str(wt), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    elsewhere = tmp_path / "elsewhere"
+    r = run(wt, tmp_path, "pass", "49724d86", sha, env={"REVIEW_VERDICTS": str(elsewhere), "REVIEW_WORKTREE": "/tmp"})
+    assert r.returncode == 0 and not elsewhere.exists() and (tmp_path / "v" / "agent__49724d86.json").exists()

@@ -10,8 +10,10 @@
 # branch itself. This script is Review's `excludedCommands` entry and the ONLY writer. A pass
 # there DEPLOYS production (team/bin/vdt_gate.py).
 emulate -L zsh
-W="${REVIEW_WORKTREE:-/Users/vyductan/Developer/vyductan-agent}"
-D="${REVIEW_VERDICTS:-/Users/vyductan/.vyductan-team/verdicts}"
+# Fixed paths, no environment overrides: this runs OUTSIDE the sandbox, so nothing the caller
+# sets may redirect it (tests run a copy with these two lines swapped).
+W=/Users/vyductan/Developer/vyductan-agent
+D=/Users/vyductan/.vyductan-team/verdicts
 if [[ $# -ne 3 || ! "$1" =~ '^(pass|fail)$' || ! "$2" =~ '^[0-9a-f]{8}(-[0-9a-f-]+)?$' || ! "$3" =~ '^[0-9a-f]{7,40}$' ]]; then
   print -u2 "dùng: review-verdict.sh <pass|fail> <task id> <sha đã review>"
   exit 2
