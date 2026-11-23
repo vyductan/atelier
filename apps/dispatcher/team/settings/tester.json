@@ -121,7 +121,9 @@
       "denyWrite": [
         "~/.vyductan-team/tester/.claude",
         "~/.vyductan-team/gate",
-        "~/.vyductan-team/verdicts"
+        "~/.vyductan-team/verdicts",
+        "~/Developer/vyductan-tester/apps/e2e/scenarios/_botfix",
+        "~/.vyductan-team/e2e-stack"
       ]
     },
     "network": {
